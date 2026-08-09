@@ -1,6 +1,5 @@
 #!/bin/bash
 # deploy_crunchysync.sh — pull latest code and rebuild the crunchysync image
-# Run manually or triggered by the same GitHub webhook as the main app.
 
 set -euo pipefail
 
