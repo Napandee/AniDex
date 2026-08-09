@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Upcoming — Anime Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Upcoming Episodes</h1>
+  <p class="page-sub">New episodes for your watching &amp; planning list.</p>
+</div>
+
+{% if entries %}
+  {% set ns = namespace(current_group=None) %}
+  {% for e in entries %}
+    {% if e.group != ns.current_group %}
+      {% if ns.current_group is not none %}</ul>{% endif %}
+      {% set ns.current_group = e.group %}
+      <h2 class="upcoming-group">{{ e.group }}</h2>
+      <ul class="upcoming-list">
+    {% endif %}
+
+    <li class="upcoming-item">
+      {% if e.cover_image_url %}
+      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="upcoming-cover">
+      {% endif %}
+      <div class="upcoming-info">
+        <div class="upcoming-title">{{ e.title_english or e.title_romaji }}</div>
+        {% if e.title_english and e.title_english != e.title_romaji %}
+        <div class="upcoming-sub">{{ e.title_romaji }}</div>
+        {% endif %}
+        <div class="upcoming-episode">
+          Episode {{ e.episode }}
+          {% if e.episodes %}of {{ e.episodes }}{% endif %}
+        </div>
+        <div class="upcoming-time">
+          {{ e.airing_local.strftime('%a %d %b, %H:%M') }} {{ e.tz_abbr }}
+          <span class="upcoming-relative">— {{ e.relative }}</span>
+        </div>
+        {% if e.progress %}
+        <div class="upcoming-progress">You're at episode {{ e.progress }}</div>
+        {% endif %}
+      </div>
+    </li>
+
+  {% endfor %}
+  </ul>
+{% else %}
+<p class="empty">No upcoming episodes — nothing currently airing in your list.</p>
+{% endif %}
+{% endblock %}

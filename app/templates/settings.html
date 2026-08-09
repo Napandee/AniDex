@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Settings — Anime Tracker{% endblock %}
+
+{% block content %}
+<div class="notes-page">
+
+  <div class="page-header">
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">Preferences for this tracker.</p>
+  </div>
+
+  <form method="post" action="/settings" class="notes-form">
+
+    <div class="form-field">
+      <label class="form-label" for="timezone">
+        Timezone
+        <span class="form-label-hint">— used for all date and time display</span>
+      </label>
+      <select class="form-input" id="timezone" name="timezone">
+        {% for tz in timezones %}
+        <option value="{{ tz }}" {% if tz == settings.timezone %}selected{% endif %}>{{ tz }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="settings-section-label">More settings coming soon.</div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-save">Save</button>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

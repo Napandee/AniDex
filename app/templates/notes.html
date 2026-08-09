@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Notes — {{ anime.title_english or anime.title_romaji }} — Anime Tracker{% endblock %}
+
+{% block content %}
+<div class="notes-page">
+
+  <div class="notes-context">
+    {% if anime.cover_image_url %}
+    <img src="{{ anime.cover_image_url }}" alt="{{ anime.title_romaji }}" class="notes-cover">
+    {% endif %}
+    <div>
+      <div class="notes-context-title">{{ anime.title_english or anime.title_romaji }}</div>
+      {% if anime.title_english and anime.title_english != anime.title_romaji %}
+      <div class="notes-context-sub">{{ anime.title_romaji }}</div>
+      {% endif %}
+      {% if anime.status %}
+      <div class="notes-context-sub">{{ anime.status.title() }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="post" action="/anime/{{ anime.id }}/notes" class="notes-form">
+    <input type="hidden" name="back" value="{{ back }}">
+
+    <div class="form-field">
+      <label class="form-label" for="drop_reason">Drop reason</label>
+      <input class="form-input" type="text" id="drop_reason" name="drop_reason"
+             value="{{ notes.drop_reason if notes and notes.drop_reason else '' }}"
+             placeholder="Why did you drop this? (leave blank if not applicable)">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="notes">Notes</label>
+      <textarea class="form-textarea" id="notes" name="notes" rows="5"
+                placeholder="Anything you want to remember…">{{ notes.notes if notes and notes.notes else '' }}</textarea>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="personal_tags">
+        Tags
+        <span class="form-label-hint">— comma-separated, e.g. "watch with partner, background"</span>
+      </label>
+      <input class="form-input" type="text" id="personal_tags" name="personal_tags"
+             value="{{ (notes.personal_tags | join(', ')) if notes and notes.personal_tags else '' }}"
+             placeholder="watch with partner, background watching…">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="watch_next_priority">
+        Queue priority
+        <span class="form-label-hint">— lower = watch sooner, leave blank for no override</span>
+      </label>
+      <input class="form-input" type="number" id="watch_next_priority" name="watch_next_priority"
+             value="{{ notes.watch_next_priority if notes and notes.watch_next_priority is not none else '' }}"
+             placeholder="1, 2, 10…" min="1">
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-save">Save</button>
+      <a href="/?status={{ back }}" class="btn-cancel">Cancel</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

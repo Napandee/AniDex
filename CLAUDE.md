@@ -60,7 +60,7 @@ Reuses the existing GitHub → n8n → Unraid pipeline (see `unraid-config` repo
 reference implementation):
 1. Push to `main` → webhook fires to `n8n.***REDACTED-DOMAIN***`
 2. n8n validates HMAC signature, SSHs to Unraid, runs the deploy script
-3. Deploy script: git pull → `docker build` → `docker compose up -d` → restart container
+3. Deploy script: git pull → `docker build` → `docker run` (single container, no Compose) → matches Unraid's native Docker UI pattern
 
 Container name, appdata path, and webhook path: **TBD — fill in once the repo exists and
 the container is provisioned.**
@@ -81,12 +81,17 @@ Claude Code needs standing API access to set up).
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline itself (webhook, HMAC validation, restart
   script) — this is shared plumbing with other services.
+- Never use `docker-compose` or `docker compose` — deploy as a single container via
+  `Dockerfile` + `docker run`, matching Unraid's native Docker UI. No `compose.yml` or
+  `docker-compose.yml` should exist in this repo.
 
 ## Open Decisions (resolve before/during build kickoff)
 
 - [ ] Project/repo name
-- [ ] Tech stack (suggest: lightweight — e.g. Node/Express or Python/FastAPI backend,
-      server-rendered or minimal frontend framework; avoid over-engineering a single-user app)
-- [ ] Where stats live: own page vs. embedded Grafana panel
+- [x] Tech stack: **Python + FastAPI + Jinja2 + psycopg2** — server-rendered HTML, no
+      frontend build step, one language for both app and sync script. Uvicorn as the ASGI
+      server inside a slim Python Docker image.
+- [x] Stats view: **embedded Grafana panel** reading Postgres directly — no stats page or
+      stats API to build in this app.
 - [ ] Container name + appdata path on Unraid
 - [ ] Final public hostname

@@ -1,0 +1,349 @@
+import json
+import os
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from fastapi import FastAPI, Form, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from app import db, config
+
+GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", "http://***REDACTED-HOST***:3000")
+
+STREAMING_SITES = {
+    "Crunchyroll", "Netflix", "Hulu", "Amazon Prime Video", "HIDIVE",
+    "Disney Plus", "Bilibili TV", "Bilibili", "iQ", "WeTV", "Tubi TV",
+    "Adult Swim", "Hoopla", "Max", "Tencent Video", "Bandai Channel",
+    "Niconico Video", "Funimation", "VRV",
+}
+GRAFANA_EMBED_URL = os.getenv("GRAFANA_EMBED_URL", GRAFANA_PUBLIC_URL)
+STATS_DASHBOARD_URL = (
+    f"{GRAFANA_EMBED_URL}/d/anime-tracker-stats/anime-tracker-stats"
+    "?kiosk=tv&theme=dark&orgId=1&from=now-10y&to=now"
+)
+
+app = FastAPI()
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
+
+
+@app.get("/recommendations", response_class=HTMLResponse)
+def recommendations(request: Request):
+    rows = db.fetchall(
+        """
+        SELECT
+            a.id,
+            a.title_english,
+            a.title_romaji,
+            a.cover_image_url,
+            a.format,
+            a.episodes,
+            a.average_score,
+            a.genres,
+            rs.score       AS rec_score,
+            rs.reason
+        FROM recommendation_scores rs
+        JOIN anime a ON a.id = rs.anime_id
+        WHERE rs.dismissed = false
+        ORDER BY rs.score DESC
+        LIMIT 100
+        """
+    )
+    return templates.TemplateResponse(
+        "recommendations.html",
+        {"request": request, "entries": rows},
+    )
+
+
+@app.post("/recommendations/{anime_id}/dismiss")
+def dismiss(anime_id: int):
+    db.execute(
+        "UPDATE recommendation_scores SET dismissed = true WHERE anime_id = %s",
+        (anime_id,),
+    )
+    return RedirectResponse(url="/recommendations", status_code=303)
+
+
+@app.get("/anime/{anime_id}/notes", response_class=HTMLResponse)
+def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
+    anime = db.fetchone(
+        """
+        SELECT a.id, a.title_english, a.title_romaji, a.cover_image_url, le.status
+        FROM anime a
+        LEFT JOIN library_entries le ON le.anime_id = a.id
+        WHERE a.id = %s
+        """,
+        (anime_id,),
+    )
+    notes = db.fetchone(
+        "SELECT * FROM personal_notes WHERE anime_id = %s", (anime_id,)
+    )
+    return templates.TemplateResponse(
+        "notes.html",
+        {"request": request, "anime": anime, "notes": notes, "back": back},
+    )
+
+
+@app.post("/anime/{anime_id}/notes")
+def save_notes(
+    anime_id: int,
+    drop_reason: str = Form(""),
+    notes: str = Form(""),
+    personal_tags: str = Form(""),
+    watch_next_priority: str = Form(""),
+    back: str = Form("WATCHING"),
+):
+    drop_reason_val = drop_reason.strip() or None
+    notes_val = notes.strip() or None
+    tags = [t.strip() for t in personal_tags.split(",") if t.strip()]
+    try:
+        priority = int(watch_next_priority.strip()) if watch_next_priority.strip() else None
+    except ValueError:
+        priority = None
+
+    db.execute(
+        """
+        INSERT INTO personal_notes (anime_id, drop_reason, personal_tags, notes, watch_next_priority)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (anime_id) DO UPDATE SET
+            drop_reason = EXCLUDED.drop_reason,
+            personal_tags = EXCLUDED.personal_tags,
+            notes = EXCLUDED.notes,
+            watch_next_priority = EXCLUDED.watch_next_priority,
+            updated_at = now()
+        """,
+        (anime_id, drop_reason_val, json.dumps(tags), notes_val, priority),
+    )
+    return RedirectResponse(url=f"/?status={back}", status_code=303)
+
+
+@app.get("/upcoming", response_class=HTMLResponse)
+def upcoming(request: Request):
+    tz_name = config.get("timezone")
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+
+    rows = db.fetchall(
+        """
+        SELECT
+            a.id,
+            a.title_english,
+            a.title_romaji,
+            a.cover_image_url,
+            a.episodes,
+            le.progress,
+            asc2.episode,
+            asc2.airing_at
+        FROM airing_schedule_cache asc2
+        JOIN anime a ON a.id = asc2.anime_id
+        JOIN library_entries le ON le.anime_id = a.id
+        WHERE asc2.airing_at > now()
+        ORDER BY asc2.airing_at
+        """
+    )
+
+    now = datetime.now(tz=timezone.utc)
+    entries = []
+    for row in rows:
+        entry = dict(row)
+        airing_local = row["airing_at"].astimezone(tz)
+        entry["airing_local"] = airing_local
+        entry["tz_abbr"] = airing_local.strftime("%Z")
+        delta = row["airing_at"] - now
+        days = delta.days
+        hours = delta.seconds // 3600
+        if days == 0 and delta.total_seconds() < 86400:
+            if hours == 0:
+                entry["relative"] = "in less than an hour"
+            elif hours == 1:
+                entry["relative"] = "in 1 hour"
+            else:
+                entry["relative"] = f"in {hours} hours"
+            entry["group"] = "Today"
+        elif days == 1:
+            entry["relative"] = "tomorrow"
+            entry["group"] = "Tomorrow"
+        elif days <= 7:
+            entry["relative"] = f"in {days} days"
+            entry["group"] = "This week"
+        else:
+            weeks = days // 7
+            entry["relative"] = f"in {days} days"
+            entry["group"] = f"In {weeks} week{'s' if weeks > 1 else ''}"
+        entries.append(entry)
+
+    return templates.TemplateResponse(
+        "upcoming.html",
+        {"request": request, "entries": entries},
+    )
+
+
+COMMON_TIMEZONES = [
+    "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Stockholm",
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Sao_Paulo", "Asia/Tokyo", "Asia/Seoul", "Asia/Shanghai",
+    "Asia/Singapore", "Asia/Kolkata", "Australia/Sydney", "Pacific/Auckland",
+    "UTC",
+]
+
+
+@app.get("/queue", response_class=HTMLResponse)
+def queue(request: Request, status: str = None):
+    queue_statuses = ["ALL", "PLANNING", "PAUSED"]
+    active_status = status.upper() if status and status.upper() in queue_statuses else "ALL"
+
+    status_filter = (
+        "le.status IN ('PLANNING', 'PAUSED')"
+        if active_status == "ALL"
+        else "le.status = %s"
+    )
+    params = () if active_status == "ALL" else (active_status,)
+
+    rows = db.fetchall(
+        f"""
+        SELECT
+            a.id,
+            a.title_english,
+            a.title_romaji,
+            a.cover_image_url,
+            a.format,
+            a.episodes,
+            a.genres,
+            a.external_links,
+            a.average_score,
+            le.status,
+            le.progress,
+            pn.watch_next_priority,
+            pn.personal_tags,
+            pn.notes,
+            rs.score   AS rec_score,
+            rs.reason  AS rec_reason
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = a.id
+        LEFT JOIN recommendation_scores rs
+               ON rs.anime_id = a.id AND rs.dismissed = false
+        WHERE {status_filter}
+        ORDER BY
+            CASE WHEN pn.watch_next_priority IS NOT NULL THEN 0 ELSE 1 END,
+            pn.watch_next_priority ASC NULLS LAST,
+            rs.score DESC NULLS LAST,
+            a.title_romaji
+        """,
+        params,
+    )
+
+    entries = []
+    for row in rows:
+        entry = dict(row)
+        entry["streaming_links"] = [
+            lnk for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        ]
+        reason = row["rec_reason"] or {}
+        matched = (reason.get("matched_genres") or [])[:4]
+        if reason.get("matched_studio"):
+            matched.append(reason["matched_studio"])
+        entry["matched"] = matched
+        entries.append(entry)
+
+    return templates.TemplateResponse(
+        "queue.html",
+        {
+            "request": request,
+            "entries": entries,
+            "queue_statuses": queue_statuses,
+            "active_status": active_status,
+        },
+    )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    current = config.get_all()
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "settings": current,
+            "timezones": COMMON_TIMEZONES,
+        },
+    )
+
+
+@app.post("/settings")
+def settings_save(timezone: str = Form(...)):
+    try:
+        ZoneInfo(timezone)
+    except ZoneInfoNotFoundError:
+        timezone = "Europe/London"
+    config.set_value("timezone", timezone)
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.get("/stats", response_class=HTMLResponse)
+def stats(request: Request):
+    return templates.TemplateResponse(
+        "stats.html",
+        {"request": request, "dashboard_url": STATS_DASHBOARD_URL},
+    )
+
+
+@app.get("/", response_class=HTMLResponse)
+def library(request: Request, response: Response, status: str = None):
+    response.headers["Cache-Control"] = "no-store"
+    statuses = ["WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"]
+    active_status = status.upper() if status else "WATCHING"
+
+    rows = db.fetchall(
+        """
+        SELECT
+            a.id,
+            a.title_english,
+            a.title_romaji,
+            a.cover_image_url,
+            a.format,
+            a.episodes,
+            a.genres,
+            a.external_links,
+            le.status,
+            le.score,
+            le.progress,
+            le.finish_date,
+            pn.drop_reason,
+            pn.personal_tags,
+            pn.notes,
+            pn.watch_next_priority
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = a.id
+        WHERE le.status = %s
+        ORDER BY le.score DESC NULLS LAST, a.title_romaji
+        """,
+        (active_status,),
+    )
+
+    entries = []
+    for row in rows:
+        entry = dict(row)
+        entry["streaming_links"] = [
+            lnk for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        ]
+        entries.append(entry)
+
+    return templates.TemplateResponse(
+        "library.html",
+        {
+            "request": request,
+            "entries": entries,
+            "statuses": statuses,
+            "active_status": active_status,
+        },
+    )

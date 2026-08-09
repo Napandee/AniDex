@@ -89,6 +89,18 @@ CREATE TABLE recommendation_scores (
 );
 
 -- =========================================================================
+-- APP SETTINGS (single-user preferences — key/value for extensibility)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Seed defaults (idempotent)
+INSERT INTO settings (key, value) VALUES ('timezone', 'Europe/London') ON CONFLICT (key) DO NOTHING;
+
+-- =========================================================================
 -- INDEXES
 -- =========================================================================
 

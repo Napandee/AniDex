@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Stats — Anime Tracker{% endblock %}
+{% block bodyclass %}stats{% endblock %}
+
+{% block content %}
+<iframe
+  src="{{ dashboard_url }}"
+  class="stats-iframe"
+  allowfullscreen
+  title="Anime stats dashboard"
+></iframe>
+{% endblock %}

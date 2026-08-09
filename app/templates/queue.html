@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Watch Queue — Anime Tracker{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Watch Queue</h1>
+  <p class="page-sub">
+    Ordered by manual priority, then recommender score.
+    Set a priority from any title's notes page to pin it to the top.
+  </p>
+</div>
+
+<div class="status-tabs">
+  {% for s in queue_statuses %}
+  <a href="/queue{% if s != 'ALL' %}?status={{ s }}{% endif %}"
+     class="tab {% if s == active_status %}active{% endif %}">
+    {{ s.title() }}
+  </a>
+  {% endfor %}
+</div>
+
+{% if entries %}
+<ol class="queue-list">
+  {% for e in entries %}
+  <li class="queue-item">
+    <span class="queue-rank">{{ loop.index }}</span>
+
+    {% if e.cover_image_url %}
+    <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover">
+    {% endif %}
+
+    <div class="queue-body">
+      <div class="queue-top">
+        <div>
+          <div class="queue-title">{{ e.title_english or e.title_romaji }}</div>
+          {% if e.title_english and e.title_english != e.title_romaji %}
+          <div class="title-sub">{{ e.title_romaji }}</div>
+          {% endif %}
+        </div>
+        <div class="queue-badges">
+          {% if e.watch_next_priority %}
+          <span class="badge-priority">#{{ e.watch_next_priority }}</span>
+          {% endif %}
+          <span class="badge-status badge-{{ e.status | lower }}">{{ e.status.title() }}</span>
+        </div>
+      </div>
+
+      <div class="queue-meta">
+        {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
+        {% if e.episodes %}<span class="format">{{ e.episodes }} ep</span>{% endif %}
+        {% if e.progress %}<span class="progress">resumed at ep {{ e.progress }}</span>{% endif %}
+        {% if e.average_score %}<span class="score">★ {{ e.average_score }}</span>{% endif %}
+        {% if e.rec_score %}
+        <span class="queue-rec-score">match {{ e.rec_score | round(0) | int }}</span>
+        {% endif %}
+      </div>
+
+      {% if e.matched %}
+      <div class="genres" style="padding-top:0.3rem">
+        {% for g in e.matched %}
+        <span class="genre match">{{ g }}</span>
+        {% endfor %}
+      </div>
+      {% elif e.genres %}
+      <div class="genres" style="padding-top:0.3rem">
+        {% for g in e.genres[:4] %}
+        <span class="genre">{{ g }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if e.personal_tags %}
+      <div class="genres" style="padding-top:0.2rem">
+        {% for t in e.personal_tags %}
+        <span class="personal-tag">{{ t }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if e.streaming_links %}
+      <div class="stream-links" style="padding-top:0.3rem">
+        {% for lnk in e.streaming_links[:4] %}
+        <a href="{{ lnk.url }}" target="_blank" rel="noopener" class="stream-link">{{ lnk.site }}</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
+    <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="queue-notes-link" title="Edit notes / set priority">✏</a>
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p class="empty">Nothing in your planning or paused list.</p>
+{% endif %}
+{% endblock %}
