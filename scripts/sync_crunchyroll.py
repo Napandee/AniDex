@@ -75,10 +75,15 @@ def fetch_history():
             "sameSite": "None",
         }])
 
+        cr_api_urls: list[str] = []
+
         def on_response(response):
+            url = response.url
+            if "crunchyroll.com" in url and not url.endswith((".js", ".css", ".png", ".jpg", ".webp", ".svg", ".woff2")):
+                cr_api_urls.append(url)
             if (
-                "crunchyroll.com/content/v2" in response.url
-                and "history" in response.url
+                "crunchyroll.com/content/v2" in url
+                and "history" in url
             ):
                 try:
                     captured.append(response.json())
@@ -100,6 +105,11 @@ def fetch_history():
 
         # Give late API calls a moment to complete
         page.wait_for_timeout(3000)
+
+        log(f"Final page URL: {page.url}")
+        log(f"Crunchyroll API calls intercepted ({len(cr_api_urls)}):")
+        for u in cr_api_urls[:30]:
+            log(f"  {u}")
 
         # Detect redirect to login (cookie expired)
         if "login" in page.url or "sso" in page.url:
