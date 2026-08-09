@@ -1,0 +1,7 @@
+FROM mcr.microsoft.com/playwright/python:v1.48.0-noble
+WORKDIR /app
+COPY requirements-crunchysync.txt .
+RUN pip install --no-cache-dir -r requirements-crunchysync.txt
+COPY scripts/sync_crunchyroll.py scripts/
+ENV PYTHONUNBUFFERED=1
+CMD ["python", "scripts/sync_crunchyroll.py"]
