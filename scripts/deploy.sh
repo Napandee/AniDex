@@ -14,7 +14,8 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 log "Pulling latest code..."
 cd "$REPO_DIR"
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 
 log "Building image..."
 docker build -t "$IMAGE" .
