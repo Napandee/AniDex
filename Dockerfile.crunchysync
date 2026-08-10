@@ -1,15 +1,7 @@
 FROM python:3.11-slim
 WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN git clone https://github.com/ruflas/crunchyexporter-cli.git .
-
-RUN pip install --no-cache-dir requests click pyyaml rich
-
-COPY scripts/crunchysync-entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
+COPY requirements-crunchysync.txt .
+RUN pip install --no-cache-dir -r requirements-crunchysync.txt
+COPY scripts/sync_crunchyroll.py scripts/
 ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "scripts/sync_crunchyroll.py"]
