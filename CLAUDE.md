@@ -54,8 +54,9 @@ See `schema.sql` in repo root. Two categories, kept in separate tables on purpos
   runs the same `anime-tracker-crunchysync` image with `--entrypoint python` to invoke
   `run_recommender.py`. Scores unwatched/planning anime against taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.
-- **App**: reads all tables, writes only to `personal_notes` and the `dismissed` flag on
-  `recommendation_scores`. No direct writes to AniList-sourced tables from the app.
+- **App**: reads all tables; writes to `personal_notes`, the `dismissed` flag on
+  `recommendation_scores`, and `library_entries.score` (via the rating endpoint).
+  Also pushes ratings to AniList via `SaveMediaListEntry` mutation in real-time.
 
 ## Deploy Target
 
@@ -78,9 +79,9 @@ Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to An
 - Never commit secrets, tokens, or API keys. Env vars only, sourced from Vaultwarden
   manually — never hardcoded, never logged.
 - Never write to or modify the `unraid-config` repo from this project.
-- Never write directly to AniList (no mutations) except through the existing, tested
-  sync/recommender jobs — the app itself is read of AniList data, write of personal data
-  only.
+- The app writes to AniList only via the rating endpoint (`POST /api/anime/{id}/rating`,
+  `SaveMediaListEntry` mutation, score only). All other AniList writes go through the
+  crunchysync job. Never add further AniList mutations to the app without agreement.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline itself (webhook, HMAC validation, restart

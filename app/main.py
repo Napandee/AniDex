@@ -2,8 +2,9 @@ import json
 import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+import httpx
 from fastapi import FastAPI, Form, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
@@ -11,6 +12,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app import db, config
+
+ANILIST_TOKEN = os.getenv("ANILIST_TOKEN")
+ANILIST_API = "https://graphql.anilist.co"
+
+SAVE_SCORE_MUTATION = """
+mutation ($mediaId: Int!, $score: Float!) {
+  SaveMediaListEntry(mediaId: $mediaId, score: $score) {
+    id score
+  }
+}
+"""
 
 GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", "http://***REDACTED-HOST***:3000")
 
@@ -347,3 +359,35 @@ def library(request: Request, response: Response, status: str = None):
             "active_status": active_status,
         },
     )
+
+
+@app.post("/api/anime/{anime_id}/rating")
+async def set_rating(anime_id: int, request: Request):
+    body = await request.json()
+    stars = int(body.get("score", 0))
+    if stars < 0 or stars > 5:
+        return JSONResponse({"error": "score must be 0–5"}, status_code=400)
+
+    score_100 = stars * 20  # 1★=20 … 5★=100, clear=0
+
+    if not ANILIST_TOKEN:
+        return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
+
+    try:
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": SAVE_SCORE_MUTATION, "variables": {"mediaId": anime_id, "score": float(score_100)}},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "errors" in data:
+            return JSONResponse({"error": str(data["errors"])}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    local_score = stars if stars > 0 else None
+    db.execute("UPDATE library_entries SET score = %s WHERE anime_id = %s", (local_score, anime_id))
+
+    return JSONResponse({"ok": True, "score": stars})

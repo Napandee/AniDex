@@ -134,11 +134,11 @@ def parse_date(d: dict | None) -> date | None:
         return None
 
 
-def score_to_half_star(score_100: float | None) -> float | None:
-    """Convert AniList 0-100 score to 0-5 with 0.5 precision."""
+def score_to_stars(score_100: float | None) -> int | None:
+    """Convert AniList 0-100 score to 1-5 full stars."""
     if not score_100:
         return None
-    return math.floor(score_100 / 10 + 0.5) / 2
+    return max(1, round(score_100 / 20))
 
 
 def upsert_anime(cur, media: dict) -> None:
@@ -229,7 +229,7 @@ STATUS_MAP = {"CURRENT": "WATCHING"}
 
 def upsert_library_entry(cur, entry: dict) -> None:
     media_id = entry["media"]["id"]
-    score = score_to_half_star(entry.get("score"))
+    score = score_to_stars(entry.get("score"))
     status = STATUS_MAP.get(entry["status"], entry["status"])
 
     updated_ts = entry.get("updatedAt")

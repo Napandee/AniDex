@@ -118,9 +118,25 @@ main {
   margin-top: 0.25rem;
 }
 
-.score { color: #f59e0b; }
 .progress { color: #6ee7b7; }
 .format { color: #94a3b8; }
+
+/* ── Star rating ─────────────────────────────────────────────────────────── */
+.star-rating {
+  display: flex;
+  gap: 1px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.star {
+  color: #333;
+  font-size: 1rem;
+  transition: color 0.1s;
+  user-select: none;
+}
+
+.star.filled { color: #f59e0b; }
 
 .genres {
   display: flex;

@@ -24,9 +24,11 @@
       {% endif %}
 
       <div class="meta">
-        {% if e.score %}
-        <span class="score">{{ "★" * (e.score | int) }}{% if e.score % 1 >= 0.5 %}½{% endif %} ({{ e.score }})</span>
-        {% endif %}
+        <div class="star-rating" data-anime-id="{{ e.id }}" data-score="{{ (e.score | int) if e.score else 0 }}">
+          {% for i in [1, 2, 3, 4, 5] %}
+          <span class="star{% if e.score and i <= e.score %} filled{% endif %}" data-value="{{ i }}">★</span>
+          {% endfor %}
+        </div>
         {% if e.progress %}
         <span class="progress">{{ e.progress }}{% if e.episodes %}/{{ e.episodes }}{% endif %} ep</span>
         {% endif %}
