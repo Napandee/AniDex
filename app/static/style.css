@@ -783,6 +783,7 @@ main {
   z-index: 100;
   padding: 1rem;
 }
+.modal-backdrop[hidden] { display: none; }
 
 .modal {
   background: #1a1a1a;
