@@ -17,6 +17,10 @@ cd "$REPO_DIR"
 git fetch origin main
 git reset --hard origin/main
 
+log "Authenticating with GHCR..."
+GHCR_TOKEN=$(grep '^GHCR_TOKEN=' "$ENV_FILE" | cut -d= -f2-)
+echo "$GHCR_TOKEN" | docker login ghcr.io -u napandee --password-stdin
+
 log "Pulling image..."
 docker pull "$IMAGE"
 
