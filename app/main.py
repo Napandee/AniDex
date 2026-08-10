@@ -333,6 +333,7 @@ def library(request: Request, response: Response, status: str = None):
             a.cover_image_url,
             a.format,
             a.episodes,
+            a.average_score,
             a.genres,
             a.external_links,
             le.status,
