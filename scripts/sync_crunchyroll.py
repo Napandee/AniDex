@@ -175,37 +175,60 @@ mutation ($mediaId: Int!, $progress: Int, $status: MediaListStatus, $repeat: Int
 """
 
 
-def fetch_user_list() -> dict[int, dict]:
-    """Fetch all the user's AniList entries in one call."""
+def fetch_user_list() -> tuple[dict[int, dict], dict[str, int]]:
+    """Fetch all the user's AniList entries in one call.
+
+    Returns (entries_by_id, title_index) where title_index maps
+    lowercased romaji/english titles → mediaId for fast CR title matching.
+    """
     data = gql(ALL_LISTS_QUERY, {"userName": ANILIST_USERNAME})
     entries: dict[int, dict] = {}
+    title_index: dict[str, int] = {}
+
     for lst in data["MediaListCollection"]["lists"]:
         for entry in lst["entries"]:
             mid = entry["mediaId"]
+            media = entry.get("media") or {}
+            title_obj = media.get("title") or {}
+            romaji = (title_obj.get("romaji") or "").strip()
+            english = (title_obj.get("english") or "").strip()
+
             entries[mid] = {
                 "status": entry["status"],
                 "progress": entry["progress"] or 0,
                 "repeat": entry["repeat"] or 0,
-                "total_episodes": (entry["media"] or {}).get("episodes"),
-                "title": (
-                    ((entry["media"] or {}).get("title") or {}).get("english")
-                    or ((entry["media"] or {}).get("title") or {}).get("romaji")
-                    or ""
-                ),
+                "total_episodes": media.get("episodes"),
+                "title": english or romaji or "",
             }
-    return entries
+
+            for t in (romaji, english):
+                if t:
+                    title_index[t.lower()] = mid
+
+    return entries, title_index
 
 
 _search_cache: dict[str, int | None] = {}
 
 
-def find_anilist_id(title: str) -> int | None:
+def find_anilist_id(title: str, title_index: dict[str, int]) -> int | None:
+    """Return AniList media ID for a CR series title.
+
+    Checks the pre-built title index first (zero API calls for exact matches),
+    then falls back to the search endpoint for unrecognised titles.
+    """
+    normalized = title.lower()
+    if normalized in title_index:
+        return title_index[normalized]
+
     if title in _search_cache:
         return _search_cache[title]
+
     try:
         data = gql(SEARCH_QUERY, {"search": title})
         mid = data["Media"]["id"]
         _search_cache[title] = mid
+        title_index[normalized] = mid  # cache in index for any later duplicates
         return mid
     except Exception:
         _search_cache[title] = None
@@ -312,18 +335,24 @@ def main():
         sys.exit(0)
 
     log("Fetching AniList library (one call)...")
-    user_list = fetch_user_list()
-    log(f"Loaded {len(user_list)} AniList entries")
+    user_list, title_index = fetch_user_list()
+    log(f"Loaded {len(user_list)} AniList entries, {len(title_index)} title variants indexed")
 
     conn = db_connect()
     ensure_table(conn)
     cr_state_map = load_cr_state(conn)
     log(f"Loaded CR sync state for {len(cr_state_map)} series")
 
-    updated = skipped = no_change = 0
+    updated = skipped = no_change = index_hits = search_hits = 0
 
     for title, cr_ep in sorted(history.items()):
-        media_id = find_anilist_id(title)
+        normalized = title.lower()
+        in_index_before = normalized in title_index
+        media_id = find_anilist_id(title, title_index)
+        if in_index_before and media_id:
+            index_hits += 1
+        elif media_id:
+            search_hits += 1
         if not media_id:
             log(f"  ✗ No AniList match: '{title}'")
             skipped += 1
@@ -350,7 +379,8 @@ def main():
             skipped += 1
 
     conn.close()
-    log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched")
+    log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
+        f"({index_hits} index hits, {search_hits} API searches)")
 
 
 if __name__ == "__main__":
