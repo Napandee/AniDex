@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 from fastapi import FastAPI, Form, Request, Response
@@ -340,6 +340,7 @@ def library(request: Request, response: Response, status: str = None):
             le.score,
             le.progress,
             le.finish_date,
+            le.anilist_updated_at,
             pn.drop_reason,
             pn.personal_tags,
             pn.notes,
@@ -353,6 +354,8 @@ def library(request: Request, response: Response, status: str = None):
         (active_status,),
     )
 
+    stale_threshold = datetime.now(timezone.utc) - timedelta(days=60)
+
     entries = []
     for row in rows:
         entry = dict(row)
@@ -360,6 +363,12 @@ def library(request: Request, response: Response, status: str = None):
             lnk for lnk in (row["external_links"] or [])
             if lnk.get("site") in STREAMING_SITES
         ]
+        updated_at = entry.get("anilist_updated_at")
+        entry["is_stale"] = (
+            entry["status"] == "WATCHING"
+            and updated_at is not None
+            and updated_at < stale_threshold
+        )
         entries.append(entry)
 
     return templates.TemplateResponse(

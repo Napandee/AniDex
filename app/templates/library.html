@@ -21,6 +21,11 @@
     {% if e.cover_image_url %}
     <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
     {% endif %}
+    {% if e.episodes and e.progress %}
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" style="width:{{ [((e.progress / e.episodes) * 100) | int, 100] | min }}%"></div>
+    </div>
+    {% endif %}
     <div class="card-body">
       <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
       {% if e.title_english and e.title_english != e.title_romaji %}
@@ -52,9 +57,12 @@
       </div>
       {% endif %}
 
-      {% if e.personal_tags %}
+      {% if e.personal_tags or e.is_stale %}
       <div class="genres">
-        {% for t in e.personal_tags %}
+        {% if e.is_stale %}
+        <span class="stale-tag">Stale</span>
+        {% endif %}
+        {% for t in e.personal_tags or [] %}
         <span class="personal-tag">{{ t }}</span>
         {% endfor %}
       </div>
