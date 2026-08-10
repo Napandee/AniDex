@@ -14,5 +14,8 @@ log "Fetching Crunchyroll watch history..."
 cd /crunchyexporter
 python src/main.py fetch
 
-log "Running AniList + Postgres sync..."
+log "Running Crunchyroll → AniList sync..."
 HISTORY_PATH=/crunchyexporter/data/history.json python /app/scripts/sync_crunchyroll.py
+
+log "Running AniList → Postgres sync..."
+python /app/scripts/sync_anilist.py
