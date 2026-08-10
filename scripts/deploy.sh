@@ -7,7 +7,7 @@ set -euo pipefail
 REPO_DIR=***REDACTED-PATH***/anime-tracker/repo
 ENV_FILE=***REDACTED-PATH***/anime-tracker/.env
 CONTAINER=anime-tracker
-IMAGE=anime-tracker
+IMAGE=ghcr.io/napandee/anime-tracker:latest
 PORT=8889
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -17,8 +17,8 @@ cd "$REPO_DIR"
 git fetch origin main
 git reset --hard origin/main
 
-log "Building image..."
-docker build -t "$IMAGE" .
+log "Pulling image..."
+docker pull "$IMAGE"
 
 log "Replacing container..."
 docker stop "$CONTAINER" 2>/dev/null || true

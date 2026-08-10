@@ -1,20 +1,14 @@
 #!/bin/bash
-# deploy_crunchysync.sh — pull latest code and rebuild the crunchysync image
+# deploy_crunchysync.sh — pull latest crunchysync image from GHCR
 
 set -euo pipefail
 
-REPO_DIR=***REDACTED-PATH***/anime-tracker/repo
-IMAGE=anime-tracker-crunchysync
+IMAGE=ghcr.io/napandee/anime-tracker-crunchysync:latest
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-log "Pulling latest code..."
-cd "$REPO_DIR"
-git fetch origin main
-git reset --hard origin/main
+log "Pulling crunchysync image..."
+docker pull "$IMAGE"
 
-log "Building crunchysync image..."
-docker build -f Dockerfile.crunchysync -t "$IMAGE" .
-
-log "Done — $IMAGE built. Run with:"
+log "Done — $IMAGE ready. Run with:"
 log "  docker run --rm --env-file ***REDACTED-PATH***/anime-tracker/.env $IMAGE"

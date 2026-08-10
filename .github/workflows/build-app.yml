@@ -1,0 +1,51 @@
+name: Build and deploy anime-tracker
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'Dockerfile.crunchysync'
+      - 'requirements-crunchysync.txt'
+      - 'scripts/sync_crunchyroll.py'
+      - 'scripts/sync_anilist.py'
+      - 'scripts/run_recommender.py'
+      - 'scripts/crunchysync-entrypoint.sh'
+      - 'compose/**'
+      - '**.md'
+      - '.claude/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ghcr.io/napandee/anime-tracker:latest
+
+      - name: Trigger Unraid deploy via n8n
+        env:
+          SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        run: |
+          PAYLOAD='{"action":"deploy","ref":"refs/heads/main"}'
+          SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/.* //')
+          curl -f -X POST https://n8n.***REDACTED-DOMAIN***/webhook/anime-tracker-deploy \
+            -H "Content-Type: application/json" \
+            -H "X-Hub-Signature-256: sha256=$SIG" \
+            -d "$PAYLOAD"

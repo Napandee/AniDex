@@ -1,6 +1,6 @@
 services:
   anime-tracker:
-    image: anime-tracker
+    image: ghcr.io/napandee/anime-tracker:latest
     container_name: anime-tracker
     restart: unless-stopped
     ports:

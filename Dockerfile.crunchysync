@@ -4,8 +4,8 @@ WORKDIR /crunchyexporter
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-# Fetch crunchyexporter-cli (used for the Crunchyroll fetch step only)
-RUN git clone https://github.com/ruflas/crunchyexporter-cli.git .
+# Fetch crunchyexporter-cli — pinned to a known-good commit; update deliberately
+RUN git clone https://github.com/ruflas/crunchyexporter-cli.git . && git checkout 1855e56
 RUN pip install --no-cache-dir requests click pyyaml rich
 
 # Our sync script and its deps
