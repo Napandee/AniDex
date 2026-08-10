@@ -35,3 +35,32 @@ document.querySelectorAll('.star-rating').forEach(widget => {
     });
   });
 });
+
+document.querySelectorAll('.status-select').forEach(select => {
+  const card = select.closest('.card');
+  const originalStatus = select.dataset.original;
+
+  select.addEventListener('change', async () => {
+    const newStatus = select.value;
+    const prevStatus = select.dataset.current || originalStatus;
+    select.dataset.current = newStatus;
+
+    try {
+      const resp = await fetch(`/api/anime/${select.dataset.animeId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: newStatus}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+
+      if (newStatus !== originalStatus) {
+        card.style.transition = 'opacity 0.3s';
+        card.style.opacity = '0';
+        setTimeout(() => card.remove(), 300);
+      }
+    } catch {
+      select.value = prevStatus;
+      select.dataset.current = prevStatus;
+    }
+  });
+});

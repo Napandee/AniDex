@@ -79,9 +79,10 @@ Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to An
 - Never commit secrets, tokens, or API keys. Env vars only, sourced from Vaultwarden
   manually — never hardcoded, never logged.
 - Never write to or modify the `unraid-config` repo from this project.
-- The app writes to AniList only via the rating endpoint (`POST /api/anime/{id}/rating`,
-  `SaveMediaListEntry` mutation, score only). All other AniList writes go through the
-  crunchysync job. Never add further AniList mutations to the app without agreement.
+- The app writes to AniList only via two endpoints: rating (`POST /api/anime/{id}/rating`,
+  score field) and status (`POST /api/anime/{id}/status`, status field), both using
+  `SaveMediaListEntry`. All other AniList writes go through the crunchysync job.
+  Never add further AniList mutations to the app without agreement.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline itself (webhook, HMAC validation, restart

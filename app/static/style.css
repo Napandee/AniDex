@@ -138,6 +138,23 @@ main {
 
 .star.filled { color: #f59e0b; }
 
+/* ── Status select ───────────────────────────────────────────────────────── */
+.status-select {
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  color: #666;
+  font-size: 0.7rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.status-select:hover { border-color: #3a3a3a; color: #aaa; }
+.status-select:focus { outline: none; border-color: #3a3a3a; }
+
 .genres {
   display: flex;
   flex-wrap: wrap;

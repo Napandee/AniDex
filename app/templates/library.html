@@ -67,6 +67,12 @@
       <p class="notes-preview" title="{{ e.notes }}">{{ e.notes }}</p>
       {% endif %}
 
+      <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}">
+        {% for s in ['WATCHING', 'COMPLETED', 'DROPPED', 'PLANNING', 'PAUSED', 'REPEATING'] %}
+        <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ s.title() }}</option>
+        {% endfor %}
+      </select>
+
       <a href="/anime/{{ e.id }}/notes?back={{ active_status }}" class="notes-link">
         {% if e.notes or e.drop_reason or e.personal_tags %}✏ Edit notes{% else %}+ Add notes{% endif %}
       </a>

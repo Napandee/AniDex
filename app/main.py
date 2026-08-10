@@ -24,6 +24,17 @@ mutation ($mediaId: Int!, $score: Float!) {
 }
 """
 
+SAVE_STATUS_MUTATION = """
+mutation ($mediaId: Int!, $status: MediaListStatus!) {
+  SaveMediaListEntry(mediaId: $mediaId, status: $status) {
+    id status
+  }
+}
+"""
+
+VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
+STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
+
 GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", "http://***REDACTED-HOST***:3000")
 
 STREAMING_SITES = {
@@ -391,3 +402,33 @@ async def set_rating(anime_id: int, request: Request):
     db.execute("UPDATE library_entries SET score = %s WHERE anime_id = %s", (local_score, anime_id))
 
     return JSONResponse({"ok": True, "score": stars})
+
+
+@app.post("/api/anime/{anime_id}/status")
+async def set_status(anime_id: int, request: Request):
+    body = await request.json()
+    status = body.get("status", "").upper()
+    if status not in VALID_STATUSES:
+        return JSONResponse({"error": "invalid status"}, status_code=400)
+
+    anilist_status = STATUS_TO_ANILIST.get(status, status)
+
+    if not ANILIST_TOKEN:
+        return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
+
+    try:
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": SAVE_STATUS_MUTATION, "variables": {"mediaId": anime_id, "status": anilist_status}},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "errors" in data:
+            return JSONResponse({"error": str(data["errors"])}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    db.execute("UPDATE library_entries SET status = %s WHERE anime_id = %s", (status, anime_id))
+    return JSONResponse({"ok": True, "status": status})
