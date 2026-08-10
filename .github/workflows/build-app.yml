@@ -15,7 +15,7 @@ on:
       - '.claude/**'
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,5 +39,26 @@ jobs:
           push: true
           tags: ghcr.io/napandee/anime-tracker:latest
 
-      # Deploy is triggered separately via GitHub push webhook → n8n → deploy.sh
-      # n8n waits 5 minutes after the push before pulling from GHCR to ensure the build is complete
+  deploy:
+    needs: build
+    runs-on: [self-hosted, unraid]
+
+    steps:
+      - name: Log in to GHCR
+        run: |
+          GHCR_TOKEN=$(grep '^GHCR_TOKEN=' ***REDACTED-PATH***/anime-tracker/.env | cut -d= -f2- | tr -d '\r\n')
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u Napandee --password-stdin
+
+      - name: Pull new image
+        run: docker pull ghcr.io/napandee/anime-tracker:latest
+
+      - name: Restart container
+        run: |
+          docker stop anime-tracker 2>/dev/null || true
+          docker rm   anime-tracker 2>/dev/null || true
+          docker run -d \
+            --name anime-tracker \
+            --restart unless-stopped \
+            -p 8889:8888 \
+            --env-file ***REDACTED-PATH***/anime-tracker/.env \
+            ghcr.io/napandee/anime-tracker:latest
