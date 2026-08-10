@@ -13,6 +13,7 @@ COPY requirements-crunchysync.txt /tmp/requirements-crunchysync.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-crunchysync.txt
 COPY scripts/sync_crunchyroll.py /app/scripts/sync_crunchyroll.py
 COPY scripts/sync_anilist.py /app/scripts/sync_anilist.py
+COPY scripts/run_recommender.py /app/scripts/run_recommender.py
 
 COPY scripts/crunchysync-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
