@@ -60,17 +60,19 @@ See `schema.sql` in repo root. Two categories, kept in separate tables on purpos
 
 ## Deploy Target
 
-Reuses the existing GitHub → n8n → Unraid pipeline (see `unraid-config` repo for the
-reference implementation):
-1. Push to `main` → webhook fires to `n8n.***REDACTED-DOMAIN***`
-2. n8n validates HMAC signature, SSHs to Unraid, runs the deploy script
-3. Deploy script: git pull → `docker build` → `docker run` (single container, no Compose) → matches Unraid's native Docker UI pattern
+GitHub Actions CI/CD pipeline — no n8n webhook involved:
+1. Push to `main` → GitHub Actions `build` job (hosted runner) builds the Docker image and pushes to `ghcr.io/napandee/anime-tracker:latest`
+2. `deploy` job (self-hosted runner on Unraid) pulls the new image, stops the old container, starts a new one
+
+Self-hosted runner: `anime-tracker-runner` container on Unraid.
+Runner compose + env template: `homelab-scripts/github-runners/anime-tracker.yml`
+Runner env file on Unraid: `***REDACTED-PATH***/github-runner/anime-tracker.env` (never committed)
 
 Container name: `anime-tracker`
+Image: `ghcr.io/napandee/anime-tracker:latest`
 Appdata path: `***REDACTED-PATH***/anime-tracker/`
 Env file: `***REDACTED-PATH***/anime-tracker/.env`
 Port: `8889` (internal `8888`)
-Webhook path: `anime-tracker-deploy`
 
 Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to Andreas only.
 
@@ -79,18 +81,19 @@ Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to An
 - Never commit secrets, tokens, or API keys. Env vars only, sourced from Vaultwarden
   manually — never hardcoded, never logged.
 - Never write to or modify the `unraid-config` repo from this project.
-- The app writes to AniList only via two endpoints: rating (`POST /api/anime/{id}/rating`,
-  score field) and status (`POST /api/anime/{id}/status`, status field), both using
-  `SaveMediaListEntry`. All other AniList writes go through the crunchysync job.
+- The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`,
+  score field), status (`POST /api/anime/{id}/status`, status field), and progress
+  (`POST /api/anime/{id}/progress`, progress field), all using `SaveMediaListEntry`.
+  All other AniList writes go through the crunchysync job.
   Never add further AniList mutations to the app without agreement.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
-- Ask before changing the deploy pipeline itself (webhook, HMAC validation, restart
-  script) — this is shared plumbing with other services.
-- The deploy pipeline uses `docker build` + `docker run` (no Compose) — do not replace it
-  with `docker compose up`. Compose files in `compose/` exist solely for Unraid's
-  Compose Manager Plus plugin to track the containers; they are not the deployment
-  mechanism and must never be used as a substitute for `deploy.sh`.
+- Ask before changing the deploy pipeline itself (GitHub Actions workflows, runner config,
+  GHCR image name) — changes here affect the live deployment path.
+- The deploy pipeline uses `docker pull` + `docker run` (no Compose) driven by the
+  GitHub Actions workflow in `.github/workflows/build-app.yml`. Compose files in
+  `compose/` exist solely for Unraid's Compose Manager Plus plugin to track containers;
+  they are not the deployment mechanism and must never be used as a substitute.
 
 ## Decisions Made
 
