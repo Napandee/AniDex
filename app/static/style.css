@@ -64,6 +64,22 @@ main {
 .tab:hover { background: #252525; color: #ddd; }
 .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
+.library-search-wrap { margin-bottom: 1.25rem; }
+.library-search {
+  width: 100%;
+  max-width: 360px;
+  padding: 0.5rem 0.875rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #e0e0e0;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.library-search:focus { border-color: #2563eb; }
+.library-search::placeholder { color: #555; }
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

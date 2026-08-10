@@ -1,3 +1,23 @@
+const librarySearch = document.getElementById('library-search');
+if (librarySearch) {
+  librarySearch.addEventListener('input', () => {
+    const q = librarySearch.value.toLowerCase();
+    const cards = document.querySelectorAll('#library-grid .card');
+    let visible = 0;
+    cards.forEach(card => {
+      const title = card.querySelector('.title')?.textContent.toLowerCase() || '';
+      const sub   = card.querySelector('.title-sub')?.textContent.toLowerCase() || '';
+      const tags  = [...card.querySelectorAll('.genre, .personal-tag')]
+                      .map(t => t.textContent.toLowerCase()).join(' ');
+      const match = !q || title.includes(q) || sub.includes(q) || tags.includes(q);
+      card.style.display = match ? '' : 'none';
+      if (match) visible++;
+    });
+    const noResults = document.getElementById('no-filter-results');
+    if (noResults) noResults.style.display = (q && visible === 0) ? '' : 'none';
+  });
+}
+
 document.querySelectorAll('.star-rating').forEach(widget => {
   const stars = [...widget.querySelectorAll('.star')];
   const animeId = widget.dataset.animeId;

@@ -10,8 +10,12 @@
   {% endfor %}
 </div>
 
+<div class="library-search-wrap">
+  <input id="library-search" class="library-search" type="search" placeholder="Filter by title, genre or tag…" autocomplete="off">
+</div>
+
 {% if entries %}
-<div class="grid">
+<div class="grid" id="library-grid">
   {% for e in entries %}
   <div class="card">
     {% if e.cover_image_url %}
@@ -86,4 +90,5 @@
 {% else %}
 <p class="empty">No entries in this list.</p>
 {% endif %}
+<p class="empty" id="no-filter-results" style="display:none">No matches.</p>
 {% endblock %}
