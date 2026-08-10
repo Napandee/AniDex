@@ -21,8 +21,7 @@ log "Building image..."
 docker build -t "$IMAGE" .
 
 log "Replacing container..."
-docker stop "$CONTAINER" 2>/dev/null || true
-docker rm   "$CONTAINER" 2>/dev/null || true
+docker rm -f "$CONTAINER" 2>/dev/null || true
 
 docker run -d \
   --name "$CONTAINER" \
