@@ -38,6 +38,9 @@
         <div class="upcoming-progress">You're at episode {{ e.progress }}</div>
         {% endif %}
       </div>
+      <button class="btn-mark-seen"
+              data-anime-id="{{ e.id }}"
+              data-progress="{{ e.progress or 0 }}">+1 ep</button>
     </li>
 
   {% endfor %}

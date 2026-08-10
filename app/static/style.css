@@ -839,3 +839,62 @@ main {
 #modal-cancel:hover { color: #aaa; }
 
 .card { cursor: pointer; }
+
+/* ── Card footer (status + drop button) ─────────────────────────────────────── */
+.card-footer {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.4rem;
+}
+
+.card-footer .status-select {
+  flex: 1;
+  margin-top: 0;
+}
+
+.btn-drop {
+  background: none;
+  border: 1px solid #3f1515;
+  border-radius: 4px;
+  color: #7f1d1d;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.btn-drop:hover { background: #3f1515; color: #fca5a5; border-color: #7f1d1d; }
+
+/* ── Modal drop hint ─────────────────────────────────────────────────────────── */
+.modal-drop-hint {
+  font-size: 0.75rem;
+  color: #f87171;
+  margin: -0.25rem 0 0.25rem;
+}
+
+/* ── Recs genre filter ───────────────────────────────────────────────────────── */
+.rec-genre-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+}
+
+/* ── Upcoming mark seen ──────────────────────────────────────────────────────── */
+.btn-mark-seen {
+  flex-shrink: 0;
+  align-self: center;
+  background: #0d2626;
+  border: 1px solid #134e4a;
+  border-radius: 6px;
+  color: #5eead4;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-mark-seen:hover { background: #134e4a; color: #99f6e4; }
+.btn-mark-seen:disabled { opacity: 0.5; cursor: default; }

@@ -8,9 +8,11 @@
 </div>
 
 {% if entries %}
+<div id="rec-genre-filter" class="rec-genre-filter"></div>
+
 <div class="rec-grid">
   {% for e in entries %}
-  <div class="rec-card">
+  <div class="rec-card" data-genres="{{ e.genres | join(',') if e.genres else '' }}">
     <div class="rec-cover-wrap">
       {% if e.cover_image_url %}
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">

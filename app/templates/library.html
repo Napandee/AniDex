@@ -116,11 +116,16 @@
       <p class="notes-preview" title="{{ e.notes }}">{{ e.notes }}</p>
       {% endif %}
 
-      <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}">
-        {% for s in ['WATCHING', 'COMPLETED', 'DROPPED', 'PLANNING', 'PAUSED', 'REPEATING'] %}
-        <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ s.title() }}</option>
-        {% endfor %}
-      </select>
+      <div class="card-footer">
+        <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}">
+          {% for s in ['WATCHING', 'COMPLETED', 'DROPPED', 'PLANNING', 'PAUSED', 'REPEATING'] %}
+          <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ s.title() }}</option>
+          {% endfor %}
+        </select>
+        {% if e.status == 'WATCHING' %}
+        <button class="btn-drop" data-anime-id="{{ e.id }}">Drop</button>
+        {% endif %}
+      </div>
     </div>
   </div>
   {% endfor %}
@@ -133,6 +138,7 @@
 <div id="notes-modal" class="modal-backdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <h3 class="modal-title" id="modal-title"></h3>
+    <p class="modal-drop-hint" id="modal-drop-hint" hidden>Add a reason below, then confirm to drop.</p>
     <label class="notes-field-label">Drop reason
       <input class="notes-field" id="modal-drop" type="text" placeholder="Why did you drop it?">
     </label>

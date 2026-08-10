@@ -201,24 +201,90 @@ document.querySelectorAll('.status-select').forEach(select => {
   });
 });
 
-// ── Notes modal ───────────────────────────────────────────────────────────────
-const notesModal   = document.getElementById('notes-modal');
-const modalTitle   = document.getElementById('modal-title');
-const modalDrop    = document.getElementById('modal-drop');
-const modalTags    = document.getElementById('modal-tags');
-const modalNotes   = document.getElementById('modal-notes');
-const modalPriority = document.getElementById('modal-priority');
-const modalSave    = document.getElementById('modal-save');
-const modalCancel  = document.getElementById('modal-cancel');
-let activeCardEl   = null;
+// ── Recs genre filter ─────────────────────────────────────────────────────────
+const recFilterEl = document.getElementById('rec-genre-filter');
+if (recFilterEl) {
+  const cards = [...document.querySelectorAll('.rec-card')];
+  const genreSet = new Set();
+  cards.forEach(c => (c.dataset.genres || '').split(',').forEach(g => { if (g.trim()) genreSet.add(g.trim()); }));
+  const genres = [...genreSet].sort();
 
-function openNotesModal(card) {
+  let activeGenre = '';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'filter-btn active';
+  allBtn.textContent = 'All';
+  allBtn.addEventListener('click', () => setRecGenre('', allBtn));
+  recFilterEl.appendChild(allBtn);
+
+  genres.forEach(g => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn';
+    btn.textContent = g;
+    btn.addEventListener('click', () => setRecGenre(g, btn));
+    recFilterEl.appendChild(btn);
+  });
+
+  function setRecGenre(genre, btn) {
+    activeGenre = genre;
+    recFilterEl.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    cards.forEach(c => {
+      const genres = (c.dataset.genres || '').split(',').map(g => g.trim());
+      c.style.display = (!genre || genres.includes(genre)) ? '' : 'none';
+    });
+  }
+}
+
+// ── Upcoming — mark episode seen ──────────────────────────────────────────────
+document.querySelectorAll('.btn-mark-seen').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const animeId = btn.dataset.animeId;
+    const newProgress = parseInt(btn.dataset.progress) + 1;
+
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/progress`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({progress: newProgress}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+      btn.dataset.progress = newProgress;
+      btn.textContent = '✓';
+      const progressEl = btn.closest('.upcoming-item')?.querySelector('.upcoming-progress');
+      if (progressEl) progressEl.textContent = `You're at episode ${newProgress}`;
+    } catch {
+      btn.disabled = false;
+      btn.textContent = '+1 ep';
+    }
+  });
+});
+
+// ── Notes modal ───────────────────────────────────────────────────────────────
+const notesModal    = document.getElementById('notes-modal');
+const modalTitle    = document.getElementById('modal-title');
+const modalDropHint = document.getElementById('modal-drop-hint');
+const modalDrop     = document.getElementById('modal-drop');
+const modalTags     = document.getElementById('modal-tags');
+const modalNotes    = document.getElementById('modal-notes');
+const modalPriority = document.getElementById('modal-priority');
+const modalSave     = document.getElementById('modal-save');
+const modalCancel   = document.getElementById('modal-cancel');
+let activeCardEl    = null;
+let dropMode        = false;
+
+function openNotesModal(card, isDrop = false) {
   activeCardEl = card;
+  dropMode = isDrop;
   modalTitle.textContent   = card.dataset.cardTitle || '';
   modalDrop.value          = card.dataset.drop || '';
   modalTags.value          = card.dataset.tags || '';
   modalNotes.value         = card.dataset.notes || '';
   modalPriority.value      = card.dataset.priority || '';
+  if (modalDropHint) modalDropHint.hidden = !isDrop;
+  modalSave.textContent    = isDrop ? 'Drop' : 'Save';
   notesModal.hidden        = false;
   modalDrop.focus();
 }
@@ -255,16 +321,31 @@ if (notesModal) {
       notes:               modalNotes.value,
       watch_next_priority: modalPriority.value,
     };
+    const isDrop = dropMode;
 
     modalSave.disabled = true;
     modalSave.textContent = 'Saving…';
     try {
-      const resp = await fetch(`/api/anime/${animeId}/notes`, {
+      const r1 = await fetch(`/api/anime/${animeId}/notes`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
       });
-      if (!resp.ok) throw new Error('request failed');
+      if (!r1.ok) throw new Error('notes failed');
+
+      if (isDrop) {
+        const r2 = await fetch(`/api/anime/${animeId}/status`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({status: 'DROPPED'}),
+        });
+        if (!r2.ok) throw new Error('status failed');
+        closeNotesModal();
+        activeCardEl.style.transition = 'opacity 0.3s';
+        activeCardEl.style.opacity = '0';
+        setTimeout(() => activeCardEl?.remove(), 300);
+        return;
+      }
 
       activeCardEl.dataset.drop     = payload.drop_reason;
       activeCardEl.dataset.tags     = payload.personal_tags;
@@ -281,8 +362,16 @@ if (notesModal) {
       modalSave.textContent = 'Error — retry';
     } finally {
       modalSave.disabled = false;
-      if (modalSave.textContent === 'Saving…') modalSave.textContent = 'Save';
+      if (modalSave.textContent === 'Saving…') modalSave.textContent = isDrop ? 'Drop' : 'Save';
     }
+  });
+
+  document.querySelectorAll('.btn-drop').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = btn.closest('.card');
+      if (card) openNotesModal(card, true);
+    });
   });
 }
 
