@@ -15,8 +15,7 @@ it all into one page hosted on Andreas's own infrastructure.
 - Personal notes layer: drop reasons, custom tags, freeform notes, manual queue priority
 - "Watch next" queue driven by the recommender job's output
 - Upcoming-episode view for anything in Watching/Planning status
-- Stats view (genre/studio breakdown, episodes per month) — can be a page here or an
-  embedded Grafana panel; decide during build, don't duplicate whichever isn't chosen
+- Stats view — embedded Grafana panel (`anime-tracker-stats` dashboard at `grafana.***REDACTED-DOMAIN***`)
 
 **Out of scope — do not build these:**
 - No user auth / login system — Cloudflare Access handles who can reach the site
@@ -46,11 +45,15 @@ See `schema.sql` in repo root. Two categories, kept in separate tables on purpos
 
 ## Architecture
 
-- **Sync job**: scheduled n8n workflow (existing pattern), pulls AniList list + airing
-  schedule, upserts into `anime` / `library_entries` / `airing_schedule_cache`.
-- **Recommender job**: separate job (n8n or a small script), scores unwatched/planning
-  anime against genres/tags/studios of highest-rated completed entries, writes to
-  `recommendation_scores`.
+- **Sync job**: n8n workflow "Anime Tracker — Daily Sync" (04:30 daily) runs the
+  `anime-tracker-crunchysync` container, which chains three steps: Crunchyroll history
+  fetch via crunchyexporter-cli → CR→AniList progress sync (`sync_crunchyroll.py`) →
+  AniList→Postgres sync (`sync_anilist.py`). Upserts into `anime` / `library_entries` /
+  `airing_schedule_cache` / `cr_sync_state`.
+- **Recommender job**: n8n workflow "Anime Tracker — Weekly Recommender" (Sundays 05:00)
+  runs the same `anime-tracker-crunchysync` image with `--entrypoint python` to invoke
+  `run_recommender.py`. Scores unwatched/planning anime against taste profile, writes to
+  `recommendation_scores`. Never touches the `dismissed` flag.
 - **App**: reads all tables, writes only to `personal_notes` and the `dismissed` flag on
   `recommendation_scores`. No direct writes to AniList-sourced tables from the app.
 
@@ -62,12 +65,13 @@ reference implementation):
 2. n8n validates HMAC signature, SSHs to Unraid, runs the deploy script
 3. Deploy script: git pull → `docker build` → `docker run` (single container, no Compose) → matches Unraid's native Docker UI pattern
 
-Container name, appdata path, and webhook path: **TBD — fill in once the repo exists and
-the container is provisioned.**
+Container name: `anime-tracker`
+Appdata path: `***REDACTED-PATH***/anime-tracker/`
+Env file: `***REDACTED-PATH***/anime-tracker/.env`
+Port: `8889` (internal `8888`)
+Webhook path: `anime-tracker-deploy`
 
-Public hostname: **TBD** — suggest `anime.***REDACTED-DOMAIN***`, Cloudflare Access-gated to
-Andreas only, added manually via the `cloudflare` skill pattern (not something the app or
-Claude Code needs standing API access to set up).
+Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to Andreas only.
 
 ## Guardrails — Non-Negotiable
 
@@ -85,13 +89,11 @@ Claude Code needs standing API access to set up).
   `Dockerfile` + `docker run`, matching Unraid's native Docker UI. No `compose.yml` or
   `docker-compose.yml` should exist in this repo.
 
-## Open Decisions (resolve before/during build kickoff)
+## Decisions Made
 
-- [ ] Project/repo name
-- [x] Tech stack: **Python + FastAPI + Jinja2 + psycopg2** — server-rendered HTML, no
-      frontend build step, one language for both app and sync script. Uvicorn as the ASGI
-      server inside a slim Python Docker image.
-- [x] Stats view: **embedded Grafana panel** reading Postgres directly — no stats page or
-      stats API to build in this app.
-- [ ] Container name + appdata path on Unraid
-- [ ] Final public hostname
+- **Repo**: `Napandee/anime-tracker` (private)
+- **Tech stack**: Python + FastAPI + Jinja2 + psycopg2 — server-rendered HTML, no
+  frontend build step. Uvicorn inside a slim Python Docker image.
+- **Stats view**: embedded Grafana panel (`anime-tracker-stats` dashboard) — no stats
+  page or stats API in the app itself.
+- **Container + infra**: see Deploy Target section above.
