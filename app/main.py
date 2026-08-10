@@ -32,6 +32,14 @@ mutation ($mediaId: Int!, $status: MediaListStatus!) {
 }
 """
 
+SAVE_PROGRESS_MUTATION = """
+mutation ($mediaId: Int!, $progress: Int!) {
+  SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
+    id progress
+  }
+}
+"""
+
 VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
 STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
 
@@ -442,3 +450,31 @@ async def set_status(anime_id: int, request: Request):
 
     db.execute("UPDATE library_entries SET status = %s WHERE anime_id = %s", (status, anime_id))
     return JSONResponse({"ok": True, "status": status})
+
+
+@app.post("/api/anime/{anime_id}/progress")
+async def set_progress(anime_id: int, request: Request):
+    body = await request.json()
+    progress = body.get("progress")
+    if not isinstance(progress, int) or progress < 0:
+        return JSONResponse({"error": "progress must be a non-negative integer"}, status_code=400)
+
+    if not ANILIST_TOKEN:
+        return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
+
+    try:
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": SAVE_PROGRESS_MUTATION, "variables": {"mediaId": anime_id, "progress": progress}},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "errors" in data:
+            return JSONResponse({"error": str(data["errors"])}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    db.execute("UPDATE library_entries SET progress = %s WHERE anime_id = %s", (progress, anime_id))
+    return JSONResponse({"ok": True, "progress": progress})

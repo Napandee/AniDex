@@ -56,6 +56,49 @@ document.querySelectorAll('.star-rating').forEach(widget => {
   });
 });
 
+document.querySelectorAll('.progress-stepper').forEach(stepper => {
+  const animeId = stepper.dataset.animeId;
+  const maxEp = stepper.dataset.episodes ? parseInt(stepper.dataset.episodes) : Infinity;
+  const valEl = stepper.querySelector('.prog-val');
+  const bar = stepper.closest('.card')?.querySelector('.progress-bar');
+  let current = parseInt(valEl.textContent) || 0;
+  let saving = false;
+
+  stepper.querySelectorAll('.prog-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (saving) return;
+      const delta = parseInt(btn.dataset.delta);
+      const next = Math.max(0, Math.min(current + delta, maxEp));
+      if (next === current) return;
+
+      const prev = current;
+      current = next;
+      valEl.textContent = current;
+      if (bar && maxEp !== Infinity) {
+        bar.style.width = Math.min((current / maxEp) * 100, 100) + '%';
+      }
+
+      saving = true;
+      try {
+        const resp = await fetch(`/api/anime/${animeId}/progress`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({progress: current}),
+        });
+        if (!resp.ok) throw new Error('request failed');
+      } catch {
+        current = prev;
+        valEl.textContent = prev;
+        if (bar && maxEp !== Infinity) {
+          bar.style.width = Math.min((prev / maxEp) * 100, 100) + '%';
+        }
+      } finally {
+        saving = false;
+      }
+    });
+  });
+});
+
 document.querySelectorAll('.status-select').forEach(select => {
   const card = select.closest('.card');
   const originalStatus = select.dataset.original;

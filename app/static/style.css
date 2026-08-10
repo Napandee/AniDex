@@ -152,6 +152,31 @@ main {
 .format { color: #94a3b8; }
 .avg-score { color: #64748b; font-size: 0.75rem; }
 
+.progress-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: #aaa;
+}
+
+.prog-btn {
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  transition: background 0.1s;
+}
+.prog-btn:hover { background: #333; color: #fff; }
+
+.prog-val { min-width: 1.5ch; text-align: center; font-variant-numeric: tabular-nums; }
+.prog-total { color: #555; }
+.prog-unit { color: #555; }
+
 /* ── Star rating ─────────────────────────────────────────────────────────── */
 .star-rating {
   display: flex;

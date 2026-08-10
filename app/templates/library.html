@@ -38,9 +38,13 @@
           <span class="star{% if e.score and i <= e.score %} filled{% endif %}" data-value="{{ i }}">★</span>
           {% endfor %}
         </div>
-        {% if e.progress %}
-        <span class="progress">{{ e.progress }}{% if e.episodes %}/{{ e.episodes }}{% endif %} ep</span>
-        {% endif %}
+        <div class="progress-stepper" data-anime-id="{{ e.id }}" data-episodes="{{ e.episodes or '' }}">
+          <button class="prog-btn" data-delta="-1">−</button>
+          <span class="prog-val">{{ e.progress or 0 }}</span>
+          <button class="prog-btn" data-delta="1">+</button>
+          {% if e.episodes %}<span class="prog-total">/{{ e.episodes }}</span>{% endif %}
+          <span class="prog-unit">ep</span>
+        </div>
         {% if e.format %}
         <span class="format">{{ e.format }}</span>
         {% endif %}
