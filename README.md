@@ -3,47 +3,87 @@
 A personal anime tracking, rating, and recommendation site — built on top of AniList's
 catalog data, with a personal layer AniList's own UI doesn't give a good home to.
 
+Live at `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to Andreas only.
+
 ## Why this exists
 
-Crunchyroll has no export or history API, and AniList's UI doesn't track *why* something
-got dropped after two episodes, or give a real "watch next" queue driven by your own
-taste. This project fills that gap:
+AniList's UI doesn't track *why* something got dropped after two episodes, or give a real
+"watch next" queue driven by your own taste. This project fills that gap:
 
-- **Watch history backfill**: [CrunchyExporter](https://github.com/ruflas/CrunchyExporter)
-  pulls full Crunchyroll history and syncs it into AniList (real dates, progress, status)
-- **AniList as system of record**: catalog data, list status, scores, streaming links —
-  all pulled from AniList's public GraphQL API, never re-scraped from Crunchyroll directly
-- **A personal layer on top**: drop reasons, custom tags, freeform notes, and a manual
-  queue-priority override — none of which AniList has a structured place for
-- **A recommender**: scores unwatched/planning anime against the genres, tags, and
-  studios of your highest-rated completed shows
+- **AniList as system of record**: catalog data, list status, scores, and streaming links
+  pulled from AniList's GraphQL API — never re-scraped from Crunchyroll directly
+- **Crunchyroll sync**: watch history and progress synced from Crunchyroll into AniList
+  via [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli)
+- **Personal layer**: drop reasons, custom tags, freeform notes, and manual queue-priority
+  — none of which AniList has a structured place for
+- **Recommender**: scores unwatched/planning anime against the genres, tags, and studios
+  of your highest-rated completed shows
 - **Upcoming-episode tracking**: airing schedule for anything in Watching/Planning status
 
-## Status
+## Stack
 
-Early planning — schema and requirements sketched, build not yet started.
+| Layer | Tech |
+|---|---|
+| App | Python + FastAPI + Jinja2, server-rendered HTML |
+| DB | Postgres (persisted in Unraid appdata) |
+| Container | Docker, image on GHCR (`ghcr.io/napandee/anime-tracker`) |
+| CI/CD | GitHub Actions → GHCR → self-hosted runner on Unraid |
+| Hosting | Unraid (`anime-tracker` container), port 8889 |
+| Access | Cloudflare Tunnel + Access |
 
 ## Repo contents
 
-| File | Purpose |
+| Path | Purpose |
 |---|---|
-| [`CLAUDE.md`](./CLAUDE.md) | Project scope, architecture, guardrails, and open decisions for agentic development with Claude Code |
-| [`schema.sql`](./schema.sql) | Postgres schema — AniList-sourced tables kept separate from the personal-layer tables |
+| `CLAUDE.md` | Full scope, architecture, guardrails, and decisions for agentic development |
+| `schema.sql` | Postgres schema — AniList-sourced tables kept separate from personal-layer tables |
+| `app/` | FastAPI app — routes, templates, static assets |
+| `scripts/` | `sync_anilist.py`, `sync_crunchyroll.py`, `run_recommender.py`, `deploy.sh` |
+| `Dockerfile` | App image |
+| `Dockerfile.crunchysync` | Sync + recommender image (`ghcr.io/napandee/anime-tracker-crunchysync`) |
+| `compose/` | Compose files for Unraid's Compose Manager Plus (tracking only, not used for deploy) |
+| `.github/workflows/` | `build-app.yml` and `build-crunchysync.yml` — CI/CD pipelines |
 
-## Architecture (planned)
+## Architecture
 
-- **Data source**: AniList GraphQL API (`https://graphql.anilist.co`)
-- **Sync job**: scheduled n8n workflow, upserts AniList list + airing schedule into Postgres
-- **Recommender**: separate job scoring candidates against top-rated completed shows
-- **App**: reads AniList-sourced + personal-layer tables; writes only to the personal layer
-- **Deploy**: reuses the existing `unraid-config` GitHub → n8n → Unraid webhook pipeline —
-  push to `main` triggers a build and restart on the homelab server
-- **Hosting**: self-hosted on Unraid, exposed via Cloudflare Tunnel + Access
-  (proposed: `anime.***REDACTED-DOMAIN***`, access-gated to a single user)
+```
+Crunchyroll ──► crunchyexporter-cli ──► sync_crunchyroll.py ──► AniList
+                                                                     │
+                                                              AniList GraphQL API
+                                                                     │
+                                                           sync_anilist.py
+                                                                     │
+                                                                 Postgres
+                                                                     │
+                                                              FastAPI app
+                                                                     │
+                                                          anime.***REDACTED-DOMAIN***
+```
 
-See `CLAUDE.md` for the full scope, non-goals, and guardrails before making changes.
+**Sync job** — n8n "Anime Tracker — Daily Sync" (04:30 daily): Crunchyroll history →
+AniList progress sync → AniList→Postgres upsert.
 
-## Open decisions
+**Recommender job** — n8n "Anime Tracker — Weekly Recommender" (Sundays 05:00): scores
+unwatched/planning anime against taste profile, writes to `recommendation_scores`.
 
-Tracked in `CLAUDE.md` — tech stack, container name/appdata path, and final hostname are
-not yet settled.
+**Deploy pipeline** — push to `main` → GitHub Actions builds and pushes image to GHCR →
+self-hosted runner on Unraid pulls image and restarts container. Runner config lives in
+`homelab-scripts/github-runners/anime-tracker.yml`.
+
+## Environment variables
+
+Stored in `***REDACTED-PATH***/anime-tracker/.env` on Unraid (never committed).
+
+| Variable | Purpose |
+|---|---|
+| `ANILIST_TOKEN` | OAuth token for AniList mutations (rating, status, progress) |
+| `POSTGRES_HOST` | Postgres host |
+| `POSTGRES_DB` | Database name |
+| `POSTGRES_USER` | DB user |
+| `POSTGRES_PASSWORD` | DB password |
+| `GRAFANA_PUBLIC_URL` | Public Grafana URL for the stats page embed |
+| `GRAFANA_EMBED_URL` | Internal Grafana URL used server-side for embed src (optional, falls back to public) |
+| `GHCR_TOKEN` | GitHub PAT with `read:packages` + `repo` scope — used by deploy job to pull from GHCR |
+| `TZ` | Container timezone (e.g. `Europe/London`) |
+
+See `CLAUDE.md` for full architecture detail, data model, and guardrails before making changes.
