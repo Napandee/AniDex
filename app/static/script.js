@@ -184,45 +184,63 @@ document.querySelectorAll('.status-select').forEach(select => {
   });
 });
 
-// ── Inline notes panel ────────────────────────────────────────────────────────
-document.querySelectorAll('.notes-toggle').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const animeId = btn.dataset.animeId;
-    const panel = document.getElementById(`notes-panel-${animeId}`);
-    if (!panel) return;
+// ── Notes modal ───────────────────────────────────────────────────────────────
+const notesModal   = document.getElementById('notes-modal');
+const modalTitle   = document.getElementById('modal-title');
+const modalDrop    = document.getElementById('modal-drop');
+const modalTags    = document.getElementById('modal-tags');
+const modalNotes   = document.getElementById('modal-notes');
+const modalPriority = document.getElementById('modal-priority');
+const modalSave    = document.getElementById('modal-save');
+const modalCancel  = document.getElementById('modal-cancel');
+let activeCardEl   = null;
 
-    if (!panel.hidden) {
-      panel.hidden = true;
-      return;
-    }
+function openNotesModal(card) {
+  activeCardEl = card;
+  modalTitle.textContent   = card.dataset.cardTitle || '';
+  modalDrop.value          = card.dataset.drop || '';
+  modalTags.value          = card.dataset.tags || '';
+  modalNotes.value         = card.dataset.notes || '';
+  modalPriority.value      = card.dataset.priority || '';
+  notesModal.hidden        = false;
+  modalDrop.focus();
+}
 
-    panel.querySelector('[name=drop_reason]').value  = btn.dataset.drop || '';
-    panel.querySelector('[name=personal_tags]').value = btn.dataset.tags || '';
-    panel.querySelector('[name=notes]').value         = btn.dataset.notes || '';
-    panel.querySelector('[name=watch_next_priority]').value = btn.dataset.priority || '';
-    panel.hidden = false;
+function closeNotesModal() {
+  notesModal.hidden = true;
+  activeCardEl = null;
+}
+
+if (notesModal) {
+  document.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.closest('button, select, a, input, textarea, .star')) return;
+      openNotesModal(card);
+    });
   });
-});
 
-document.querySelectorAll('.notes-cancel').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.getElementById(`notes-panel-${btn.dataset.animeId}`).hidden = true;
+  notesModal.addEventListener('click', e => {
+    if (e.target === notesModal) closeNotesModal();
   });
-});
 
-document.querySelectorAll('.notes-save').forEach(btn => {
-  btn.addEventListener('click', async () => {
-    const animeId = btn.dataset.animeId;
-    const panel = document.getElementById(`notes-panel-${animeId}`);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !notesModal.hidden) closeNotesModal();
+  });
+
+  modalCancel?.addEventListener('click', closeNotesModal);
+
+  modalSave?.addEventListener('click', async () => {
+    if (!activeCardEl) return;
+    const animeId = activeCardEl.dataset.animeId;
     const payload = {
-      drop_reason:        panel.querySelector('[name=drop_reason]').value,
-      personal_tags:      panel.querySelector('[name=personal_tags]').value,
-      notes:              panel.querySelector('[name=notes]').value,
-      watch_next_priority: panel.querySelector('[name=watch_next_priority]').value,
+      drop_reason:         modalDrop.value,
+      personal_tags:       modalTags.value,
+      notes:               modalNotes.value,
+      watch_next_priority: modalPriority.value,
     };
 
-    btn.disabled = true;
-    btn.textContent = 'Saving…';
+    modalSave.disabled = true;
+    modalSave.textContent = 'Saving…';
     try {
       const resp = await fetch(`/api/anime/${animeId}/notes`, {
         method: 'POST',
@@ -231,24 +249,25 @@ document.querySelectorAll('.notes-save').forEach(btn => {
       });
       if (!resp.ok) throw new Error('request failed');
 
-      const toggle = document.querySelector(`.notes-toggle[data-anime-id="${animeId}"]`);
-      if (toggle) {
-        toggle.dataset.drop     = payload.drop_reason;
-        toggle.dataset.tags     = payload.personal_tags;
-        toggle.dataset.notes    = payload.notes;
-        toggle.dataset.priority = payload.watch_next_priority;
-        const hasContent = payload.drop_reason || payload.personal_tags || payload.notes;
-        toggle.textContent = hasContent ? '✏ Edit notes' : '+ Add notes';
-      }
-      panel.hidden = true;
+      activeCardEl.dataset.drop     = payload.drop_reason;
+      activeCardEl.dataset.tags     = payload.personal_tags;
+      activeCardEl.dataset.notes    = payload.notes;
+      activeCardEl.dataset.priority = payload.watch_next_priority;
+
+      const dropEl = activeCardEl.querySelector('.drop-note');
+      const notesEl = activeCardEl.querySelector('.notes-preview');
+      if (dropEl) dropEl.textContent = payload.drop_reason ? `↩ ${payload.drop_reason}` : '';
+      if (notesEl) notesEl.textContent = payload.notes || '';
+
+      closeNotesModal();
     } catch {
-      btn.textContent = 'Error — retry';
+      modalSave.textContent = 'Error — retry';
     } finally {
-      btn.disabled = false;
-      if (btn.textContent === 'Saving…') btn.textContent = 'Save';
+      modalSave.disabled = false;
+      if (modalSave.textContent === 'Saving…') modalSave.textContent = 'Save';
     }
   });
-});
+}
 
 // ── Mark watched (queue page) ─────────────────────────────────────────────────
 document.querySelectorAll('.btn-mark-watched').forEach(btn => {

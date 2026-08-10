@@ -36,11 +36,17 @@
 <div class="grid" id="library-grid">
   {% for e in entries %}
   <div class="card"
+       data-anime-id="{{ e.id }}"
        data-format="{{ e.format or '' }}"
        data-score="{{ e.score or 0 }}"
        data-title="{{ (e.title_english or e.title_romaji) | lower }}"
        data-progress="{{ e.progress or 0 }}"
-       data-updated="{{ e.anilist_updated_at.isoformat() if e.anilist_updated_at else '' }}">
+       data-updated="{{ e.anilist_updated_at.isoformat() if e.anilist_updated_at else '' }}"
+       data-drop="{{ e.drop_reason or '' }}"
+       data-tags="{{ (e.personal_tags or []) | join(', ') }}"
+       data-notes="{{ e.notes or '' }}"
+       data-priority="{{ e.watch_next_priority or '' }}"
+       data-card-title="{{ e.title_english or e.title_romaji }}">
 
     {% if e.cover_image_url %}
     <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
@@ -115,33 +121,6 @@
         <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ s.title() }}</option>
         {% endfor %}
       </select>
-
-      <button class="notes-toggle" data-anime-id="{{ e.id }}"
-              data-drop="{{ e.drop_reason or '' }}"
-              data-tags="{{ (e.personal_tags or []) | join(', ') }}"
-              data-notes="{{ e.notes or '' }}"
-              data-priority="{{ e.watch_next_priority or '' }}">
-        {% if e.notes or e.drop_reason or e.personal_tags %}✏ Edit notes{% else %}+ Add notes{% endif %}
-      </button>
-
-      <div class="notes-panel" id="notes-panel-{{ e.id }}" hidden>
-        <label class="notes-field-label">Drop reason
-          <input class="notes-field" name="drop_reason" type="text" placeholder="Why did you drop it?">
-        </label>
-        <label class="notes-field-label">Tags (comma-separated)
-          <input class="notes-field" name="personal_tags" type="text" placeholder="e.g. isekai, rewatch">
-        </label>
-        <label class="notes-field-label">Notes
-          <textarea class="notes-field" name="notes" rows="2" placeholder="Freeform notes…"></textarea>
-        </label>
-        <label class="notes-field-label">Queue priority
-          <input class="notes-field" name="watch_next_priority" type="number" min="1" placeholder="1 = top">
-        </label>
-        <div class="notes-panel-actions">
-          <button class="notes-save" data-anime-id="{{ e.id }}">Save</button>
-          <button class="notes-cancel" data-anime-id="{{ e.id }}">Cancel</button>
-        </div>
-      </div>
     </div>
   </div>
   {% endfor %}
@@ -150,4 +129,27 @@
 <p class="empty">No entries in this list.</p>
 {% endif %}
 <p class="empty" id="no-filter-results" style="display:none">No matches.</p>
+
+<div id="notes-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <h3 class="modal-title" id="modal-title"></h3>
+    <label class="notes-field-label">Drop reason
+      <input class="notes-field" id="modal-drop" type="text" placeholder="Why did you drop it?">
+    </label>
+    <label class="notes-field-label">Tags (comma-separated)
+      <input class="notes-field" id="modal-tags" type="text" placeholder="e.g. isekai, rewatch">
+    </label>
+    <label class="notes-field-label">Notes
+      <textarea class="notes-field" id="modal-notes" rows="3" placeholder="Freeform notes…"></textarea>
+    </label>
+    <label class="notes-field-label">Queue priority
+      <input class="notes-field" id="modal-priority" type="number" min="1" placeholder="1 = top of queue">
+    </label>
+    <div class="modal-actions">
+      <button id="modal-save">Save</button>
+      <button id="modal-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
