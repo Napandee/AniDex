@@ -62,39 +62,42 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
   const valEl = stepper.querySelector('.prog-val');
   const bar = stepper.closest('.card')?.querySelector('.progress-bar');
   let current = parseInt(valEl.textContent) || 0;
-  let saving = false;
+  let committed = current;
+  let saveTimer = null;
+
+  function updateBar(val) {
+    if (bar && maxEp !== Infinity) {
+      bar.style.width = Math.min((val / maxEp) * 100, 100) + '%';
+    }
+  }
+
+  async function save() {
+    const target = current;
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/progress`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({progress: target}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+      committed = target;
+    } catch {
+      current = committed;
+      valEl.textContent = current;
+      updateBar(current);
+    }
+  }
 
   stepper.querySelectorAll('.prog-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      if (saving) return;
+    btn.addEventListener('click', () => {
       const delta = parseInt(btn.dataset.delta);
       const next = Math.max(0, Math.min(current + delta, maxEp));
       if (next === current) return;
-
-      const prev = current;
       current = next;
       valEl.textContent = current;
-      if (bar && maxEp !== Infinity) {
-        bar.style.width = Math.min((current / maxEp) * 100, 100) + '%';
-      }
-
-      saving = true;
-      try {
-        const resp = await fetch(`/api/anime/${animeId}/progress`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({progress: current}),
-        });
-        if (!resp.ok) throw new Error('request failed');
-      } catch {
-        current = prev;
-        valEl.textContent = prev;
-        if (bar && maxEp !== Infinity) {
-          bar.style.width = Math.min((prev / maxEp) * 100, 100) + '%';
-        }
-      } finally {
-        saving = false;
-      }
+      updateBar(current);
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(save, 600);
     });
   });
 });
