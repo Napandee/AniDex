@@ -39,17 +39,5 @@ jobs:
           push: true
           tags: ghcr.io/napandee/anime-tracker:latest
 
-      - name: Trigger Unraid deploy via n8n
-        env:
-          SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
-          CF_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-          CF_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-        run: |
-          PAYLOAD='{"action":"deploy","ref":"refs/heads/main"}'
-          SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/.* //')
-          curl -f -X POST https://n8n.***REDACTED-DOMAIN***/webhook/anime-tracker-deploy \
-            -H "Content-Type: application/json" \
-            -H "X-Hub-Signature-256: sha256=$SIG" \
-            -H "CF-Access-Client-Id: $CF_CLIENT_ID" \
-            -H "CF-Access-Client-Secret: $CF_CLIENT_SECRET" \
-            -d "$PAYLOAD"
+      # Deploy is triggered separately via GitHub push webhook → n8n → deploy.sh
+      # n8n waits 5 minutes after the push before pulling from GHCR to ensure the build is complete
