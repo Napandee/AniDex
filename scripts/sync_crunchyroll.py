@@ -1,118 +1,124 @@
 #!/usr/bin/env python3
 """
-Crunchyroll → AniList sync (safe, additive-only).
+Crunchyroll → AniList sync (safe, state-aware).
 
-Fetches watch history from Crunchyroll's beta API using the etp_rt cookie,
-then updates AniList progress — but only if Crunchyroll is ahead, and never
-for entries the user has marked COMPLETED or DROPPED.
+Reads the history.json produced by crunchyexporter-cli fetch, compares against
+the last-known state in Postgres, then updates AniList with the correct logic:
+
+  CURRENT / PAUSED   + CR ahead          → advance progress
+  DROPPED            + CR ahead          → advance progress + set CURRENT
+  COMPLETED          + CR ep < total     → set REPEATING, advance progress (rewatch started)
+  REPEATING          + CR ahead          → advance progress
+  REPEATING          + CR >= total eps   → set COMPLETED, increment repeat counter
+
+Never goes backwards on progress. Never touches score or notes.
 
 Exit 0 = success, Exit 1 = fatal error.
 """
 
-import base64
+import json
 import os
 import sys
 import time
-import uuid
 
 import httpx
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv()
 
-ETP_RT = os.environ["CRUNCHYROLL_ETP_RT"]
+DATABASE_URL = os.environ["DATABASE_URL"]
 ANILIST_TOKEN = os.environ["ANILIST_TOKEN"]
 ANILIST_USERNAME = os.environ["ANILIST_USERNAME"]
-
-CR_API = "https://beta-api.crunchyroll.com"
-CR_CLIENT_ID = "noaihdevm_6iyg0a8l0q"  # public web client
+HISTORY_PATH = os.environ.get("HISTORY_PATH", "/crunchyexporter/data/history.json")
 ANILIST_API = "https://graphql.anilist.co"
-PAGE_SIZE = 100
 
 
 def log(msg):
     print(f"[crunchysync] {msg}", flush=True)
 
 
-# ── Crunchyroll ──────────────────────────────────────────────────────────────
+# ── History parsing ───────────────────────────────────────────────────────────
 
-def cr_token() -> tuple[str, str]:
-    """Exchange etp_rt for a Bearer token and account_id."""
-    basic = base64.b64encode(f"{CR_CLIENT_ID}:".encode()).decode()
-    resp = httpx.post(
-        f"{CR_API}/auth/v1/token",
-        headers={"Authorization": f"Basic {basic}"},
-        cookies={"etp_rt": ETP_RT},
-        data={
-            "grant_type": "etp_rt_cookie",
-            "scope": "offline_access",
-            "device_id": str(uuid.uuid4()),
-            "device_name": "Chrome on Windows",
-            "device_type": "com.crunchyroll.desktop.windows",
-        },
-        timeout=20,
-    )
-    if resp.status_code == 401:
-        log("ERROR: etp_rt cookie rejected — it has expired. Extract a fresh "
-            "cookie from your browser and update CRUNCHYROLL_ETP_RT.")
-        sys.exit(1)
-    resp.raise_for_status()
-    token = resp.json()["access_token"]
+def load_history(path: str) -> dict[str, int]:
+    """Parse history.json → {series_title: highest_episode_watched}."""
+    with open(path) as f:
+        data = json.load(f)
 
-    me = httpx.get(
-        f"{CR_API}/accounts/v1/me",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10,
-    )
-    me.raise_for_status()
-    account_id = me.json()["account_id"]
-    return token, account_id
+    # crunchyexporter-cli stores episodes as a dict keyed by episode_id,
+    # optionally wrapped under an "episodes" key. Handle both.
+    if isinstance(data, dict) and "episodes" in data:
+        raw = data["episodes"]
+        items = raw.values() if isinstance(raw, dict) else raw
+    elif isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = data.values()
+    else:
+        return {}
 
-
-def fetch_history(token: str, account_id: str) -> list[dict]:
-    """Fetch full watch history, paginated."""
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-    all_items: list[dict] = []
-    page = 1
-    while True:
-        resp = httpx.get(
-            f"{CR_API}/content/v2/{account_id}/watch-history",
-            headers=headers,
-            params={"page_size": PAGE_SIZE, "page": page, "locale": "en-US"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json().get("data") or []
-        all_items.extend(data)
-        if len(data) < PAGE_SIZE:
-            break
-        page += 1
-    return all_items
-
-
-def parse_history(raw: list[dict]) -> dict[str, int]:
-    """Return {series_title: highest_episode_watched}."""
     best: dict[str, int] = {}
-    for item in raw:
-        meta = (item.get("panel") or {}).get("episode_metadata") or {}
-        title = (meta.get("series_title") or "").strip()
+    for item in items:
+        title = (item.get("series_title") or "").strip()
         if not title:
             continue
         try:
-            ep = int(float(meta.get("episode_number") or meta.get("sequence_number") or 0))
+            ep = int(float(item.get("episode_number") or 0))
         except (ValueError, TypeError):
             ep = 0
         if ep == 0:
             continue
         if title not in best or ep > best[title]:
             best[title] = ep
+
     return best
 
 
-# ── AniList ──────────────────────────────────────────────────────────────────
+# ── Postgres ──────────────────────────────────────────────────────────────────
+
+def db_connect():
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.autocommit = False
+    return conn
+
+
+def ensure_table(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS cr_sync_state (
+                anilist_id            INTEGER PRIMARY KEY,
+                series_title          TEXT,
+                last_seen_episode     INTEGER NOT NULL DEFAULT 0,
+                rewatch_in_progress   BOOLEAN NOT NULL DEFAULT FALSE,
+                last_synced_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+    conn.commit()
+
+
+def load_cr_state(conn) -> dict[int, dict]:
+    """Return {anilist_id: {last_seen_episode, rewatch_in_progress}}."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT anilist_id, last_seen_episode, rewatch_in_progress FROM cr_sync_state")
+        return {row["anilist_id"]: dict(row) for row in cur.fetchall()}
+
+
+def save_cr_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO cr_sync_state (anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
+            VALUES (%s, %s, %s, %s, now())
+            ON CONFLICT (anilist_id) DO UPDATE SET
+                series_title        = EXCLUDED.series_title,
+                last_seen_episode   = EXCLUDED.last_seen_episode,
+                rewatch_in_progress = EXCLUDED.rewatch_in_progress,
+                last_synced_at      = now()
+        """, (anilist_id, title, last_ep, rewatch))
+    conn.commit()
+
+
+# ── AniList ───────────────────────────────────────────────────────────────────
 
 def gql(query: str, variables: dict | None = None, token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -131,6 +137,26 @@ def gql(query: str, variables: dict | None = None, token: str | None = None) -> 
     return data["data"]
 
 
+ALL_LISTS_QUERY = """
+query ($userName: String) {
+  MediaListCollection(userName: $userName, type: ANIME) {
+    lists {
+      entries {
+        mediaId
+        progress
+        status
+        repeat
+        media {
+          id
+          episodes
+          title { romaji english }
+        }
+      }
+    }
+  }
+}
+"""
+
 SEARCH_QUERY = """
 query ($search: String) {
   Media(search: $search, type: ANIME) {
@@ -140,26 +166,35 @@ query ($search: String) {
 }
 """
 
-PROGRESS_QUERY = """
-query ($mediaId: Int, $userName: String) {
-  MediaList(mediaId: $mediaId, userName: $userName) {
-    progress
-    status
-  }
-}
-"""
-
 UPDATE_MUTATION = """
-mutation ($mediaId: Int, $progress: Int) {
-  SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
-    id
-    progress
+mutation ($mediaId: Int!, $progress: Int, $status: MediaListStatus, $repeat: Int) {
+  SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat) {
+    id progress status repeat
   }
 }
 """
 
-# Statuses we must never touch — user has made a deliberate decision
-TERMINAL_STATUSES = {"COMPLETED", "DROPPED"}
+
+def fetch_user_list() -> dict[int, dict]:
+    """Fetch all the user's AniList entries in one call."""
+    data = gql(ALL_LISTS_QUERY, {"userName": ANILIST_USERNAME})
+    entries: dict[int, dict] = {}
+    for lst in data["MediaListCollection"]["lists"]:
+        for entry in lst["entries"]:
+            mid = entry["mediaId"]
+            entries[mid] = {
+                "status": entry["status"],
+                "progress": entry["progress"] or 0,
+                "repeat": entry["repeat"] or 0,
+                "total_episodes": (entry["media"] or {}).get("episodes"),
+                "title": (
+                    ((entry["media"] or {}).get("title") or {}).get("english")
+                    or ((entry["media"] or {}).get("title") or {}).get("romaji")
+                    or ""
+                ),
+            }
+    return entries
+
 
 _search_cache: dict[str, int | None] = {}
 
@@ -170,77 +205,152 @@ def find_anilist_id(title: str) -> int | None:
     try:
         data = gql(SEARCH_QUERY, {"search": title})
         mid = data["Media"]["id"]
-        en = data["Media"]["title"]["english"] or data["Media"]["title"]["romaji"]
-        log(f"  Matched '{title}' → AniList #{mid} ({en})")
         _search_cache[title] = mid
         return mid
-    except Exception as e:
-        log(f"  No AniList match for '{title}': {e}")
+    except Exception:
         _search_cache[title] = None
         return None
 
 
-def get_list_entry(media_id: int) -> tuple[int | None, str | None]:
-    try:
-        data = gql(PROGRESS_QUERY, {"mediaId": media_id, "userName": ANILIST_USERNAME})
-        entry = data.get("MediaList")
-        if not entry:
-            return None, None
-        return entry["progress"], entry["status"]
-    except Exception:
-        return None, None
+def anilist_update(media_id: int, progress: int | None = None,
+                   status: str | None = None, repeat: int | None = None):
+    variables: dict = {"mediaId": media_id}
+    if progress is not None:
+        variables["progress"] = progress
+    if status is not None:
+        variables["status"] = status
+    if repeat is not None:
+        variables["repeat"] = repeat
+    gql(UPDATE_MUTATION, variables, token=ANILIST_TOKEN)
+    time.sleep(0.7)  # stay under AniList's 90 req/min
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ── Sync logic ────────────────────────────────────────────────────────────────
+
+def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
+            conn) -> str:
+    """
+    Apply update logic for one series. Returns a short description of action taken.
+    cr_state may be None on first sync for this series.
+    """
+    status = entry["status"]
+    al_ep = entry["progress"]
+    repeat = entry["repeat"]
+    total = entry["total_episodes"]
+    al_id = None  # resolved by caller; passed via entry for convenience
+    anilist_id = entry["anilist_id"]
+
+    last_ep = cr_state["last_seen_episode"] if cr_state else al_ep
+    rewatch_active = cr_state["rewatch_in_progress"] if cr_state else False
+
+    # ── First-time seeing a COMPLETED series in CR history ────────────────────
+    # Without prior state we can't safely distinguish "rewatch" from "first sync".
+    # Record state and do nothing — next sync will have a baseline.
+    if cr_state is None and status == "COMPLETED":
+        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        return "first-sync (COMPLETED) — state recorded, no change"
+
+    # ── No progress since last sync ───────────────────────────────────────────
+    if cr_ep <= last_ep and not rewatch_active:
+        if cr_ep > al_ep:
+            # AniList is behind but we already processed this — shouldn't happen often
+            pass
+        else:
+            save_cr_state(conn, anilist_id, title, last_ep, rewatch_active)
+            return f"no change (CR={cr_ep}, last_seen={last_ep})"
+
+    # ── Rewatch: COMPLETED series but CR episode went below last-seen ─────────
+    if status == "COMPLETED" and cr_ep < (last_ep or total or 999) and not rewatch_active:
+        anilist_update(anilist_id, progress=cr_ep, status="REPEATING")
+        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        return f"rewatch started → REPEATING ep {cr_ep}"
+
+    # ── Rewatch completion: REPEATING and reached total episodes ─────────────
+    if rewatch_active and total and cr_ep >= total:
+        anilist_update(anilist_id, progress=cr_ep, status="COMPLETED", repeat=repeat + 1)
+        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
+
+    # ── Progress advance for active rewatch ───────────────────────────────────
+    if rewatch_active and cr_ep > al_ep:
+        anilist_update(anilist_id, progress=cr_ep)
+        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        return f"rewatch progress {al_ep} → {cr_ep}"
+
+    # ── DROPPED: user picked it back up ──────────────────────────────────────
+    if status == "DROPPED" and cr_ep > last_ep:
+        anilist_update(anilist_id, progress=cr_ep, status="CURRENT")
+        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        return f"resumed after DROP → CURRENT ep {cr_ep}"
+
+    # ── Normal progress advance (CURRENT, PAUSED) ─────────────────────────────
+    if cr_ep > al_ep:
+        anilist_update(anilist_id, progress=cr_ep)
+        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        return f"progress {al_ep} → {cr_ep}"
+
+    # Nothing to do
+    save_cr_state(conn, anilist_id, title, max(cr_ep, last_ep), rewatch_active)
+    return f"AniList ({al_ep}) already at or ahead of CR ({cr_ep})"
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     log("Starting Crunchyroll → AniList sync")
 
-    log("Authenticating with Crunchyroll...")
-    token, account_id = cr_token()
-    log(f"Authenticated — account {account_id}")
+    if not os.path.exists(HISTORY_PATH):
+        log(f"ERROR: history file not found at {HISTORY_PATH}")
+        sys.exit(1)
 
-    log("Fetching watch history...")
-    raw = fetch_history(token, account_id)
-    log(f"Fetched {len(raw)} history entries")
-
-    history = parse_history(raw)
-    log(f"Parsed {len(history)} unique series")
+    log(f"Loading history from {HISTORY_PATH}...")
+    history = load_history(HISTORY_PATH)
+    log(f"Parsed {len(history)} unique series from CR history")
 
     if not history:
-        log("No watchable history found — nothing to do")
+        log("No history found — nothing to do")
         sys.exit(0)
 
-    updated = skipped = protected = 0
+    log("Fetching AniList library (one call)...")
+    user_list = fetch_user_list()
+    log(f"Loaded {len(user_list)} AniList entries")
 
-    for title, cr_ep in history.items():
+    conn = db_connect()
+    ensure_table(conn)
+    cr_state_map = load_cr_state(conn)
+    log(f"Loaded CR sync state for {len(cr_state_map)} series")
+
+    updated = skipped = no_change = 0
+
+    for title, cr_ep in sorted(history.items()):
         media_id = find_anilist_id(title)
         if not media_id:
+            log(f"  ✗ No AniList match: '{title}'")
             skipped += 1
             continue
 
-        current_ep, status = get_list_entry(media_id)
-
-        if current_ep is None:
-            log(f"  '{title}' not in your AniList — skipping")
+        if media_id not in user_list:
+            log(f"  ✗ Not in your AniList: '{title}'")
             skipped += 1
             continue
 
-        if status in TERMINAL_STATUSES:
-            log(f"  '{title}' is {status} on AniList — leaving untouched")
-            protected += 1
-            continue
+        entry = dict(user_list[media_id])
+        entry["anilist_id"] = media_id
+        cr_state = cr_state_map.get(media_id)
 
-        if cr_ep > (current_ep or 0):
-            log(f"  Updating '{title}': ep {current_ep} → {cr_ep}")
-            gql(UPDATE_MUTATION, {"mediaId": media_id, "progress": cr_ep},
-                token=ANILIST_TOKEN)
-            updated += 1
-            time.sleep(0.7)  # stay under AniList's 90 req/min limit
-        else:
-            log(f"  '{title}': AniList ({current_ep}) already at or ahead of Crunchyroll ({cr_ep})")
+        try:
+            result = process(title, cr_ep, entry, cr_state, conn)
+            log(f"  '{title}': {result}")
+            if "→" in result:
+                updated += 1
+            else:
+                no_change += 1
+        except Exception as e:
+            log(f"  ERROR processing '{title}': {e}")
+            skipped += 1
 
-    log(f"Done — {updated} updated, {protected} protected (COMPLETED/DROPPED), {skipped} skipped")
+    conn.close()
+    log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched")
 
 
 if __name__ == "__main__":

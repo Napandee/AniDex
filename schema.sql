@@ -89,6 +89,21 @@ CREATE TABLE recommendation_scores (
 );
 
 -- =========================================================================
+-- CRUNCHYROLL SYNC STATE (tracks last-known CR progress per series)
+-- Owned by sync_crunchyroll.py — never written to by the web app.
+-- Keeps the per-series baseline so the sync can detect rewinds (rewatches)
+-- and avoid acting on data that hasn't changed since last run.
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS cr_sync_state (
+    anilist_id            INTEGER PRIMARY KEY,
+    series_title          TEXT,                              -- for human readability
+    last_seen_episode     INTEGER NOT NULL DEFAULT 0,
+    rewatch_in_progress   BOOLEAN NOT NULL DEFAULT FALSE,
+    last_synced_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- =========================================================================
 -- APP SETTINGS (single-user preferences — key/value for extensibility)
 -- =========================================================================
 
