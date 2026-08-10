@@ -87,9 +87,10 @@ Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to An
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline itself (webhook, HMAC validation, restart
   script) — this is shared plumbing with other services.
-- Never use `docker-compose` or `docker compose` — deploy as a single container via
-  `Dockerfile` + `docker run`, matching Unraid's native Docker UI. No `compose.yml` or
-  `docker-compose.yml` should exist in this repo.
+- The deploy pipeline uses `docker build` + `docker run` (no Compose) — do not replace it
+  with `docker compose up`. Compose files in `compose/` exist solely for Unraid's
+  Compose Manager Plus plugin to track the containers; they are not the deployment
+  mechanism and must never be used as a substitute for `deploy.sh`.
 
 ## Decisions Made
 

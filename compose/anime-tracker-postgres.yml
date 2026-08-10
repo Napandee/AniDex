@@ -1,0 +1,13 @@
+services:
+  anime-tracker-postgres:
+    image: postgres:16-alpine
+    container_name: anime-tracker-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: anime_tracker
+      POSTGRES_USER: anime_tracker
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ***REDACTED-PATH***/anime-tracker/postgres:/var/lib/postgresql/data

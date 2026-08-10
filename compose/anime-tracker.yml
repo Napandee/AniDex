@@ -1,0 +1,9 @@
+services:
+  anime-tracker:
+    image: anime-tracker
+    container_name: anime-tracker
+    restart: unless-stopped
+    ports:
+      - "8889:8888"
+    env_file:
+      - ***REDACTED-PATH***/anime-tracker/.env
