@@ -35,7 +35,7 @@ mutation ($mediaId: Int!, $status: MediaListStatus!) {
 VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
 STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
 
-GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", "http://***REDACTED-HOST***:3000")
+GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", "")
 
 STREAMING_SITES = {
     "Crunchyroll", "Netflix", "Hulu", "Amazon Prime Video", "HIDIVE",
