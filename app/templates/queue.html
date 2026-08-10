@@ -86,7 +86,12 @@
       {% endif %}
     </div>
 
-    <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="queue-notes-link" title="Edit notes / set priority">✏</a>
+    <div class="queue-actions">
+      <button class="btn-mark-watched"
+              data-anime-id="{{ e.id }}"
+              data-episodes="{{ e.episodes or '' }}">✓ Watched</button>
+      <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="queue-notes-link" title="Edit notes / set priority">✏</a>
+    </div>
   </li>
   {% endfor %}
 </ol>

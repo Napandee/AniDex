@@ -64,6 +64,7 @@
 
       <div class="rec-actions">
         <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist">AniList ↗</a>
+        <button class="btn-add-planning" data-anime-id="{{ e.id }}">+ Planning</button>
         <form method="post" action="/recommendations/{{ e.id }}/dismiss">
           <button type="submit" class="btn-dismiss">Dismiss</button>
         </form>

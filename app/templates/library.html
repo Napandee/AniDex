@@ -10,14 +10,38 @@
   {% endfor %}
 </div>
 
-<div class="library-search-wrap">
+<div class="library-toolbar">
   <input id="library-search" class="library-search" type="search" placeholder="Filter by title, genre or tag…" autocomplete="off">
+
+  <div class="toolbar-right">
+    <div class="filter-group">
+      <button class="filter-btn active" data-format="">All</button>
+      <button class="filter-btn" data-format="TV">TV</button>
+      <button class="filter-btn" data-format="MOVIE">Movie</button>
+      <button class="filter-btn" data-format="OVA">OVA</button>
+      <button class="filter-btn" data-format="ONA">ONA</button>
+    </div>
+
+    <div class="sort-group">
+      <span class="sort-label">Sort</span>
+      <button class="sort-btn active" data-sort="score">Score</button>
+      <button class="sort-btn" data-sort="title">Title</button>
+      <button class="sort-btn" data-sort="progress">Progress</button>
+      <button class="sort-btn" data-sort="updated">Updated</button>
+    </div>
+  </div>
 </div>
 
 {% if entries %}
 <div class="grid" id="library-grid">
   {% for e in entries %}
-  <div class="card">
+  <div class="card"
+       data-format="{{ e.format or '' }}"
+       data-score="{{ e.score or 0 }}"
+       data-title="{{ (e.title_english or e.title_romaji) | lower }}"
+       data-progress="{{ e.progress or 0 }}"
+       data-updated="{{ e.anilist_updated_at.isoformat() if e.anilist_updated_at else '' }}">
+
     {% if e.cover_image_url %}
     <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
     {% endif %}
@@ -92,9 +116,32 @@
         {% endfor %}
       </select>
 
-      <a href="/anime/{{ e.id }}/notes?back={{ active_status }}" class="notes-link">
+      <button class="notes-toggle" data-anime-id="{{ e.id }}"
+              data-drop="{{ e.drop_reason or '' }}"
+              data-tags="{{ (e.personal_tags or []) | join(', ') }}"
+              data-notes="{{ e.notes or '' }}"
+              data-priority="{{ e.watch_next_priority or '' }}">
         {% if e.notes or e.drop_reason or e.personal_tags %}✏ Edit notes{% else %}+ Add notes{% endif %}
-      </a>
+      </button>
+
+      <div class="notes-panel" id="notes-panel-{{ e.id }}" hidden>
+        <label class="notes-field-label">Drop reason
+          <input class="notes-field" name="drop_reason" type="text" placeholder="Why did you drop it?">
+        </label>
+        <label class="notes-field-label">Tags (comma-separated)
+          <input class="notes-field" name="personal_tags" type="text" placeholder="e.g. isekai, rewatch">
+        </label>
+        <label class="notes-field-label">Notes
+          <textarea class="notes-field" name="notes" rows="2" placeholder="Freeform notes…"></textarea>
+        </label>
+        <label class="notes-field-label">Queue priority
+          <input class="notes-field" name="watch_next_priority" type="number" min="1" placeholder="1 = top">
+        </label>
+        <div class="notes-panel-actions">
+          <button class="notes-save" data-anime-id="{{ e.id }}">Save</button>
+          <button class="notes-cancel" data-anime-id="{{ e.id }}">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
   {% endfor %}

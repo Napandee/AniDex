@@ -64,11 +64,26 @@ main {
 .tab:hover { background: #252525; color: #ddd; }
 .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
 
-.library-search-wrap { margin-bottom: 1.25rem; }
+.library-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
 .library-search {
   width: 100%;
-  max-width: 360px;
-  padding: 0.5rem 0.875rem;
+  max-width: 300px;
+  padding: 0.45rem 0.875rem;
   background: #1a1a1a;
   border: 1px solid #2a2a2a;
   border-radius: 8px;
@@ -79,6 +94,31 @@ main {
 }
 .library-search:focus { border-color: #2563eb; }
 .library-search::placeholder { color: #555; }
+
+.filter-group, .sort-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sort-label {
+  font-size: 0.75rem;
+  color: #555;
+  margin-right: 0.1rem;
+}
+
+.filter-btn, .sort-btn {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.55rem;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.filter-btn:hover, .sort-btn:hover { background: #252525; color: #ddd; }
+.filter-btn.active, .sort-btn.active { background: #1e3a5f; border-color: #2563eb; color: #93c5fd; }
 
 .grid {
   display: grid;
@@ -617,3 +657,117 @@ main {
   transition: color 0.15s, border-color 0.15s;
 }
 .btn-dismiss:hover { color: #ef4444; border-color: #ef4444; }
+
+/* ── Queue actions ──────────────────────────────────────────────────────────── */
+.queue-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.btn-mark-watched {
+  background: #052e16;
+  border: 1px solid #166534;
+  border-radius: 6px;
+  color: #4ade80;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.6rem;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-mark-watched:hover { background: #14532d; color: #86efac; }
+.btn-mark-watched:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Add to planning (recs) ─────────────────────────────────────────────────── */
+.btn-add-planning {
+  background: #0f172a;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  color: #60a5fa;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.6rem;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-add-planning:hover { background: #1e3a5f; color: #93c5fd; }
+.btn-add-planning:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Inline notes panel ─────────────────────────────────────────────────────── */
+.notes-toggle {
+  background: none;
+  border: none;
+  color: #4a90d9;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+  text-align: left;
+  transition: color 0.15s;
+}
+.notes-toggle:hover { color: #7ab8f5; }
+
+.notes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+  padding: 0.75rem;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+}
+
+.notes-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.7rem;
+  color: #777;
+}
+
+.notes-field {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.notes-field:focus { border-color: #2563eb; }
+
+.notes-panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.1rem;
+}
+
+.notes-save {
+  background: #1e3a5f;
+  border: 1px solid #2563eb;
+  border-radius: 5px;
+  color: #93c5fd;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  transition: background 0.15s;
+}
+.notes-save:hover { background: #2563eb; color: #fff; }
+.notes-save:disabled { opacity: 0.5; cursor: default; }
+
+.notes-cancel {
+  background: none;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  color: #666;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  transition: color 0.15s;
+}
+.notes-cancel:hover { color: #aaa; }

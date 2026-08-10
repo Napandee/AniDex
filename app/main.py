@@ -152,6 +152,35 @@ def save_notes(
     return RedirectResponse(url=f"/?status={back}", status_code=303)
 
 
+@app.post("/api/anime/{anime_id}/notes")
+async def save_notes_api(anime_id: int, request: Request):
+    body = await request.json()
+    drop_reason_val = (body.get("drop_reason") or "").strip() or None
+    notes_val = (body.get("notes") or "").strip() or None
+    tags_raw = body.get("personal_tags") or ""
+    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    priority_raw = body.get("watch_next_priority")
+    try:
+        priority = int(priority_raw) if priority_raw not in (None, "") else None
+    except (ValueError, TypeError):
+        priority = None
+
+    db.execute(
+        """
+        INSERT INTO personal_notes (anime_id, drop_reason, personal_tags, notes, watch_next_priority)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (anime_id) DO UPDATE SET
+            drop_reason = EXCLUDED.drop_reason,
+            personal_tags = EXCLUDED.personal_tags,
+            notes = EXCLUDED.notes,
+            watch_next_priority = EXCLUDED.watch_next_priority,
+            updated_at = now()
+        """,
+        (anime_id, drop_reason_val, json.dumps(tags), notes_val, priority),
+    )
+    return JSONResponse({"ok": True})
+
+
 @app.get("/upcoming", response_class=HTMLResponse)
 def upcoming(request: Request):
     tz_name = config.get("timezone")
@@ -448,7 +477,14 @@ async def set_status(anime_id: int, request: Request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
 
-    db.execute("UPDATE library_entries SET status = %s WHERE anime_id = %s", (status, anime_id))
+    db.execute(
+        """
+        INSERT INTO library_entries (anime_id, status)
+        VALUES (%s, %s)
+        ON CONFLICT (anime_id) DO UPDATE SET status = EXCLUDED.status
+        """,
+        (anime_id, status),
+    )
     return JSONResponse({"ok": True, "status": status})
 
 
