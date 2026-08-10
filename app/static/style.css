@@ -120,6 +120,7 @@ main {
 
 .progress { color: #6ee7b7; }
 .format { color: #94a3b8; }
+.avg-score { color: #64748b; font-size: 0.75rem; }
 
 /* ── Star rating ─────────────────────────────────────────────────────────── */
 .star-rating {

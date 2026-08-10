@@ -35,6 +35,9 @@
         {% if e.format %}
         <span class="format">{{ e.format }}</span>
         {% endif %}
+        {% if e.average_score %}
+        <span class="avg-score" title="AniList average">{{ e.average_score }}%</span>
+        {% endif %}
       </div>
 
       {% if e.genres %}
