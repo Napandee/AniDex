@@ -166,6 +166,23 @@ document.querySelectorAll('.status-select').forEach(select => {
     select.dataset.current = newStatus;
 
     try {
+      if (newStatus === 'COMPLETED') {
+        const stepper = card?.querySelector('.progress-stepper');
+        const episodes = stepper?.dataset.episodes ? parseInt(stepper.dataset.episodes) : null;
+        if (episodes) {
+          const r1 = await fetch(`/api/anime/${select.dataset.animeId}/progress`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({progress: episodes}),
+          });
+          if (!r1.ok) throw new Error('progress failed');
+          const valEl = stepper.querySelector('.prog-val');
+          if (valEl) valEl.textContent = episodes;
+          const bar = card?.querySelector('.progress-bar');
+          if (bar) bar.style.width = '100%';
+        }
+      }
+
       const resp = await fetch(`/api/anime/${select.dataset.animeId}/status`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
