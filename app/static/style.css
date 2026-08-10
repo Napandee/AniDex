@@ -898,3 +898,24 @@ main {
 }
 .btn-mark-seen:hover { background: #134e4a; color: #99f6e4; }
 .btn-mark-seen:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Rewatch badge ───────────────────────────────────────────────────────────── */
+.rewatch-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  background: #1a1033;
+  border: 1px solid #4c1d95;
+  border-radius: 999px;
+  color: #a78bfa;
+}
+
+/* ── AniList icon link ───────────────────────────────────────────────────────── */
+.btn-anilist-sm {
+  color: #4a5568;
+  font-size: 0.75rem;
+  text-decoration: none;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.btn-anilist-sm:hover { color: #818cf8; }

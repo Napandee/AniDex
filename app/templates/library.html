@@ -91,10 +91,13 @@
       </div>
       {% endif %}
 
-      {% if e.personal_tags or e.is_stale %}
+      {% if e.personal_tags or e.is_stale or e.repeat_count %}
       <div class="genres">
         {% if e.is_stale %}
         <span class="stale-tag">Stale</span>
+        {% endif %}
+        {% if e.repeat_count %}
+        <span class="rewatch-badge" title="Rewatched {{ e.repeat_count }} time{{ 's' if e.repeat_count > 1 else '' }}">↺ {{ e.repeat_count }}×</span>
         {% endif %}
         {% for t in e.personal_tags or [] %}
         <span class="personal-tag">{{ t }}</span>
@@ -125,6 +128,7 @@
         {% if e.status == 'WATCHING' %}
         <button class="btn-drop" data-anime-id="{{ e.id }}">Drop</button>
         {% endif %}
+        <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
       </div>
     </div>
   </div>

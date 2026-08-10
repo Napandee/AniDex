@@ -42,6 +42,10 @@
           <span class="badge-priority">#{{ e.watch_next_priority }}</span>
           {% endif %}
           <span class="badge-status badge-{{ e.status | lower }}">{{ e.status.title() }}</span>
+          {% if e.repeat_count %}
+          <span class="rewatch-badge" title="Rewatched {{ e.repeat_count }} time{{ 's' if e.repeat_count > 1 else '' }}">↺ {{ e.repeat_count }}×</span>
+          {% endif %}
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
         </div>
       </div>
 
