@@ -1479,6 +1479,54 @@ main {
 .add-result-btn--in-lib { border-color: #333; color: #555; }
 .add-result-btn--added { border-color: #16a34a; color: #4ade80; cursor: default; }
 
+.add-result-item--expanded { flex-wrap: wrap; }
+
+.add-rate-form {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0 0.25rem;
+  flex-wrap: wrap;
+  order: 10;
+}
+
+.add-rate-status {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 5px;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.add-rate-stars { display: flex; gap: 0.15rem; cursor: pointer; }
+
+.add-rate-star {
+  color: #444;
+  font-size: 1.1rem;
+  transition: color 0.1s;
+  user-select: none;
+}
+.add-rate-star.filled { color: #f59e0b; }
+
+.add-rate-save {
+  padding: 0.3rem 0.75rem;
+  border-radius: 5px;
+  border: 1px solid #6366f1;
+  background: #6366f1;
+  color: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.add-rate-save:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.add-rate-done {
+  font-size: 0.8rem;
+  color: #4ade80;
+  padding: 0.3rem 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    RESPONSIVE — mobile first fixes
    Primary breakpoint: 768px (tablet/phone)

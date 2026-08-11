@@ -403,17 +403,72 @@
         statusEl.textContent = data.error || 'Add failed.';
         return;
       }
-      btn.textContent = 'Added ✓';
-      btn.classList.add('add-result-btn--added');
+      // Transform the row into a status + rating form
       const row = btn.closest('.add-result-item');
-      const titleEl = row.querySelector('.add-result-title');
-      if (titleEl && !titleEl.querySelector('.add-result-lib-badge')) {
-        titleEl.insertAdjacentHTML('beforeend', '<span class="add-result-lib-badge">planning</span>');
-      }
+      showAddedForm(row, animeId);
     } catch {
       btn.textContent = '+ Add';
       btn.disabled = false;
     }
+  }
+
+  function showAddedForm(row, animeId) {
+    const statuses = ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'];
+    const statusOpts = statuses.map(s =>
+      `<option value="${s}"${s === 'PLANNING' ? ' selected' : ''}>${s[0] + s.slice(1).toLowerCase()}</option>`
+    ).join('');
+    row.querySelector('.add-result-btn')?.remove();
+    row.insertAdjacentHTML('afterbegin', `
+      <div class="add-rate-form" data-id="${animeId}">
+        <select class="add-rate-status">${statusOpts}</select>
+        <div class="add-rate-stars">
+          ${[1,2,3,4,5].map(i => `<span class="add-rate-star" data-val="${i}">★</span>`).join('')}
+        </div>
+        <button class="add-rate-save">Save</button>
+      </div>
+    `);
+    row.classList.add('add-result-item--expanded');
+
+    let selectedScore = 0;
+    const form = row.querySelector('.add-rate-form');
+    const stars = form.querySelectorAll('.add-rate-star');
+
+    stars.forEach(star => {
+      star.addEventListener('mouseenter', () => {
+        stars.forEach(s => s.classList.toggle('filled', parseInt(s.dataset.val) <= parseInt(star.dataset.val)));
+      });
+      star.addEventListener('mouseleave', () => {
+        stars.forEach(s => s.classList.toggle('filled', parseInt(s.dataset.val) <= selectedScore));
+      });
+      star.addEventListener('click', () => {
+        selectedScore = parseInt(star.dataset.val);
+        stars.forEach(s => s.classList.toggle('filled', parseInt(s.dataset.val) <= selectedScore));
+      });
+    });
+
+    form.querySelector('.add-rate-save').addEventListener('click', async () => {
+      const saveBtn = form.querySelector('.add-rate-save');
+      const status = form.querySelector('.add-rate-status').value;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving…';
+
+      const calls = [
+        fetch(`/api/anime/${animeId}/status`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({status}),
+        }),
+      ];
+      if (selectedScore > 0) {
+        calls.push(fetch(`/api/anime/${animeId}/rating`, {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({score: selectedScore}),
+        }));
+      }
+      await Promise.all(calls);
+
+      form.innerHTML = `<span class="add-rate-done">Saved as ${status.toLowerCase()}${selectedScore ? ' · ' + '★'.repeat(selectedScore) : ''}</span>`;
+      row.classList.remove('add-result-item--expanded');
+    });
   }
 }());
 </script>
