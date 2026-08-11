@@ -216,6 +216,141 @@ STREAMING_SITES = {
     "Adult Swim", "Hoopla", "Max", "Tencent Video", "Bandai Channel",
     "Niconico Video", "Funimation", "VRV",
 }
+
+ANILIST_SEARCH_QUERY = """
+query ($search: String) {
+  Page(perPage: 8) {
+    media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+      id
+      title { romaji english }
+      format
+      seasonYear
+      averageScore
+      coverImage { large }
+      status
+    }
+  }
+}
+"""
+
+ANILIST_MEDIA_QUERY = """
+query ($id: Int!) {
+  Media(id: $id, type: ANIME) {
+    id idMal
+    title { romaji english native }
+    format status episodes season seasonYear
+    genres
+    tags { name rank }
+    studios { edges { isMain node { name } } }
+    averageScore coverImage { large } bannerImage
+    duration description(asHtml: false)
+    trailer { id site }
+    externalLinks { site url }
+    streamingEpisodes { title url site thumbnail }
+    relations { edges { relationType node { id title { romaji english } coverImage { large } format } } }
+  }
+}
+"""
+
+
+def _upsert_anime_row(media: dict) -> None:
+    """Upsert a single AniList Media dict into the anime table."""
+    studios = [
+        {"name": e["node"]["name"], "isMain": e["isMain"]}
+        for e in (media.get("studios") or {}).get("edges", [])
+    ]
+    tags = [
+        {"name": t["name"], "rank": t["rank"]}
+        for t in (media.get("tags") or [])
+    ]
+    ext_links = [
+        {"site": lnk["site"], "url": lnk["url"]}
+        for lnk in (media.get("externalLinks") or [])
+    ]
+    streaming = [
+        {"title": ep["title"], "url": ep["url"], "site": ep["site"], "thumbnail": ep.get("thumbnail")}
+        for ep in (media.get("streamingEpisodes") or [])
+    ]
+    trailer_raw = media.get("trailer") or {}
+    trailer_yt_id = (
+        trailer_raw.get("id") if trailer_raw.get("site", "").lower() == "youtube" else None
+    )
+    relations = [
+        {
+            "id": edge["node"]["id"],
+            "title": (edge["node"].get("title") or {}).get("english")
+                     or (edge["node"].get("title") or {}).get("romaji", ""),
+            "cover": (edge["node"].get("coverImage") or {}).get("large"),
+            "format": edge["node"].get("format"),
+            "relation_type": edge.get("relationType", "OTHER"),
+        }
+        for edge in ((media.get("relations") or {}).get("edges") or [])
+        if edge.get("node")
+    ]
+    db.execute(
+        """
+        INSERT INTO anime (
+            id, id_mal, title_romaji, title_english, title_native,
+            format, status, episodes, duration, season, season_year,
+            genres, tags, studios, average_score,
+            cover_image_url, banner_image_url, description,
+            trailer_yt_id, external_links, streaming_episodes, relations, last_synced_at
+        ) VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s, %s, now()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            id_mal             = EXCLUDED.id_mal,
+            title_romaji       = EXCLUDED.title_romaji,
+            title_english      = EXCLUDED.title_english,
+            title_native       = EXCLUDED.title_native,
+            format             = EXCLUDED.format,
+            status             = EXCLUDED.status,
+            episodes           = EXCLUDED.episodes,
+            duration           = EXCLUDED.duration,
+            season             = EXCLUDED.season,
+            season_year        = EXCLUDED.season_year,
+            genres             = EXCLUDED.genres,
+            tags               = EXCLUDED.tags,
+            studios            = EXCLUDED.studios,
+            average_score      = EXCLUDED.average_score,
+            cover_image_url    = EXCLUDED.cover_image_url,
+            banner_image_url   = EXCLUDED.banner_image_url,
+            description        = EXCLUDED.description,
+            trailer_yt_id      = EXCLUDED.trailer_yt_id,
+            external_links     = EXCLUDED.external_links,
+            streaming_episodes = EXCLUDED.streaming_episodes,
+            relations          = EXCLUDED.relations,
+            last_synced_at     = now()
+        """,
+        (
+            media["id"],
+            media.get("idMal"),
+            media["title"]["romaji"],
+            media["title"].get("english"),
+            media["title"].get("native"),
+            media.get("format"),
+            media.get("status"),
+            media.get("episodes"),
+            media.get("duration"),
+            media.get("season"),
+            media.get("seasonYear"),
+            json.dumps(media.get("genres") or []),
+            json.dumps(tags),
+            json.dumps(studios),
+            media.get("averageScore"),
+            (media.get("coverImage") or {}).get("large"),
+            media.get("bannerImage"),
+            media.get("description"),
+            trailer_yt_id,
+            json.dumps(ext_links),
+            json.dumps(streaming),
+            json.dumps(relations),
+        ),
+    )
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
@@ -1102,3 +1237,113 @@ async def reorder_queue(request: Request):
             (anime_id, priority),
         )
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/search/anilist")
+async def search_anilist(q: str = ""):
+    q = q.strip()
+    if len(q) < 2:
+        return JSONResponse([])
+
+    try:
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": ANILIST_SEARCH_QUERY, "variables": {"search": q}},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    media_list = ((data.get("data") or {}).get("Page") or {}).get("media") or []
+
+    ids = [m["id"] for m in media_list]
+    in_library: dict[int, str] = {}
+    if ids:
+        rows = db.fetchall(
+            "SELECT anime_id, status FROM library_entries WHERE anime_id = ANY(%s)",
+            (ids,),
+        )
+        in_library = {r["anime_id"]: r["status"] for r in rows}
+
+    results = []
+    for m in media_list:
+        lib_status = in_library.get(m["id"])
+        results.append({
+            "id": m["id"],
+            "title_english": m["title"].get("english"),
+            "title_romaji": m["title"].get("romaji"),
+            "format": m.get("format"),
+            "season_year": m.get("seasonYear"),
+            "average_score": m.get("averageScore"),
+            "cover": (m.get("coverImage") or {}).get("large"),
+            "in_library": lib_status is not None,
+            "library_status": lib_status,
+        })
+
+    return JSONResponse(results)
+
+
+@app.post("/api/anime/{anime_id}/add")
+async def add_anime(anime_id: int, request: Request):
+    body = await request.json()
+    status = body.get("status", "PLANNING").upper()
+    if status not in VALID_STATUSES:
+        return JSONResponse({"error": "invalid status"}, status_code=400)
+
+    if not _get_anilist_token():
+        return JSONResponse({"error": "AniList token not configured"}, status_code=500)
+
+    try:
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": ANILIST_MEDIA_QUERY, "variables": {"id": anime_id}},
+            headers={"Content-Type": "application/json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if "errors" in data:
+            return JSONResponse({"error": str(data["errors"])}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    media = (data.get("data") or {}).get("Media")
+    if not media:
+        return JSONResponse({"error": "media not found"}, status_code=404)
+
+    anilist_status = STATUS_TO_ANILIST.get(status, status)
+    try:
+        al_resp = httpx.post(
+            ANILIST_API,
+            json={"query": SAVE_STATUS_MUTATION, "variables": {"mediaId": anime_id, "status": anilist_status}},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {_get_anilist_token()}"},
+            timeout=10,
+        )
+        al_resp.raise_for_status()
+        al_data = al_resp.json()
+        if "errors" in al_data:
+            return JSONResponse({"error": str(al_data["errors"])}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    _upsert_anime_row(media)
+    db.execute(
+        """
+        INSERT INTO library_entries (anime_id, status, synced_at)
+        VALUES (%s, %s, now())
+        ON CONFLICT (anime_id) DO UPDATE SET
+            status    = EXCLUDED.status,
+            synced_at = now()
+        """,
+        (anime_id, status),
+    )
+
+    return JSONResponse({
+        "ok": True,
+        "id": anime_id,
+        "title": media["title"].get("english") or media["title"].get("romaji"),
+        "status": status,
+    })

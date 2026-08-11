@@ -1304,6 +1304,180 @@ main {
 .status-chip--paused    { color: #facc15; border-color: #713f12; background: #2a1a04; }
 .status-chip--repeating { color: #fb923c; border-color: #7c2d12; background: #2a1006; }
 
+/* ── Add Anime FAB + modal ────────────────────────────────────────────────── */
+
+.add-anime-fab {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 50%;
+  background: #6366f1;
+  color: #fff;
+  font-size: 1.75rem;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  z-index: 100;
+}
+.add-anime-fab:hover { background: #818cf8; transform: scale(1.05); }
+
+.add-anime-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.add-anime-modal {
+  background: #1a1a2e;
+  border: 1px solid #2d2d4e;
+  border-radius: 12px;
+  width: 520px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.add-anime-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid #2d2d4e;
+  flex-shrink: 0;
+}
+
+.add-anime-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.add-anime-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+.add-anime-close:hover { color: #ddd; background: #222; }
+
+.add-anime-search {
+  margin: 0.75rem 1.25rem;
+  padding: 0.6rem 0.85rem;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  width: calc(100% - 2.5rem);
+  flex-shrink: 0;
+}
+.add-anime-search:focus { outline: none; border-color: #6366f1; }
+
+.add-anime-status {
+  padding: 0 1.25rem;
+  font-size: 0.8rem;
+  color: #888;
+  flex-shrink: 0;
+  min-height: 1.2em;
+}
+
+.add-anime-results {
+  overflow-y: auto;
+  padding: 0.5rem 1.25rem 1rem;
+  flex: 1;
+}
+
+.add-anime-empty {
+  color: #666;
+  font-size: 0.875rem;
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.add-result-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #222;
+}
+.add-result-item:last-child { border-bottom: none; }
+
+.add-result-cover {
+  width: 44px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.add-result-cover--placeholder {
+  background: #2a2a3e;
+}
+
+.add-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.add-result-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.add-result-meta {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.2rem;
+}
+
+.add-result-lib-badge {
+  background: #1e1b4b;
+  color: #a78bfa;
+  border: 1px solid #3730a3;
+  border-radius: 3px;
+  padding: 0 0.3rem;
+  font-size: 0.65rem;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.add-result-btn {
+  flex-shrink: 0;
+  padding: 0.35rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #6366f1;
+  background: transparent;
+  color: #a5b4fc;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.add-result-btn:hover:not(:disabled) { background: #6366f1; color: #fff; }
+.add-result-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.add-result-btn--in-lib { border-color: #333; color: #555; }
+.add-result-btn--added { border-color: #16a34a; color: #4ade80; cursor: default; }
+
 /* ═══════════════════════════════════════════════════════════════════════════
    RESPONSIVE — mobile first fixes
    Primary breakpoint: 768px (tablet/phone)

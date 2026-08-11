@@ -174,6 +174,21 @@
 {% endif %}
 <p class="empty" id="no-filter-results" style="display:none">No matches.</p>
 
+<button id="add-anime-fab" class="add-anime-fab" title="Add anime">+</button>
+
+<div id="add-anime-backdrop" class="add-anime-backdrop" hidden>
+  <div class="add-anime-modal" role="dialog" aria-modal="true" aria-label="Add anime">
+    <div class="add-anime-header">
+      <h3 class="add-anime-title">Add Anime</h3>
+      <button class="add-anime-close" id="add-anime-close" aria-label="Close">✕</button>
+    </div>
+    <input id="add-anime-search" class="add-anime-search" type="search"
+           placeholder="Search AniList by title…" autocomplete="off">
+    <div id="add-anime-status" class="add-anime-status"></div>
+    <div id="add-anime-results" class="add-anime-results"></div>
+  </div>
+</div>
+
 <div id="notes-modal" class="modal-backdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <h3 class="modal-title" id="modal-title"></h3>
@@ -277,6 +292,129 @@
     ));
     location.reload();
   });
+}());
+</script>
+
+<script>
+// ── Add Anime FAB ─────────────────────────────────────────────────────────────
+(function () {
+  const fab = document.getElementById('add-anime-fab');
+  const backdrop = document.getElementById('add-anime-backdrop');
+  const closeBtn = document.getElementById('add-anime-close');
+  const searchInput = document.getElementById('add-anime-search');
+  const statusEl = document.getElementById('add-anime-status');
+  const resultsEl = document.getElementById('add-anime-results');
+  const bulkToggle = document.getElementById('bulk-toggle');
+
+  // Hide FAB when bulk mode is active
+  bulkToggle.addEventListener('click', () => {
+    const isBulkActive = bulkToggle.textContent.trim() === 'Done';
+    fab.style.display = isBulkActive ? 'none' : '';
+  });
+
+  function openModal() {
+    backdrop.hidden = false;
+    searchInput.value = '';
+    statusEl.textContent = '';
+    resultsEl.innerHTML = '';
+    setTimeout(() => searchInput.focus(), 50);
+  }
+
+  function closeModal() {
+    backdrop.hidden = true;
+    resultsEl.innerHTML = '';
+    statusEl.textContent = '';
+  }
+
+  fab.addEventListener('click', openModal);
+  closeBtn.addEventListener('click', closeModal);
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !backdrop.hidden) closeModal(); });
+
+  let debounceTimer;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const q = searchInput.value.trim();
+    if (q.length < 2) { resultsEl.innerHTML = ''; statusEl.textContent = ''; return; }
+    statusEl.textContent = 'Searching…';
+    debounceTimer = setTimeout(() => doSearch(q), 400);
+  });
+
+  async function doSearch(q) {
+    try {
+      const resp = await fetch(`/api/search/anilist?q=${encodeURIComponent(q)}`);
+      const data = await resp.json();
+      statusEl.textContent = '';
+      if (!Array.isArray(data) || data.length === 0) {
+        resultsEl.innerHTML = '<p class="add-anime-empty">No results found on AniList.</p>';
+        return;
+      }
+      renderResults(data);
+    } catch {
+      statusEl.textContent = 'Search failed — check connection.';
+      resultsEl.innerHTML = '';
+    }
+  }
+
+  function renderResults(items) {
+    resultsEl.innerHTML = items.map(item => {
+      const title = item.title_english || item.title_romaji;
+      const meta = [item.format, item.season_year, item.average_score ? item.average_score + '%' : null]
+        .filter(Boolean).join(' · ');
+      const inLib = item.in_library;
+      const libBadge = inLib
+        ? `<span class="add-result-lib-badge">${item.library_status.toLowerCase()}</span>`
+        : '';
+      const addBtn = inLib
+        ? `<button class="add-result-btn add-result-btn--in-lib" disabled>In library</button>`
+        : `<button class="add-result-btn" data-id="${item.id}">+ Add</button>`;
+      const cover = item.cover
+        ? `<img src="${item.cover}" alt="" class="add-result-cover">`
+        : `<div class="add-result-cover add-result-cover--placeholder"></div>`;
+      return `
+        <div class="add-result-item" data-id="${item.id}">
+          ${cover}
+          <div class="add-result-info">
+            <div class="add-result-title">${title}${libBadge}</div>
+            <div class="add-result-meta">${meta}</div>
+          </div>
+          ${addBtn}
+        </div>`;
+    }).join('');
+
+    resultsEl.querySelectorAll('.add-result-btn[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => doAdd(parseInt(btn.dataset.id), btn));
+    });
+  }
+
+  async function doAdd(animeId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/add`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: 'PLANNING'}),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        btn.textContent = '+ Add';
+        btn.disabled = false;
+        statusEl.textContent = data.error || 'Add failed.';
+        return;
+      }
+      btn.textContent = 'Added ✓';
+      btn.classList.add('add-result-btn--added');
+      const row = btn.closest('.add-result-item');
+      const titleEl = row.querySelector('.add-result-title');
+      if (titleEl && !titleEl.querySelector('.add-result-lib-badge')) {
+        titleEl.insertAdjacentHTML('beforeend', '<span class="add-result-lib-badge">planning</span>');
+      }
+    } catch {
+      btn.textContent = '+ Add';
+      btn.disabled = false;
+    }
+  }
 }());
 </script>
 
