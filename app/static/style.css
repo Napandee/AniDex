@@ -455,6 +455,19 @@ main {
   position: relative;
 }
 .queue-item:hover { border-color: #3a3a3a; }
+.queue-item.dragging { opacity: 0.4; border-style: dashed; border-color: #4a4a4a; }
+.queue-item[draggable="true"] { cursor: grab; }
+.queue-item[draggable="true"]:active { cursor: grabbing; }
+
+.queue-drag-handle {
+  font-size: 1.1rem;
+  color: #333;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+  padding-top: 0.1rem;
+}
+.queue-drag-handle:hover { color: #666; }
 
 .queue-rank {
   font-size: 1.1rem;

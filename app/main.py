@@ -699,3 +699,22 @@ async def set_progress(anime_id: int, request: Request):
 
     db.execute("UPDATE library_entries SET progress = %s WHERE anime_id = %s", (progress, anime_id))
     return JSONResponse({"ok": True, "progress": progress})
+
+
+@app.post("/api/queue/reorder")
+async def reorder_queue(request: Request):
+    """Accept [{anime_id, priority}] and bulk-update personal_notes.watch_next_priority."""
+    body = await request.json()
+    items = body if isinstance(body, list) else []
+    for item in items:
+        anime_id = int(item["anime_id"])
+        priority = item.get("priority")
+        db.execute(
+            """
+            INSERT INTO personal_notes (anime_id, watch_next_priority)
+            VALUES (%s, %s)
+            ON CONFLICT (anime_id) DO UPDATE SET watch_next_priority = EXCLUDED.watch_next_priority
+            """,
+            (anime_id, priority),
+        )
+    return JSONResponse({"ok": True})

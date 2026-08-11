@@ -20,9 +20,10 @@
 </div>
 
 {% if entries %}
-<ol class="queue-list">
+<ol class="queue-list" id="queue-list">
   {% for e in entries %}
-  <li class="queue-item">
+  <li class="queue-item" draggable="true" data-anime-id="{{ e.id }}">
+    <span class="queue-drag-handle" title="Drag to reorder">⠿</span>
     <span class="queue-rank">{{ loop.index }}</span>
 
     {% if e.cover_image_url %}
@@ -102,4 +103,58 @@
 {% else %}
 <p class="empty">Nothing in your planning or paused list.</p>
 {% endif %}
+
+<script>
+(function () {
+  const list = document.getElementById('queue-list');
+  if (!list) return;
+
+  let dragging = null;
+
+  list.addEventListener('dragstart', e => {
+    dragging = e.target.closest('.queue-item');
+    if (dragging) dragging.classList.add('dragging');
+  });
+
+  list.addEventListener('dragend', () => {
+    if (dragging) dragging.classList.remove('dragging');
+    dragging = null;
+    saveOrder();
+    updateRanks();
+  });
+
+  list.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!dragging) return;
+    const target = e.target.closest('.queue-item');
+    if (!target || target === dragging) return;
+    const rect = target.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    if (e.clientY < mid) {
+      list.insertBefore(dragging, target);
+    } else {
+      list.insertBefore(dragging, target.nextSibling);
+    }
+  });
+
+  function updateRanks() {
+    list.querySelectorAll('.queue-item').forEach((item, i) => {
+      const rank = item.querySelector('.queue-rank');
+      if (rank) rank.textContent = i + 1;
+    });
+  }
+
+  function saveOrder() {
+    const items = [...list.querySelectorAll('.queue-item')].map((item, i) => ({
+      anime_id: parseInt(item.dataset.animeId),
+      priority: i + 1,
+    }));
+    fetch('/api/queue/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(items),
+    });
+  }
+}());
+</script>
 {% endblock %}
