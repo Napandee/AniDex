@@ -483,10 +483,67 @@ document.querySelectorAll('.btn-add-planning').forEach(btn => {
   });
 });
 
-// ── Keyboard shortcut: / to focus search ─────────────────────────────────────
-document.addEventListener('keydown', e => {
-  if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-    e.preventDefault();
-    librarySearch?.focus();
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+(function () {
+  const STATUS_KEYS = { '1': 'WATCHING', '2': 'COMPLETED', '3': 'DROPPED', '4': 'PLANNING', '5': 'PAUSED' };
+  let focusIdx = -1;
+
+  function isTyping() {
+    const tag = document.activeElement?.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+      || document.activeElement?.isContentEditable;
   }
-});
+
+  function visibleCards() {
+    return [...document.querySelectorAll('#library-grid .card')]
+      .filter(c => c.style.display !== 'none');
+  }
+
+  function moveFocus(delta) {
+    const cards = visibleCards();
+    if (!cards.length) return;
+    focusIdx = Math.max(0, Math.min(cards.length - 1, focusIdx + delta));
+    const card = cards[focusIdx];
+    card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    card.classList.add('kb-focus');
+    cards.forEach((c, i) => { if (i !== focusIdx) c.classList.remove('kb-focus'); });
+  }
+
+  document.addEventListener('keydown', e => {
+    if (isTyping()) {
+      if (e.key === 'Escape') document.activeElement?.blur();
+      return;
+    }
+
+    // / → focus nav search or library search
+    if (e.key === '/') {
+      e.preventDefault();
+      (document.querySelector('.nav-search') || librarySearch)?.focus();
+      return;
+    }
+
+    // Escape → close modal or clear kb focus
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('notes-modal');
+      if (modal && !modal.hidden) {
+        modal.hidden = true;
+        return;
+      }
+      document.querySelectorAll('.kb-focus').forEach(c => c.classList.remove('kb-focus'));
+      focusIdx = -1;
+      return;
+    }
+
+    // j/k → navigate library cards
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveFocus(+1); return; }
+    if (e.key === 'k' || e.key === 'ArrowUp')   { e.preventDefault(); moveFocus(-1); return; }
+
+    // 1-5 → jump to status tab
+    if (STATUS_KEYS[e.key]) {
+      const tabs = document.querySelectorAll('.status-tabs .tab');
+      const target = [...tabs].find(t => t.href?.includes(`status=${STATUS_KEYS[e.key]}`));
+      if (target) { e.preventDefault(); target.click(); }
+      return;
+    }
+  });
+}());
