@@ -29,6 +29,12 @@
       <button class="sort-btn" data-sort="progress">Progress</button>
       <button class="sort-btn" data-sort="updated">Updated</button>
     </div>
+
+    <div class="season-filter-group">
+      <select id="season-filter" class="season-filter-select">
+        <option value="">All seasons</option>
+      </select>
+    </div>
   </div>
 </div>
 
@@ -46,7 +52,9 @@
        data-tags="{{ (e.personal_tags or []) | join(', ') }}"
        data-notes="{{ e.notes or '' }}"
        data-priority="{{ e.watch_next_priority or '' }}"
-       data-card-title="{{ e.title_english or e.title_romaji }}">
+       data-card-title="{{ e.title_english or e.title_romaji }}"
+       data-season="{{ e.season or '' }}"
+       data-season-year="{{ e.season_year or '' }}">
 
     {% if e.cover_image_url %}
     <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">

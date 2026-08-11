@@ -15,6 +15,46 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
+// ── Season filter ─────────────────────────────────────────────────────────────
+let activeSeason = '';
+(function buildSeasonFilter() {
+  const sel = document.getElementById('season-filter');
+  if (!sel) return;
+  const grid = document.getElementById('library-grid');
+  if (!grid) return;
+
+  // Collect all unique season+year combos from the cards
+  const SEASON_ORDER = { WINTER: 1, SPRING: 2, SUMMER: 3, FALL: 4 };
+  const seen = new Set();
+  grid.querySelectorAll('.card').forEach(card => {
+    const s = card.dataset.season;
+    const y = card.dataset.seasonYear;
+    if (s && y) seen.add(`${y}|${s}`);
+  });
+
+  // Sort: most recent year first, then season desc within year
+  const sorted = [...seen].sort((a, b) => {
+    const [ay, as_] = a.split('|');
+    const [by, bs] = b.split('|');
+    if (by !== ay) return parseInt(by) - parseInt(ay);
+    return (SEASON_ORDER[bs] || 0) - (SEASON_ORDER[as_] || 0);
+  });
+
+  sorted.forEach(key => {
+    const [year, season] = key.split('|');
+    const label = season.charAt(0) + season.slice(1).toLowerCase() + ' ' + year;
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  });
+
+  sel.addEventListener('change', () => {
+    activeSeason = sel.value;
+    applyLibraryFilters();
+  });
+}());
+
 // ── Library sort ──────────────────────────────────────────────────────────────
 let activeSort = 'score';
 document.querySelectorAll('.sort-btn').forEach(btn => {
@@ -40,12 +80,15 @@ function applyLibraryFilters() {
     const format  = (card.dataset.format || '').toUpperCase();
     const textOk  = !q || title.includes(q) || sub.includes(q) || tags.includes(q);
     const fmtOk   = !activeFormat || format === activeFormat;
-    const show    = textOk && fmtOk;
+    const seasonKey = card.dataset.seasonYear && card.dataset.season
+      ? `${card.dataset.seasonYear}|${card.dataset.season}` : '';
+    const seasonOk  = !activeSeason || seasonKey === activeSeason;
+    const show    = textOk && fmtOk && seasonOk;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
   const noResults = document.getElementById('no-filter-results');
-  if (noResults) noResults.style.display = ((q || activeFormat) && visible === 0) ? '' : 'none';
+  if (noResults) noResults.style.display = ((q || activeFormat || activeSeason) && visible === 0) ? '' : 'none';
 }
 
 function sortLibrary() {

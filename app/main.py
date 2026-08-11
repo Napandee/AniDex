@@ -427,6 +427,8 @@ def library(request: Request, response: Response, status: str = None):
             a.average_score,
             a.genres,
             a.external_links,
+            a.season,
+            a.season_year,
             le.status,
             le.score,
             le.progress,
