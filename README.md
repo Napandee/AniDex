@@ -1,48 +1,26 @@
 # anime-tracker
 
-A personal anime tracking, rating, and recommendation site — built on top of AniList's
-catalog data, with a personal layer AniList's own UI doesn't give a good home to.
+A self-hosted anime tracking, rating, and recommendation app built on top of AniList.
 
-Live at `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to Andreas only.
+AniList handles the catalog. This app adds the personal layer AniList's own UI doesn't
+give a good home to: drop reasons, custom tags, freeform notes, a real "watch next" queue,
+and a recommendation engine scored against your own taste profile.
 
-## Why this exists
+## Features
 
-AniList's UI doesn't track *why* something got dropped after two episodes, or give a real
-"watch next" queue driven by your own taste. This project fills that gap:
-
-- **AniList as system of record**: catalog data, list status, scores, and streaming links
-  pulled from AniList's GraphQL API — never re-scraped from Crunchyroll directly
-- **Crunchyroll sync**: watch history and progress synced from Crunchyroll into AniList
-  via [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli)
-- **Personal layer**: drop reasons, custom tags, freeform notes, and manual queue-priority
-  — none of which AniList has a structured place for
-- **Recommender**: scores unwatched/planning anime against the genres, tags, and studios
-  of your highest-rated completed shows
-- **Upcoming-episode tracking**: airing schedule for anything in Watching/Planning status
-
-## Stack
-
-| Layer | Tech |
-|---|---|
-| App | Python + FastAPI + Jinja2, server-rendered HTML |
-| DB | Postgres (persisted in Unraid appdata) |
-| Container | Docker, image on GHCR (`ghcr.io/napandee/anime-tracker`) |
-| CI/CD | GitHub Actions → GHCR → self-hosted runner on Unraid |
-| Hosting | Unraid (`anime-tracker` container), port 8889 |
-| Access | Cloudflare Tunnel + Access |
-
-## Repo contents
-
-| Path | Purpose |
-|---|---|
-| `CLAUDE.md` | Full scope, architecture, guardrails, and decisions for agentic development |
-| `schema.sql` | Postgres schema — AniList-sourced tables kept separate from personal-layer tables |
-| `app/` | FastAPI app — routes, templates, static assets |
-| `scripts/` | `sync_anilist.py`, `sync_crunchyroll.py`, `run_recommender.py`, `deploy.sh` |
-| `Dockerfile` | App image |
-| `Dockerfile.crunchysync` | Sync + recommender image (`ghcr.io/napandee/anime-tracker-crunchysync`) |
-| `compose/` | Compose files for Unraid's Compose Manager Plus (tracking only, not used for deploy) |
-| `.github/workflows/` | `build-app.yml` and `build-crunchysync.yml` — CI/CD pipelines |
+- **Library view** — your full AniList list with star ratings, episode progress, streaming
+  links, filters by format/score/season, and bulk status updates
+- **Personal notes** — drop reasons, custom tags, freeform notes, and queue priority per
+  show; none of which AniList has a structured place for
+- **Recommendations** — unwatched/planning anime scored against the genres, tags, and
+  studios of your highest-rated completed shows; dismiss with a reason or mark as seen
+  (pushes COMPLETED + rating to AniList)
+- **Upcoming episodes** — airing schedule for anything in your Watching/Planning list
+- **Queue** — watch-next list ordered by recommendation score and manual priority
+- **Stats** — watch time, completion rate, score distribution, top genres and studios
+- **Crunchyroll sync** — watch history and progress synced from Crunchyroll into AniList
+  via [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli) (optional)
+- **Telegram notifications** — new episode alerts, sync results, weekly digest (optional)
 
 ## Architecture
 
@@ -51,39 +29,165 @@ Crunchyroll ──► crunchyexporter-cli ──► sync_crunchyroll.py ──�
                                                                      │
                                                               AniList GraphQL API
                                                                      │
-                                                           sync_anilist.py
+                                                            sync_anilist.py
                                                                      │
-                                                                 Postgres
+                                                                Postgres
                                                                      │
-                                                              FastAPI app
+                                                             FastAPI app
                                                                      │
-                                                          anime.***REDACTED-DOMAIN***
+                                                          http://localhost:8888
 ```
 
-**Sync job** — n8n "Anime Tracker — Daily Sync" (04:30 daily): Crunchyroll history →
-AniList progress sync → AniList→Postgres upsert.
+The app includes a built-in scheduler (APScheduler) that runs the daily AniList sync and
+weekly recommender automatically. Schedule is configurable via the Settings page.
 
-**Recommender job** — n8n "Anime Tracker — Weekly Recommender" (Sundays 05:00): scores
-unwatched/planning anime against taste profile, writes to `recommendation_scores`.
+## Prerequisites
 
-**Deploy pipeline** — push to `main` → GitHub Actions builds and pushes image to GHCR →
-self-hosted runner on Unraid pulls image and restarts container. Runner config lives in
-`homelab-scripts/github-runners/anime-tracker.yml`.
+- Docker and Docker Compose
+- An AniList account
+- A Postgres instance (a compose file is provided)
+- Optional: Crunchyroll account, Telegram bot, GitHub account for CI/CD
+
+## Quick start
+
+**1. Clone the repo and set up your environment**
+
+```bash
+git clone https://github.com/yourname/anime-tracker.git
+cd anime-tracker
+cp .env.example .env
+```
+
+Edit `.env` and fill in at minimum `DATABASE_URL` and `ANILIST_USERNAME`.
+
+**2. Start Postgres**
+
+```bash
+# Set a password and start
+POSTGRES_PASSWORD=yourpassword docker compose -f compose/anime-tracker-postgres.yml up -d
+```
+
+Then add the same password to your `DATABASE_URL` in `.env`.
+
+**3. Initialise the database**
+
+```bash
+docker run --rm --env-file .env \
+  -v $(pwd)/schema.sql:/schema.sql \
+  postgres:16-alpine \
+  psql "$DATABASE_URL" -f /schema.sql
+```
+
+**4. Start the app**
+
+```bash
+docker run -d \
+  --name anime-tracker \
+  --restart unless-stopped \
+  -p 8888:8888 \
+  --env-file .env \
+  ghcr.io/yourname/anime-tracker:latest
+```
+
+Or build locally first:
+
+```bash
+docker build -t anime-tracker:local .
+docker run -d --name anime-tracker -p 8888:8888 --env-file .env anime-tracker:local
+```
+
+**5. Run your first sync**
+
+```bash
+docker exec anime-tracker python scripts/sync_anilist.py
+```
+
+**6. Open the app**
+
+Visit `http://localhost:8888`. Your library should be populated after the sync completes.
+
+## Getting your AniList token
+
+The AniList token is needed for write operations — rating anime, updating status, and
+syncing progress back to AniList. Without it the app is read-only.
+
+1. Go to [AniList Developer Settings](https://anilist.co/settings/developer) and create
+   a new API client (any name, redirect URI can be `https://anilist.co/api/v2/oauth/pin`)
+2. Follow the [OAuth PIN flow](https://anilist.gitbook.io/anilist-apiv2-docs/overview/oauth/authorization-code-grant)
+   to obtain an access token
+3. Set `ANILIST_TOKEN` in your `.env`
+
+## Crunchyroll sync (optional)
+
+If you watch on Crunchyroll, the crunchysync container can pull your watch history and
+push progress updates to AniList.
+
+For how to extract your Crunchyroll session cookie (`etp_rt`) see the
+[crunchyexporter-cli documentation](https://github.com/ruflas/crunchyexporter-cli).
+Once you have the cookie, set `CRUNCHYROLL_ETP_RT` in your `.env`.
+
+To run a manual CR sync:
+
+```bash
+docker run --rm --env-file .env \
+  ghcr.io/yourname/anime-tracker-crunchysync:latest
+```
+
+The built-in scheduler will run this automatically as part of the daily sync once
+`CRUNCHYROLL_ETP_RT` is set.
+
+## Telegram notifications (optional)
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in Settings (or in `.env`) to enable:
+
+- New episode alerts for anything in your Watching/Planning list
+- Daily sync success/failure notification
+- Weekly digest of upcoming episodes
+
+Create a bot via [@BotFather](https://t.me/BotFather) on Telegram to get a token.
+Your chat ID can be retrieved by messaging [@userinfobot](https://t.me/userinfobot).
+
+## CI/CD with GitHub Actions (optional)
+
+The included workflows build and push Docker images to GHCR on every push to `main`, and
+deploy to a self-hosted runner automatically.
+
+To use them in your own fork:
+
+1. Fork the repo
+2. Go to **Settings → Actions → Variables** and add:
+   - `APPDATA_PATH` — the directory on your host where `.env` lives (e.g. `/opt/anime-tracker`)
+3. Add a [self-hosted GitHub Actions runner](https://docs.github.com/en/actions/hosting-your-own-runners)
+   on your server with the labels `self-hosted` and `unraid` (or edit the workflow to
+   match your own labels)
+4. Push to `main` — the build job runs on GitHub's hosted runners, the deploy job runs on
+   yours
+
+The `GHCR_TOKEN` referenced in the deploy job should be a GitHub PAT with
+`read:packages` scope, stored in your `APPDATA_PATH/.env` file.
 
 ## Environment variables
 
-Stored in `***REDACTED-PATH***/anime-tracker/.env` on Unraid (never committed).
+| Variable | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | Yes | Postgres connection string — `postgresql://user:pass@host:port/db` |
+| `ANILIST_USERNAME` | Yes | Your AniList username (not email) — used to fetch your library |
+| `ANILIST_TOKEN` | For writes | OAuth token — needed for rating, status, and progress updates |
+| `CRUNCHYROLL_ETP_RT` | No | Crunchyroll session cookie — enables CR watch history sync |
+| `TELEGRAM_BOT_TOKEN` | No | Telegram bot token — enables notifications |
+| `TELEGRAM_CHAT_ID` | No | Your Telegram chat ID — where notifications are sent |
+| `GHCR_TOKEN` | CI/CD only | GitHub PAT with `read:packages` scope — used by the deploy job to pull from GHCR |
+| `TZ` | No | Container timezone, e.g. `Europe/London` (default: UTC) |
 
-| Variable | Purpose |
+All variables can also be set via the Settings page in the app after first launch.
+Credentials stored in Settings are saved to the `settings` table in Postgres.
+
+## Stack
+
+| Layer | Tech |
 |---|---|
-| `ANILIST_TOKEN` | OAuth token for AniList mutations (rating, status, progress) |
-| `POSTGRES_HOST` | Postgres host |
-| `POSTGRES_DB` | Database name |
-| `POSTGRES_USER` | DB user |
-| `POSTGRES_PASSWORD` | DB password |
-| `GRAFANA_PUBLIC_URL` | Public Grafana URL for the stats page embed |
-| `GRAFANA_EMBED_URL` | Internal Grafana URL used server-side for embed src (optional, falls back to public) |
-| `GHCR_TOKEN` | GitHub PAT with `read:packages` + `repo` scope — used by deploy job to pull from GHCR |
-| `TZ` | Container timezone (e.g. `Europe/London`) |
-
-See `CLAUDE.md` for full architecture detail, data model, and guardrails before making changes.
+| App | Python + FastAPI + Jinja2, server-rendered HTML, no build step |
+| Database | Postgres 16 |
+| Container | Docker |
+| Scheduler | APScheduler (built into the app container) |
+| CI/CD | GitHub Actions → GHCR → self-hosted runner |
