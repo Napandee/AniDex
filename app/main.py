@@ -55,6 +55,79 @@ def _run_sync_task(script: str = _FULL_SYNC_SCRIPT) -> None:
         _sync_state["running"] = False
 
 
+def _tg_send(text: str) -> None:
+    """Fire-and-forget Telegram message. Silently drops if credentials not set."""
+    token = config.get("telegram_bot_token") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = config.get("telegram_chat_id") or os.getenv("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return
+    try:
+        import httpx as _httpx
+        _httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            timeout=10,
+        )
+    except Exception as e:
+        log.warning("Telegram send failed: %s", e)
+
+
+def _check_airing_episodes() -> None:
+    """Hourly job: notify for any unwatched episodes that started airing."""
+    rows = db.fetchall(
+        """
+        SELECT a.title_english, a.title_romaji, asc_.episode, asc_.airing_at
+        FROM airing_schedule_cache asc_
+        JOIN anime a ON a.id = asc_.anime_id
+        JOIN library_entries le ON le.anime_id = asc_.anime_id
+        WHERE asc_.notified = false
+          AND asc_.airing_at <= now()
+          AND le.status IN ('WATCHING', 'PLANNING')
+        ORDER BY asc_.airing_at
+        """
+    )
+    if not rows:
+        return
+    lines = []
+    for r in rows:
+        title = r["title_english"] or r["title_romaji"]
+        lines.append(f"▶ <b>{title}</b> — Ep {r['episode']} is now airing")
+    _tg_send("\n".join(lines))
+
+    db.execute(
+        """
+        UPDATE airing_schedule_cache SET notified = true
+        WHERE notified = false AND airing_at <= now()
+          AND anime_id IN (
+              SELECT anime_id FROM library_entries WHERE status IN ('WATCHING', 'PLANNING')
+          )
+        """
+    )
+
+
+def _weekly_airing_digest() -> None:
+    """Monday morning digest: upcoming episodes in the next 7 days."""
+    rows = db.fetchall(
+        """
+        SELECT a.title_english, a.title_romaji, asc_.episode, asc_.airing_at
+        FROM airing_schedule_cache asc_
+        JOIN anime a ON a.id = asc_.anime_id
+        JOIN library_entries le ON le.anime_id = asc_.anime_id
+        WHERE asc_.airing_at BETWEEN now() AND now() + INTERVAL '7 days'
+          AND le.status IN ('WATCHING', 'PLANNING')
+        ORDER BY asc_.airing_at
+        """
+    )
+    if not rows:
+        return
+    lines = ["<b>Anime this week:</b>"]
+    for r in rows:
+        title = r["title_english"] or r["title_romaji"]
+        dt = r["airing_at"].strftime("%a %d %b %H:%M UTC") if r["airing_at"] else ""
+        lines.append(f"• {title} — Ep {r['episode']} ({dt})")
+    _tg_send("\n".join(lines))
+
+
 def _scheduled_full_sync() -> None:
     with _sync_lock:
         if _sync_state["running"]:
@@ -63,6 +136,11 @@ def _scheduled_full_sync() -> None:
         _sync_state["running"] = True
         _sync_state["last_result"] = None
     _run_sync_task(_FULL_SYNC_SCRIPT)
+    result = _sync_state.get("last_result", "error")
+    if result == "ok":
+        _tg_send("✅ Anime Tracker — daily sync completed successfully.")
+    else:
+        _tg_send("❌ Anime Tracker — daily sync <b>failed</b>. Check container logs.")
 
 
 def _scheduled_recommender() -> None:
@@ -92,6 +170,16 @@ def _apply_schedule() -> None:
         _scheduled_recommender,
         CronTrigger(day_of_week=rec_day, hour=r_hour, minute=r_min, timezone="UTC"),
         id="weekly_recommender", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _check_airing_episodes,
+        CronTrigger(minute=0, timezone="UTC"),
+        id="airing_check", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _weekly_airing_digest,
+        CronTrigger(day_of_week="mon", hour=7, minute=0, timezone="UTC"),
+        id="weekly_digest", replace_existing=True,
     )
 ANILIST_API = "https://graphql.anilist.co"
 
