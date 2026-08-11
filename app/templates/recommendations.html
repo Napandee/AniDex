@@ -123,6 +123,9 @@ document.querySelectorAll('.seen-it-chip').forEach(chip => {
     _seenItScore = 0;
     document.getElementById('seen-it-title').textContent = chip.dataset.title;
     document.querySelectorAll('.seen-it-star').forEach(s => s.classList.remove('filled'));
+    const btn = document.getElementById('seen-it-confirm');
+    btn.disabled = false;
+    btn.textContent = 'Mark as seen';
     document.getElementById('seen-it-backdrop').hidden = false;
   });
 });
