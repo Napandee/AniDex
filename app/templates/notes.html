@@ -44,7 +44,7 @@
       {% if related %}
       <div class="related-list">
         {% for r in related %}
-        <a href="/anime/{{ r.id }}/notes?back={{ back }}" class="related-card">
+        <a href="https://anilist.co/anime/{{ r.id }}" target="_blank" rel="noopener" class="related-card">
           {% if r.cover %}<img src="{{ r.cover }}" alt="{{ r.title }}" class="related-cover">{% endif %}
           <div class="related-info">
             <div class="related-type">{{ relation_labels.get(r.relation_type, r.relation_type) }}</div>
