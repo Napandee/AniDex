@@ -513,6 +513,24 @@ async def trigger_sync(background_tasks: BackgroundTasks):
     return JSONResponse({"status": "started"})
 
 
+@app.get("/api/sync/log")
+def sync_log():
+    rows = db.fetchall(
+        "SELECT run_at, type, status, entries_updated, error_msg "
+        "FROM sync_log ORDER BY run_at DESC LIMIT 20"
+    )
+    return JSONResponse([
+        {
+            "run_at": r["run_at"].isoformat(),
+            "type": r["type"],
+            "status": r["status"],
+            "entries_updated": r["entries_updated"],
+            "error_msg": r["error_msg"],
+        }
+        for r in rows
+    ])
+
+
 @app.get("/api/sync/status")
 def sync_status():
     row = db.fetchone("SELECT MAX(synced_at) AS ts FROM library_entries")

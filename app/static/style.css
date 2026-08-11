@@ -470,6 +470,31 @@ main {
 .sync-msg--ok { color: #86efac; background: #14532d22; }
 .sync-msg--error { color: #fca5a5; background: #7f1d1d22; }
 
+.sync-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 0.75rem;
+}
+.sync-log-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #2a2a2a;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.sync-log-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #1c1c1c;
+  color: #aaa;
+  vertical-align: top;
+}
+.sync-log-table tr:last-child td { border-bottom: none; }
+.sync-log-table .log-ok { color: #86efac; }
+.sync-log-table .log-error { color: #fca5a5; }
+.sync-log-empty { color: #444; font-style: italic; }
+
 /* ── Watch queue ─────────────────────────────────────────────────────────── */
 .queue-list {
   list-style: none;

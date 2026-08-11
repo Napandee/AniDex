@@ -118,9 +118,20 @@ INSERT INTO settings (key, value) VALUES ('sync_daily_time',       '04:30')     
 INSERT INTO settings (key, value) VALUES ('sync_recommender_day',  'sun')           ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('sync_recommender_time', '05:00')         ON CONFLICT (key) DO NOTHING;
 -- Credential keys: no default values — must be set via Settings page or .env fallback
-INSERT INTO settings (key, value) VALUES ('anilist_username', '') ON CONFLICT (key) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('anilist_token',    '') ON CONFLICT (key) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('cr_etp_rt',        '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('anilist_username',    '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('anilist_token',       '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('cr_etp_rt',           '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('telegram_bot_token',  '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('telegram_chat_id',    '') ON CONFLICT (key) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS sync_log (
+    id              SERIAL PRIMARY KEY,
+    run_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    type            TEXT NOT NULL,          -- 'full_sync' | 'recommender'
+    status          TEXT NOT NULL,          -- 'ok' | 'error'
+    entries_updated INTEGER,
+    error_msg       TEXT
+);
 
 -- =========================================================================
 -- INDEXES

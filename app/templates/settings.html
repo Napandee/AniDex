@@ -124,6 +124,25 @@
     <div id="sync-msg" class="sync-msg" hidden></div>
   </div>
 
+  {# ── Sync history ──────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Sync history</h2>
+    <table class="sync-log-table" id="sync-log-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Entries</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="sync-log-body">
+        <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 </div>
 
 <script>
@@ -200,6 +219,32 @@ function fmtDate(iso) {
   };
 
   fetch('/api/sync/status').then(r => r.json()).then(data => { if (data.running) poll(); });
+}());
+
+// ── Sync history log ─────────────────────────────────────────────────────────
+(function () {
+  const tbody = document.getElementById('sync-log-body');
+
+  function fmtType(t) { return t === 'full_sync' ? 'Full sync' : t === 'recommender' ? 'Recommender' : t; }
+
+  function renderLog(rows) {
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="sync-log-empty">No sync runs yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const cls = r.status === 'ok' ? 'log-ok' : 'log-error';
+      const ts = r.run_at ? fmtDate(r.run_at) : '—';
+      const entries = r.entries_updated != null ? r.entries_updated : '—';
+      const err = r.error_msg ? `<span title="${r.error_msg.replace(/"/g,'&quot;')}">${r.error_msg.slice(0,60)}${r.error_msg.length > 60 ? '…' : ''}</span>` : '—';
+      return `<tr><td>${ts}</td><td>${fmtType(r.type)}</td><td class="${cls}">${r.status}</td><td>${entries}</td><td>${err}</td></tr>`;
+    }).join('');
+  }
+
+  fetch('/api/sync/log')
+    .then(r => r.json())
+    .then(data => renderLog(Array.isArray(data) ? data : []))
+    .catch(() => { tbody.innerHTML = '<tr><td colspan="5" class="sync-log-empty">Could not load sync history.</td></tr>'; });
 }());
 </script>
 {% endblock %}

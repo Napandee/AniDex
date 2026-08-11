@@ -52,6 +52,19 @@ def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None) 
     return result.returncode == 0
 
 
+def write_log(status: str, entries_updated: int | None = None, error_msg: str | None = None) -> None:
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sync_log (type, status, entries_updated, error_msg) VALUES (%s, %s, %s, %s)",
+                ("full_sync", status, entries_updated, error_msg),
+            )
+        conn.close()
+    except Exception as e:
+        log(f"Warning: could not write sync log: {e}")
+
+
 def main() -> None:
     log("Starting full sync pipeline")
     settings = load_settings()
@@ -62,7 +75,9 @@ def main() -> None:
     cr_etp_rt        = settings.get("cr_etp_rt")        or os.environ.get("CRUNCHYROLL_ETP_RT", "")
 
     if not anilist_token or not anilist_username:
-        log("ERROR: AniList credentials not configured. Set them in Settings.")
+        msg = "AniList credentials not configured. Set them in Settings."
+        log(f"ERROR: {msg}")
+        write_log("error", error_msg=msg)
         sys.exit(1)
 
     credentials_env = {
@@ -85,6 +100,7 @@ def main() -> None:
             cwd=CRUNCHYEXPORTER_DIR,
         )
         if not ok:
+            write_log("error", error_msg="Crunchyroll fetch failed")
             log("ERROR: Crunchyroll fetch failed")
             sys.exit(1)
 
@@ -95,6 +111,7 @@ def main() -> None:
             extra_env={**credentials_env, "HISTORY_PATH": str(HISTORY_PATH)},
         )
         if not ok:
+            write_log("error", error_msg="Crunchyroll → AniList sync failed")
             log("ERROR: Crunchyroll → AniList sync failed")
             sys.exit(1)
     else:
@@ -107,9 +124,20 @@ def main() -> None:
         extra_env=credentials_env,
     )
     if not ok:
+        write_log("error", error_msg="AniList → Postgres sync failed")
         log("ERROR: AniList → Postgres sync failed")
         sys.exit(1)
 
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM library_entries")
+            total = cur.fetchone()[0]
+        conn.close()
+    except Exception:
+        total = None
+
+    write_log("ok", entries_updated=total)
     log("Full sync pipeline complete")
 
 
