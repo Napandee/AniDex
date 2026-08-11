@@ -909,6 +909,16 @@ main {
 .btn-mark-seen:hover { background: #134e4a; color: #99f6e4; }
 .btn-mark-seen:disabled { opacity: 0.5; cursor: default; }
 
+/* ── Airing badge ────────────────────────────────────────────────────────────── */
+.airing-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  background: #0c1f12;
+  border: 1px solid #166534;
+  border-radius: 999px;
+  color: #86efac;
+}
+
 /* ── Rewatch badge ───────────────────────────────────────────────────────────── */
 .rewatch-badge {
   font-size: 0.7rem;

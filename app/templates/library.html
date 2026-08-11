@@ -91,8 +91,11 @@
       </div>
       {% endif %}
 
-      {% if e.personal_tags or e.is_stale or e.repeat_count %}
+      {% if e.personal_tags or e.is_stale or e.repeat_count or e.next_airing_label %}
       <div class="genres">
+        {% if e.next_airing_label %}
+        <span class="airing-badge" title="Ep {{ e.next_episode }} airs {{ e.next_airing_label }}">▶ Ep {{ e.next_episode }} {{ e.next_airing_label }}</span>
+        {% endif %}
         {% if e.is_stale %}
         <span class="stale-tag">Stale</span>
         {% endif %}

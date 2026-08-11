@@ -436,10 +436,19 @@ def library(request: Request, response: Response, status: str = None):
             pn.drop_reason,
             pn.personal_tags,
             pn.notes,
-            pn.watch_next_priority
+            pn.watch_next_priority,
+            next_ep.episode AS next_episode,
+            next_ep.airing_at AS next_airing_at
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         LEFT JOIN personal_notes pn ON pn.anime_id = a.id
+        LEFT JOIN LATERAL (
+            SELECT episode, airing_at
+            FROM airing_schedule_cache
+            WHERE anime_id = a.id AND airing_at > now()
+            ORDER BY airing_at
+            LIMIT 1
+        ) next_ep ON true
         WHERE le.status = %s
         ORDER BY le.score DESC NULLS LAST, a.title_romaji
         """,
@@ -447,6 +456,7 @@ def library(request: Request, response: Response, status: str = None):
     )
 
     stale_threshold = datetime.now(timezone.utc) - timedelta(days=60)
+    tz = ZoneInfo(config.get("timezone") or "Europe/London")
 
     entries = []
     for row in rows:
@@ -461,6 +471,20 @@ def library(request: Request, response: Response, status: str = None):
             and updated_at is not None
             and updated_at < stale_threshold
         )
+        airing_at = entry.get("next_airing_at")
+        if airing_at:
+            local = airing_at.astimezone(tz)
+            now = datetime.now(timezone.utc)
+            delta = airing_at - now
+            days = delta.days
+            if days == 0:
+                entry["next_airing_label"] = "Today"
+            elif days == 1:
+                entry["next_airing_label"] = "Tomorrow"
+            else:
+                entry["next_airing_label"] = f"in {days}d"
+        else:
+            entry["next_airing_label"] = None
         entries.append(entry)
 
     return templates.TemplateResponse(
