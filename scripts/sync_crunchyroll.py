@@ -49,23 +49,30 @@ def log(msg):
 # ── History parsing ───────────────────────────────────────────────────────────
 
 def load_history(path: str) -> dict[str, int]:
-    """Parse history.json → {series_title: highest_episode_watched}."""
+    """Parse history.json → {series_title: most_recently_watched_episode}.
+
+    Uses watched_at (ISO-8601) to pick the most recently watched episode per
+    series, not the highest episode number. This correctly handles rewatches:
+    if ep 12 was watched months ago and ep 1 was watched yesterday, we return
+    ep 1 as the current position so the sync can detect a rewatch in progress.
+    """
     with open(path) as f:
         data = json.load(f)
 
-    # crunchyexporter-cli stores episodes as a dict keyed by episode_id,
-    # optionally wrapped under an "episodes" key. Handle both.
+    # crunchyexporter-cli stores episodes as a list under an "episodes" key.
     if isinstance(data, dict) and "episodes" in data:
         raw = data["episodes"]
-        items = raw.values() if isinstance(raw, dict) else raw
+        items = raw if isinstance(raw, list) else list(raw.values())
     elif isinstance(data, list):
         items = data
     elif isinstance(data, dict):
-        items = data.values()
+        items = list(data.values())
     else:
         return {}
 
-    best: dict[str, int] = {}
+    # Track (watched_at, episode_number) per series; ISO-8601 sorts lexicographically.
+    # Items without watched_at fall back to "" which sorts before any real date.
+    best: dict[str, tuple[str, int]] = {}
     for item in items:
         title = (item.get("series_title") or "").strip()
         if not title:
@@ -76,10 +83,11 @@ def load_history(path: str) -> dict[str, int]:
             ep = 0
         if ep == 0:
             continue
-        if title not in best or ep > best[title]:
-            best[title] = ep
+        watched_at = item.get("watched_at") or ""
+        if title not in best or watched_at > best[title][0]:
+            best[title] = (watched_at, ep)
 
-    return best
+    return {title: ep for title, (_, ep) in best.items()}
 
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
