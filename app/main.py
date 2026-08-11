@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -432,8 +433,30 @@ _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
                    "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
 
 
+def _yt_trailer_from_url(url: str) -> dict | None:
+    m = re.search(r'(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})', url)
+    if not m:
+        return None
+    vid = m.group(1)
+    return {
+        "url": f"https://www.youtube.com/watch?v={vid}",
+        "thumbnail": f"https://img.youtube.com/vi/{vid}/mqdefault.jpg",
+    }
+
+
 @app.get("/api/anime/{anime_id}/extra")
 def anime_extra(anime_id: int):
+    # Trailer: check DB external_links for YouTube first (already synced)
+    row = db.fetchone("SELECT external_links FROM anime WHERE id = %s", (anime_id,))
+    trailer = None
+    for link in (row["external_links"] if row else []) or []:
+        if link.get("site", "").lower() == "youtube":
+            trailer = _yt_trailer_from_url(link["url"])
+            if trailer:
+                break
+
+    # AniList call for relations (and trailer fallback if DB had nothing)
+    data = {}
     try:
         resp = httpx.post(
             ANILIST_API,
@@ -445,15 +468,15 @@ def anime_extra(anime_id: int):
         data = resp.json().get("data", {}).get("Media") or {}
     except Exception as e:
         log.warning("AniList extra fetch failed for %s: %s", anime_id, e)
-        return JSONResponse({"trailer": None, "related": []})
 
-    trailer = None
-    t = data.get("trailer") or {}
-    if t.get("id") and t.get("site", "").lower() == "youtube":
-        trailer = {
-            "url": f"https://www.youtube.com/watch?v={t['id']}",
-            "thumbnail": f"https://img.youtube.com/vi/{t['id']}/mqdefault.jpg",
-        }
+    # Fall back to AniList trailer field if external_links had nothing
+    if not trailer:
+        t = data.get("trailer") or {}
+        if t.get("id") and t.get("site", "").lower() == "youtube":
+            trailer = {
+                "url": f"https://www.youtube.com/watch?v={t['id']}",
+                "thumbnail": f"https://img.youtube.com/vi/{t['id']}/mqdefault.jpg",
+            }
 
     relations = []
     for edge in (data.get("relations") or {}).get("edges", []):

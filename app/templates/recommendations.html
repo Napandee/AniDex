@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Recommended for you</h1>
-  <p class="page-sub">{{ entries|length }} suggestions · scored against your completed &amp; watching history · dismiss anything you're not interested in</p>
+  <p class="page-sub">{{ entries|length }} suggestions · scored against your completed &amp; watching history</p>
 </div>
 
 {% if entries %}
@@ -12,6 +12,7 @@
 
 <div class="rec-grid">
   {% for e in entries %}
+  {% set reason = e.reason or {} %}
   <div class="rec-card" data-anime-id="{{ e.id }}" data-genres="{{ e.genres | join(',') if e.genres else '' }}">
     <div class="rec-cover-wrap">
       {% if e.cover_image_url %}
@@ -20,99 +21,83 @@
       <div class="rec-score-badge">{{ e.rec_score | int }}%</div>
     </div>
 
-    <div class="card-body">
-      <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
-      {% if e.title_english and e.title_english != e.title_romaji %}
-      <p class="title-sub">{{ e.title_romaji }}</p>
-      {% endif %}
-
-      <div class="meta">
-        {% if e.average_score %}
-        <span class="community-score" title="AniList community score">⭐ {{ e.average_score }}</span>
+    <div class="rec-body">
+      <div class="rec-info">
+        <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
+        {% if e.title_english and e.title_english != e.title_romaji %}
+        <p class="title-sub">{{ e.title_romaji }}</p>
         {% endif %}
-        {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
-        {% if e.episodes %}<span class="progress">{{ e.episodes }} ep</span>{% endif %}
+        <div class="meta">
+          {% if e.average_score %}<span class="community-score" title="AniList community score">⭐ {{ e.average_score }}</span>{% endif %}
+          {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
+          {% if e.episodes %}<span class="progress">{{ e.episodes }} ep</span>{% endif %}
+        </div>
       </div>
 
-      {% set reason = e.reason %}
-      {% if reason %}
-        {% if reason.matched_genres %}
+      <div class="rec-matches">
         <div class="match-row">
           <span class="match-label">Genres</span>
           <div class="genres">
-            {% for g in reason.matched_genres %}
-            <span class="genre match">{{ g }}</span>
-            {% endfor %}
+            {% if reason.matched_genres %}
+              {% for g in reason.matched_genres %}<span class="genre match">{{ g }}</span>{% endfor %}
+            {% else %}<span class="match-empty">—</span>{% endif %}
           </div>
         </div>
-        {% endif %}
-        {% if reason.matched_tags %}
         <div class="match-row">
           <span class="match-label">Tags</span>
           <div class="genres">
-            {% for t in reason.matched_tags[:3] %}
-            <span class="genre">{{ t }}</span>
-            {% endfor %}
+            {% if reason.matched_tags %}
+              {% for t in reason.matched_tags[:3] %}<span class="genre">{{ t }}</span>{% endfor %}
+            {% else %}<span class="match-empty">—</span>{% endif %}
           </div>
         </div>
-        {% endif %}
-        {% if reason.matched_studio %}
         <div class="match-row">
           <span class="match-label">Studio</span>
-          <span class="genre match">{{ reason.matched_studio }}</span>
+          {% if reason.matched_studio %}<span class="genre match">{{ reason.matched_studio }}</span>
+          {% else %}<span class="match-empty">—</span>{% endif %}
         </div>
-        {% endif %}
-      {% endif %}
-
-      {% if e.similar_to %}
-      <div class="match-row">
-        <span class="match-label">Similar to</span>
-        <span class="similar-to-title">{{ e.similar_to }}</span>
+        <div class="match-row">
+          <span class="match-label">Similar to</span>
+          {% if e.similar_to %}<span class="similar-to-title">{{ e.similar_to }}</span>
+          {% else %}<span class="match-empty">—</span>{% endif %}
+        </div>
       </div>
-      {% endif %}
 
-      <div class="rec-actions">
-        <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist">AniList ↗</a>
-        <button class="btn-add-planning" data-anime-id="{{ e.id }}">+ Planning</button>
-        <button class="btn-dismiss" data-anime-id="{{ e.id }}">Dismiss</button>
-      </div>
-      <div class="dismiss-reason-row" id="dismiss-reasons-{{ e.id }}" hidden>
-        <span class="dismiss-reason-label">Reason:</span>
-        {% for r, label in [('not_interested','Not interested'),('already_watched','Already watched'),('wrong_genre','Wrong genre'),('too_long','Too long')] %}
-        <button class="dismiss-reason-chip" data-anime-id="{{ e.id }}" data-reason="{{ r }}">{{ label }}</button>
-        {% endfor %}
-        <button class="dismiss-reason-chip dismiss-reason-skip" data-anime-id="{{ e.id }}" data-reason="">Skip</button>
+      <div class="rec-footer">
+        <div class="rec-actions">
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-rec btn-rec--anilist">AniList ↗</a>
+          <button class="btn-rec btn-rec--planning btn-add-planning" data-anime-id="{{ e.id }}">+ Planning</button>
+        </div>
+        <div class="rec-dismiss-row">
+          <span class="dismiss-label">Dismiss:</span>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="not_interested">Not interested</button>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="already_watched">Seen it</button>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="wrong_genre">Wrong genre</button>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="too_long">Too long</button>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="">✕</button>
+        </div>
       </div>
     </div>
   </div>
   {% endfor %}
 </div>
 {% else %}
-<p class="empty">No recommendations yet — run <code>scripts/run_recommender.py</code> to generate them.</p>
+<p class="empty">No recommendations yet — run the recommender to generate them.</p>
 {% endif %}
 
 <script>
-// Dismiss flow: first click shows reason row; reason chip fires API call and removes card
-document.querySelectorAll('.btn-dismiss').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const id = btn.dataset.animeId;
-    const reasonRow = document.getElementById('dismiss-reasons-' + id);
-    if (reasonRow) reasonRow.hidden = false;
-    btn.hidden = true;
-  });
-});
-
 async function doDismiss(animeId, reason) {
+  const card = document.querySelector(`.rec-card[data-anime-id="${animeId}"]`);
+  if (card) { card.style.opacity = '0.3'; card.style.pointerEvents = 'none'; }
   await fetch(`/recommendations/${animeId}/dismiss`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({reason: reason || null}),
   });
-  const card = document.querySelector(`.rec-card[data-anime-id="${animeId}"]`);
   if (card) card.remove();
 }
 
-document.querySelectorAll('.dismiss-reason-chip').forEach(chip => {
+document.querySelectorAll('.dismiss-chip').forEach(chip => {
   chip.addEventListener('click', () => doDismiss(chip.dataset.animeId, chip.dataset.reason));
 });
 </script>

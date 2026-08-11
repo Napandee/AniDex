@@ -21,18 +21,23 @@
     </div>
   </div>
 
-  {# ── Trailer + related — loaded lazily ────────────────────────────── #}
-  <div id="extra-section" class="extra-section" hidden>
-    <div id="trailer-wrap" hidden>
+  {# ── Trailer + related ────────────────────────────────────────────── #}
+  <div class="extra-section">
+    <div>
       <h2 class="extra-heading">Trailer</h2>
-      <a id="trailer-link" href="#" target="_blank" rel="noopener" class="trailer-link">
-        <img id="trailer-thumb" src="" alt="Watch trailer" class="trailer-thumb">
-        <span class="trailer-play">▶</span>
-      </a>
+      <div id="trailer-wrap">
+        <a id="trailer-link" href="#" target="_blank" rel="noopener" class="trailer-link" hidden>
+          <img id="trailer-thumb" src="" alt="Watch trailer" class="trailer-thumb">
+          <span class="trailer-play">▶</span>
+        </a>
+        <p id="trailer-none" class="extra-empty">Loading…</p>
+      </div>
     </div>
-    <div id="related-wrap" hidden>
+    <div>
       <h2 class="extra-heading">Related</h2>
-      <div id="related-list" class="related-list"></div>
+      <div id="related-list" class="related-list">
+        <p id="related-none" class="extra-empty">Loading…</p>
+      </div>
     </div>
   </div>
 
@@ -97,23 +102,25 @@
     SIDE_STORY: 'Side story', SPIN_OFF: 'Spin-off', ALTERNATIVE: 'Alternative',
     COMPILATION: 'Compilation', CONTAINS: 'Contains', SUMMARY: 'Summary', OTHER: 'Related',
   };
+
   const data = await fetch('/api/anime/{{ anime.id }}/extra').then(r => r.json()).catch(() => null);
-  if (!data) return;
 
-  const section = document.getElementById('extra-section');
-  let hasContent = false;
-
-  if (data.trailer) {
-    const wrap = document.getElementById('trailer-wrap');
-    document.getElementById('trailer-link').href = data.trailer.url;
+  const trailerLink = document.getElementById('trailer-link');
+  const trailerNone = document.getElementById('trailer-none');
+  if (data && data.trailer) {
+    trailerLink.href = data.trailer.url;
     document.getElementById('trailer-thumb').src = data.trailer.thumbnail;
-    wrap.hidden = false;
-    hasContent = true;
+    trailerLink.hidden = false;
+    trailerNone.remove();
+  } else {
+    trailerNone.textContent = 'No trailer available';
   }
 
-  if (data.related && data.related.length) {
-    const list = document.getElementById('related-list');
-    list.innerHTML = data.related.map(r => `
+  const relatedList = document.getElementById('related-list');
+  const relatedNone = document.getElementById('related-none');
+  if (data && data.related && data.related.length) {
+    relatedNone.remove();
+    relatedList.insertAdjacentHTML('beforeend', data.related.map(r => `
       <a href="/anime/${r.id}/notes?back={{ back }}" class="related-card">
         <img src="${r.cover || ''}" alt="${r.title}" class="related-cover">
         <div class="related-info">
@@ -122,12 +129,10 @@
           ${r.format ? `<div class="related-format">${r.format}</div>` : ''}
         </div>
       </a>
-    `).join('');
-    document.getElementById('related-wrap').hidden = false;
-    hasContent = true;
+    `).join(''));
+  } else {
+    relatedNone.textContent = 'No related anime';
   }
-
-  if (hasContent) section.hidden = false;
 }());
 </script>
 {% endblock %}

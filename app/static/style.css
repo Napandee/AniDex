@@ -377,6 +377,7 @@ main {
 .notes-context-sub { font-size: 0.8rem; color: #555; margin-top: 0.2rem; }
 
 .extra-section { margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
+.extra-empty { font-size: 0.8rem; color: #444; margin: 0; }
 .extra-heading { font-size: 0.9rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
 
 .trailer-link {
@@ -801,6 +802,7 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1.25rem;
+  align-items: start;
 }
 
 .rec-card {
@@ -814,7 +816,7 @@ main {
 }
 .rec-card:hover { transform: translateY(-2px); border-color: #3a3a3a; }
 
-.rec-cover-wrap { position: relative; }
+.rec-cover-wrap { position: relative; flex-shrink: 0; }
 
 .rec-score-badge {
   position: absolute;
@@ -829,13 +831,28 @@ main {
   backdrop-filter: blur(4px);
 }
 
-.community-score { color: #f59e0b; }
+/* ── Rec card body layout ─────────────────────────────────────────────────── */
+.rec-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 0.75rem;
+  gap: 0.5rem;
+}
+
+.rec-info { flex-shrink: 0; }
+
+.rec-matches {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
 
 .match-row {
   display: flex;
   align-items: flex-start;
   gap: 0.4rem;
-  margin-top: 0.4rem;
   flex-wrap: wrap;
 }
 
@@ -844,42 +861,72 @@ main {
   color: #555;
   padding-top: 0.2rem;
   white-space: nowrap;
-  min-width: 3rem;
+  min-width: 3.5rem;
+  flex-shrink: 0;
 }
 
+.match-empty { font-size: 0.78rem; color: #2e2e2e; }
 .genre.match { background: #1e3a5f; color: #93c5fd; }
+.similar-to-title { font-size: 0.78rem; color: #a0aec0; font-style: italic; }
+.community-score { color: #f59e0b; }
 
-.rec-actions {
+/* ── Rec footer: actions + dismiss ───────────────────────────────────────── */
+.rec-footer {
+  flex-shrink: 0;
   display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #1f1f1f;
   margin-top: auto;
-  padding-top: 0.75rem;
-  align-items: center;
 }
 
-.btn-anilist {
+.rec-actions { display: flex; gap: 0.5rem; }
+
+.btn-rec {
   font-size: 0.75rem;
-  padding: 0.3rem 0.7rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1.4;
+}
+.btn-rec--anilist {
   background: #1f2d3d;
   color: #60a5fa;
-  border-radius: 6px;
-  text-decoration: none;
-  border: 1px solid #1e3a5f;
-  transition: background 0.15s;
+  border-color: #1e3a5f;
 }
-.btn-anilist:hover { background: #263d52; }
+.btn-rec--anilist:hover { background: #263d52; }
+.btn-rec--planning {
+  background: #0f172a;
+  color: #60a5fa;
+  border-color: #1e3a5f;
+}
+.btn-rec--planning:hover { background: #1e3a5f; color: #93c5fd; }
+.btn-rec--planning:disabled { opacity: 0.5; cursor: default; }
 
-.btn-dismiss {
-  font-size: 0.75rem;
-  padding: 0.3rem 0.7rem;
-  background: transparent;
-  color: #555;
-  border: 1px solid #2a2a2a;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+.rec-dismiss-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
 }
-.btn-dismiss:hover { color: #ef4444; border-color: #ef4444; }
+.dismiss-label { font-size: 0.68rem; color: #444; flex-shrink: 0; }
+.dismiss-chip {
+  background: none;
+  border: 1px solid #2a2a2a;
+  border-radius: 20px;
+  color: #555;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.dismiss-chip:hover { border-color: #ef4444; color: #ef4444; }
 
 /* ── Queue actions ──────────────────────────────────────────────────────────── */
 .queue-actions {
@@ -904,45 +951,32 @@ main {
 .btn-mark-watched:hover { background: #14532d; color: #86efac; }
 .btn-mark-watched:disabled { opacity: 0.5; cursor: default; }
 
-/* ── Add to planning (recs) ─────────────────────────────────────────────────── */
+/* ── Add to planning (used outside rec cards) ───────────────────────────── */
 .btn-add-planning {
   background: #0f172a;
   border: 1px solid #1e3a5f;
   border-radius: 6px;
   color: #60a5fa;
   cursor: pointer;
-  font-size: 0.7rem;
-  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
   transition: background 0.15s, color 0.15s;
 }
 .btn-add-planning:hover { background: #1e3a5f; color: #93c5fd; }
 .btn-add-planning:disabled { opacity: 0.5; cursor: default; }
 
-.similar-to-title { font-size: 0.78rem; color: #a0aec0; font-style: italic; }
-
-.dismiss-reason-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid #1f1f1f;
+/* ── btn-anilist (used on notes page and library) ───────────────────────── */
+.btn-anilist {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  background: #1f2d3d;
+  color: #60a5fa;
+  border-radius: 6px;
+  text-decoration: none;
+  border: 1px solid #1e3a5f;
+  transition: background 0.15s;
 }
-.dismiss-reason-label { font-size: 0.72rem; color: #555; margin-right: 0.2rem; }
-.dismiss-reason-chip {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 20px;
-  color: #aaa;
-  font-size: 0.72rem;
-  padding: 0.2rem 0.6rem;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-.dismiss-reason-chip:hover { border-color: #ef4444; color: #ef4444; }
-.dismiss-reason-skip { color: #555; border-color: #222; }
-.dismiss-reason-skip:hover { border-color: #555; color: #888; }
+.btn-anilist:hover { background: #263d52; }
 
 /* ── Inline notes panel ─────────────────────────────────────────────────────── */
 .notes-toggle {

@@ -261,7 +261,10 @@
     const checked = getChecked();
     if (!checked.length) return;
     const newStatus = statusSel.value;
+    const n = checked.length;
     applyBtn.disabled = true;
+    applyBtn.textContent = `Applying ${n}…`;
+    countEl.textContent = `Setting ${n} to ${newStatus.toLowerCase()}…`;
     await Promise.all(checked.map(cb =>
       fetch(`/api/anime/${cb.dataset.animeId}/status`, {
         method: 'POST',
@@ -269,7 +272,6 @@
         body: JSON.stringify({status: newStatus}),
       })
     ));
-    applyBtn.disabled = false;
     location.reload();
   });
 }());
