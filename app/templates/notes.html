@@ -16,6 +16,8 @@
       {% if anime.status %}
       <div class="notes-context-sub">{{ anime.status.title() }}</div>
       {% endif %}
+      <a href="https://anilist.co/anime/{{ (notes.anilist_id_override if notes and notes.anilist_id_override else anime.id) }}"
+         target="_blank" rel="noopener" class="btn-anilist" style="margin-top:0.5rem;display:inline-block">AniList ↗</a>
     </div>
   </div>
 
@@ -68,6 +70,16 @@
       <input class="form-input" type="number" id="watch_next_priority" name="watch_next_priority"
              value="{{ notes.watch_next_priority if notes and notes.watch_next_priority is not none else '' }}"
              placeholder="1, 2, 10…" min="1">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="anilist_id_override">
+        AniList ID override
+        <span class="form-label-hint">— if AniList links to the wrong entry, set the correct ID here</span>
+      </label>
+      <input class="form-input form-input--narrow" type="number" id="anilist_id_override" name="anilist_id_override"
+             value="{{ notes.anilist_id_override if notes and notes.anilist_id_override is not none else '' }}"
+             placeholder="{{ anime.id }} (current)">
     </div>
 
     <div class="form-actions">

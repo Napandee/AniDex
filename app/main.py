@@ -341,6 +341,7 @@ def save_notes(
     notes: str = Form(""),
     personal_tags: str = Form(""),
     watch_next_priority: str = Form(""),
+    anilist_id_override: str = Form(""),
     back: str = Form("WATCHING"),
 ):
     drop_reason_val = drop_reason.strip() or None
@@ -350,19 +351,24 @@ def save_notes(
         priority = int(watch_next_priority.strip()) if watch_next_priority.strip() else None
     except ValueError:
         priority = None
+    try:
+        al_override = int(anilist_id_override.strip()) if anilist_id_override.strip() else None
+    except ValueError:
+        al_override = None
 
     db.execute(
         """
-        INSERT INTO personal_notes (anime_id, drop_reason, personal_tags, notes, watch_next_priority)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO personal_notes (anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (anime_id) DO UPDATE SET
             drop_reason = EXCLUDED.drop_reason,
             personal_tags = EXCLUDED.personal_tags,
             notes = EXCLUDED.notes,
             watch_next_priority = EXCLUDED.watch_next_priority,
+            anilist_id_override = EXCLUDED.anilist_id_override,
             updated_at = now()
         """,
-        (anime_id, drop_reason_val, json.dumps(tags), notes_val, priority),
+        (anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
     )
     return RedirectResponse(url=f"/?status={back}", status_code=303)
 
@@ -380,18 +386,25 @@ async def save_notes_api(anime_id: int, request: Request):
     except (ValueError, TypeError):
         priority = None
 
+    al_override_raw = body.get("anilist_id_override")
+    try:
+        al_override = int(al_override_raw) if al_override_raw not in (None, "") else None
+    except (ValueError, TypeError):
+        al_override = None
+
     db.execute(
         """
-        INSERT INTO personal_notes (anime_id, drop_reason, personal_tags, notes, watch_next_priority)
-        VALUES (%s, %s, %s, %s, %s)
+        INSERT INTO personal_notes (anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (anime_id) DO UPDATE SET
             drop_reason = EXCLUDED.drop_reason,
             personal_tags = EXCLUDED.personal_tags,
             notes = EXCLUDED.notes,
             watch_next_priority = EXCLUDED.watch_next_priority,
+            anilist_id_override = EXCLUDED.anilist_id_override,
             updated_at = now()
         """,
-        (anime_id, drop_reason_val, json.dumps(tags), notes_val, priority),
+        (anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
     )
     return JSONResponse({"ok": True})
 
@@ -795,6 +808,56 @@ def stats_data():
 @app.get("/stats", response_class=HTMLResponse)
 def stats(request: Request):
     return templates.TemplateResponse("stats.html", {"request": request})
+
+
+@app.get("/api/export")
+def export_library():
+    rows = db.fetchall(
+        """
+        SELECT
+            a.id                   AS anilist_id,
+            a.title_romaji,
+            a.title_english,
+            a.format,
+            a.episodes,
+            a.season,
+            a.season_year,
+            a.average_score        AS anilist_score,
+            a.genres,
+            le.status,
+            le.score               AS my_score,
+            le.progress,
+            le.repeat_count,
+            le.start_date,
+            le.finish_date,
+            le.anilist_updated_at,
+            pn.drop_reason,
+            pn.notes,
+            pn.personal_tags,
+            pn.watch_next_priority,
+            pn.anilist_id_override
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = a.id
+        ORDER BY le.status, a.title_romaji
+        """
+    )
+    export = []
+    for r in rows:
+        entry = dict(r)
+        for field in ("start_date", "finish_date"):
+            if entry.get(field):
+                entry[field] = entry[field].isoformat()
+        if entry.get("anilist_updated_at"):
+            entry["anilist_updated_at"] = entry["anilist_updated_at"].isoformat()
+        export.append(entry)
+    from fastapi.responses import Response as _Response
+    import json as _json
+    return _Response(
+        content=_json.dumps(export, default=str, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=anime_library_export.json"},
+    )
 
 
 @app.get("/search", response_class=HTMLResponse)

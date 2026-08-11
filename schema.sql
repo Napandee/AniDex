@@ -72,8 +72,9 @@ CREATE TABLE personal_notes (
     drop_reason         TEXT,                          -- why it got dropped, freeform
     personal_tags       JSONB DEFAULT '[]',            -- ["watch with partner", "background watching", ...]
     notes                TEXT,                          -- general freeform notes
-    watch_next_priority INTEGER,                        -- manual override, lower = higher priority; null = no override
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    watch_next_priority  INTEGER,                        -- manual override, lower = higher priority; null = no override
+    anilist_id_override  INTEGER,                        -- if set, use this AniList ID for links and AniList-push ops
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
