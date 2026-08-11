@@ -7,9 +7,16 @@ the last-known state in Postgres, then updates AniList with the correct logic:
 
   CURRENT / PAUSED   + CR ahead          → advance progress
   DROPPED            + CR ahead          → advance progress + set CURRENT
-  COMPLETED          + CR ep < total     → set REPEATING, advance progress (rewatch started)
+  COMPLETED          + CR ep < last-seen → set REPEATING, advance progress (rewatch started)
+  REPEATING (no state recorded)          → record rewatch as active, advance progress if needed
   REPEATING          + CR ahead          → advance progress
   REPEATING          + CR >= total eps   → set COMPLETED, increment repeat counter
+
+Note: CR history is max-aggregated (highest episode ever watched per series).
+A rewatch starting from ep 1 won't lower cr_ep unless old episodes age out of
+history. The REPEATING handler is therefore the reliable rewatch detection path
+— the user changes status to REPEATING in the app and sync picks it up on next
+run; the COMPLETED+drop-below-last-seen path catches history-trimming edge cases.
 
 Never goes backwards on progress. Never touches score or notes.
 
@@ -273,6 +280,24 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
         save_cr_state(conn, anilist_id, title, cr_ep, False)
         return "first-sync (COMPLETED) — state recorded, no change"
 
+    # ── AniList status already REPEATING but rewatch not recorded in state ────
+    # Handles: user changes status to REPEATING in the app/AniList before sync
+    # runs. Set rewatch_active so subsequent syncs advance progress correctly.
+    if status == "REPEATING" and not rewatch_active:
+        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        if cr_ep > al_ep:
+            anilist_update(anilist_id, progress=cr_ep)
+            return f"rewatch detected (already REPEATING) → progress {al_ep} → {cr_ep}"
+        return "rewatch detected (already REPEATING) — state recorded"
+
+    # ── Rewatch: COMPLETED but CR episode dropped below last-seen ────────────
+    # Must come BEFORE the no-change guard: cr_ep < last_ep satisfies that guard
+    # and would short-circuit before we ever detect the rewatch.
+    if status == "COMPLETED" and cr_ep < (last_ep or total or 999) and not rewatch_active:
+        anilist_update(anilist_id, progress=cr_ep, status="REPEATING")
+        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        return f"rewatch started → REPEATING ep {cr_ep}"
+
     # ── No progress since last sync ───────────────────────────────────────────
     if cr_ep <= last_ep and not rewatch_active:
         if cr_ep > al_ep:
@@ -281,12 +306,6 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
         else:
             save_cr_state(conn, anilist_id, title, last_ep, rewatch_active)
             return f"no change (CR={cr_ep}, last_seen={last_ep})"
-
-    # ── Rewatch: COMPLETED series but CR episode went below last-seen ─────────
-    if status == "COMPLETED" and cr_ep < (last_ep or total or 999) and not rewatch_active:
-        anilist_update(anilist_id, progress=cr_ep, status="REPEATING")
-        save_cr_state(conn, anilist_id, title, cr_ep, True)
-        return f"rewatch started → REPEATING ep {cr_ep}"
 
     # ── Rewatch completion: REPEATING and reached total episodes ─────────────
     if rewatch_active and total and cr_ep >= total:
