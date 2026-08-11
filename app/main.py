@@ -431,7 +431,9 @@ async def set_rating(anime_id: int, request: Request):
     if stars < 0 or stars > 5:
         return JSONResponse({"error": "score must be 0–5"}, status_code=400)
 
-    score_100 = stars * 20  # 1★=20 … 5★=100, clear=0
+    # AniList account uses POINT_5 format — send 0–5 directly.
+    # Reading back via sync uses score(format: POINT_100), which AniList converts correctly.
+    anilist_score = float(stars)
 
     if not ANILIST_TOKEN:
         return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
@@ -439,7 +441,7 @@ async def set_rating(anime_id: int, request: Request):
     try:
         resp = httpx.post(
             ANILIST_API,
-            json={"query": SAVE_SCORE_MUTATION, "variables": {"mediaId": anime_id, "score": float(score_100)}},
+            json={"query": SAVE_SCORE_MUTATION, "variables": {"mediaId": anime_id, "score": anilist_score}},
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
             timeout=10,
         )
@@ -453,11 +455,10 @@ async def set_rating(anime_id: int, request: Request):
             log.error("AniList rating: SaveMediaListEntry returned null for mediaId=%s", anime_id)
             return JSONResponse({"error": "AniList returned null — entry may not be in your list"}, status_code=502)
         returned_score = saved.get("score")
-        if returned_score != score_100:
+        if returned_score != anilist_score:
             log.warning(
-                "AniList score mismatch for %s: sent %s, got back %s — "
-                "check your AniList score format setting",
-                anime_id, score_100, returned_score,
+                "AniList score mismatch for %s: sent %s, got back %s",
+                anime_id, anilist_score, returned_score,
             )
     except Exception as e:
         log.error("AniList rating request failed for %s: %s", anime_id, e)
