@@ -361,6 +361,70 @@ async def save_notes_api(anime_id: int, request: Request):
     return JSONResponse({"ok": True})
 
 
+_EXTRA_QUERY = """
+query ($id: Int!) {
+  Media(id: $id, type: ANIME) {
+    trailer { id site }
+    relations {
+      edges {
+        relationType
+        node {
+          id
+          title { romaji english }
+          coverImage { large }
+          format
+        }
+      }
+    }
+  }
+}
+"""
+
+_RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
+                   "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
+
+
+@app.get("/api/anime/{anime_id}/extra")
+def anime_extra(anime_id: int):
+    try:
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": _EXTRA_QUERY, "variables": {"id": anime_id}},
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", {}).get("Media") or {}
+    except Exception as e:
+        log.warning("AniList extra fetch failed for %s: %s", anime_id, e)
+        return JSONResponse({"trailer": None, "related": []})
+
+    trailer = None
+    t = data.get("trailer") or {}
+    if t.get("id") and t.get("site", "").lower() == "youtube":
+        trailer = {
+            "url": f"https://www.youtube.com/watch?v={t['id']}",
+            "thumbnail": f"https://img.youtube.com/vi/{t['id']}/mqdefault.jpg",
+        }
+
+    relations = []
+    for edge in (data.get("relations") or {}).get("edges", []):
+        node = edge.get("node") or {}
+        rel_type = edge.get("relationType", "OTHER")
+        title = (node.get("title") or {})
+        relations.append({
+            "id": node["id"],
+            "title": title.get("english") or title.get("romaji", ""),
+            "cover": (node.get("coverImage") or {}).get("large"),
+            "format": node.get("format"),
+            "relation_type": rel_type,
+        })
+    relations.sort(key=lambda r: _RELATION_ORDER.index(r["relation_type"])
+                   if r["relation_type"] in _RELATION_ORDER else 99)
+
+    return JSONResponse({"trailer": trailer, "related": relations})
+
+
 @app.get("/upcoming", response_class=HTMLResponse)
 def upcoming(request: Request):
     tz_name = config.get("timezone")

@@ -19,6 +19,21 @@
     </div>
   </div>
 
+  {# ── Trailer + related — loaded lazily ────────────────────────────── #}
+  <div id="extra-section" class="extra-section" hidden>
+    <div id="trailer-wrap" hidden>
+      <h2 class="extra-heading">Trailer</h2>
+      <a id="trailer-link" href="#" target="_blank" rel="noopener" class="trailer-link">
+        <img id="trailer-thumb" src="" alt="Watch trailer" class="trailer-thumb">
+        <span class="trailer-play">▶</span>
+      </a>
+    </div>
+    <div id="related-wrap" hidden>
+      <h2 class="extra-heading">Related</h2>
+      <div id="related-list" class="related-list"></div>
+    </div>
+  </div>
+
   <form method="post" action="/anime/{{ anime.id }}/notes" class="notes-form">
     <input type="hidden" name="back" value="{{ back }}">
 
@@ -62,4 +77,45 @@
   </form>
 
 </div>
+
+<script>
+(async function () {
+  const RELATION_LABELS = {
+    PREQUEL: 'Prequel', SEQUEL: 'Sequel', PARENT: 'Parent',
+    SIDE_STORY: 'Side story', SPIN_OFF: 'Spin-off', ALTERNATIVE: 'Alternative',
+    COMPILATION: 'Compilation', CONTAINS: 'Contains', SUMMARY: 'Summary', OTHER: 'Related',
+  };
+  const data = await fetch('/api/anime/{{ anime.id }}/extra').then(r => r.json()).catch(() => null);
+  if (!data) return;
+
+  const section = document.getElementById('extra-section');
+  let hasContent = false;
+
+  if (data.trailer) {
+    const wrap = document.getElementById('trailer-wrap');
+    document.getElementById('trailer-link').href = data.trailer.url;
+    document.getElementById('trailer-thumb').src = data.trailer.thumbnail;
+    wrap.hidden = false;
+    hasContent = true;
+  }
+
+  if (data.related && data.related.length) {
+    const list = document.getElementById('related-list');
+    list.innerHTML = data.related.map(r => `
+      <a href="/anime/${r.id}/notes?back={{ back }}" class="related-card">
+        <img src="${r.cover || ''}" alt="${r.title}" class="related-cover">
+        <div class="related-info">
+          <div class="related-type">${RELATION_LABELS[r.relation_type] || r.relation_type}</div>
+          <div class="related-title">${r.title}</div>
+          ${r.format ? `<div class="related-format">${r.format}</div>` : ''}
+        </div>
+      </a>
+    `).join('');
+    document.getElementById('related-wrap').hidden = false;
+    hasContent = true;
+  }
+
+  if (hasContent) section.hidden = false;
+}());
+</script>
 {% endblock %}
