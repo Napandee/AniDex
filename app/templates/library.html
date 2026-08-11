@@ -157,11 +157,13 @@
           <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ s.title() }}</option>
           {% endfor %}
         </select>
-        {% if e.status == 'WATCHING' %}
-        <button class="btn-drop" data-anime-id="{{ e.id }}">Drop</button>
-        {% endif %}
-        <a href="/anime/{{ e.id }}/notes?back={{ active_status }}" class="btn-notes-sm">Notes</a>
-        <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
+        <div class="card-footer-actions">
+          {% if e.status == 'WATCHING' %}
+          <button class="btn-drop" data-anime-id="{{ e.id }}">Drop</button>
+          {% endif %}
+          <a href="/anime/{{ e.id }}/notes?back={{ active_status }}" class="btn-notes-sm" title="Notes, trailer &amp; related">✏</a>
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
+        </div>
       </div>
     </div>
   </div>

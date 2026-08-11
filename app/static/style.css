@@ -1126,14 +1126,20 @@ main {
 /* ── Card footer (status + drop button) ─────────────────────────────────────── */
 .card-footer {
   display: flex;
-  gap: 0.4rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.35rem;
   margin-top: 0.4rem;
 }
 
 .card-footer .status-select {
-  flex: 1;
+  width: 100%;
   margin-top: 0;
+}
+
+.card-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .btn-drop {
@@ -1214,16 +1220,16 @@ main {
 .btn-anilist-sm:hover { color: #818cf8; }
 
 .btn-notes-sm {
-  font-size: 0.7rem;
-  padding: 0.2rem 0.5rem;
+  font-size: 0.85rem;
+  padding: 0.1rem 0.3rem;
   background: #1a1a2e;
   color: #a78bfa;
   border: 1px solid #3730a3;
-  border-radius: 5px;
+  border-radius: 4px;
   text-decoration: none;
   flex-shrink: 0;
+  line-height: 1.3;
   transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
 }
 .btn-notes-sm:hover { background: #2e1065; color: #c4b5fd; }
 
