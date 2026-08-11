@@ -410,25 +410,6 @@ async def save_notes_api(anime_id: int, request: Request):
     return JSONResponse({"ok": True})
 
 
-_EXTRA_QUERY = """
-query ($id: Int!) {
-  Media(id: $id, type: ANIME) {
-    trailer { id site }
-    relations {
-      edges {
-        relationType
-        node {
-          id
-          title { romaji english }
-          coverImage { large }
-          format
-        }
-      }
-    }
-  }
-}
-"""
-
 _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
                    "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
 
@@ -446,8 +427,10 @@ def _yt_trailer_from_url(url: str) -> dict | None:
 
 @app.get("/api/anime/{anime_id}/extra")
 def anime_extra(anime_id: int):
-    # Trailer: check DB external_links for YouTube first (already synced)
-    row = db.fetchone("SELECT external_links FROM anime WHERE id = %s", (anime_id,))
+    row = db.fetchone(
+        "SELECT external_links, relations FROM anime WHERE id = %s", (anime_id,)
+    )
+
     trailer = None
     for link in (row["external_links"] if row else []) or []:
         if link.get("site", "").lower() == "youtube":
@@ -455,41 +438,7 @@ def anime_extra(anime_id: int):
             if trailer:
                 break
 
-    # AniList call for relations (and trailer fallback if DB had nothing)
-    data = {}
-    try:
-        resp = httpx.post(
-            ANILIST_API,
-            json={"query": _EXTRA_QUERY, "variables": {"id": anime_id}},
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json().get("data", {}).get("Media") or {}
-    except Exception as e:
-        log.warning("AniList extra fetch failed for %s: %s", anime_id, e)
-
-    # Fall back to AniList trailer field if external_links had nothing
-    if not trailer:
-        t = data.get("trailer") or {}
-        if t.get("id") and t.get("site", "").lower() == "youtube":
-            trailer = {
-                "url": f"https://www.youtube.com/watch?v={t['id']}",
-                "thumbnail": f"https://img.youtube.com/vi/{t['id']}/mqdefault.jpg",
-            }
-
-    relations = []
-    for edge in (data.get("relations") or {}).get("edges", []):
-        node = edge.get("node") or {}
-        rel_type = edge.get("relationType", "OTHER")
-        title = (node.get("title") or {})
-        relations.append({
-            "id": node["id"],
-            "title": title.get("english") or title.get("romaji", ""),
-            "cover": (node.get("coverImage") or {}).get("large"),
-            "format": node.get("format"),
-            "relation_type": rel_type,
-        })
+    relations = list(row["relations"] if row else []) or []
     relations.sort(key=lambda r: _RELATION_ORDER.index(r["relation_type"])
                    if r["relation_type"] in _RELATION_ORDER else 99)
 

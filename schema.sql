@@ -30,6 +30,7 @@ CREATE TABLE anime (
     description         TEXT,
     external_links      JSONB DEFAULT '[]',           -- [{"site": "Crunchyroll", "url": "..."}, ...]
     streaming_episodes  JSONB DEFAULT '[]',           -- [{"title": "Ep 1", "url": "...", "site": "...", "thumbnail": "..."}]
+    relations           JSONB DEFAULT '[]',           -- [{"id": 123, "title": "...", "cover": "...", "format": "TV", "relation_type": "SEQUEL"}]
     last_synced_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

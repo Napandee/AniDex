@@ -69,6 +69,17 @@ query ($userName: String, $chunk: Int, $perChunk: Int) {
           description(asHtml: false)
           externalLinks { site url }
           streamingEpisodes { title url site thumbnail }
+          relations {
+            edges {
+              relationType
+              node {
+                id
+                title { romaji english }
+                coverImage { large }
+                format
+              }
+            }
+          }
         }
       }
     }
@@ -164,6 +175,18 @@ def upsert_anime(cur, media: dict) -> None:
         }
         for ep in (media.get("streamingEpisodes") or [])
     ]
+    relations = [
+        {
+            "id": edge["node"]["id"],
+            "title": (edge["node"].get("title") or {}).get("english")
+                     or (edge["node"].get("title") or {}).get("romaji", ""),
+            "cover": (edge["node"].get("coverImage") or {}).get("large"),
+            "format": edge["node"].get("format"),
+            "relation_type": edge.get("relationType", "OTHER"),
+        }
+        for edge in ((media.get("relations") or {}).get("edges") or [])
+        if edge.get("node")
+    ]
 
     cur.execute(
         """
@@ -172,13 +195,13 @@ def upsert_anime(cur, media: dict) -> None:
             format, status, episodes, duration, season, season_year,
             genres, tags, studios, average_score,
             cover_image_url, banner_image_url, description,
-            external_links, streaming_episodes, last_synced_at
+            external_links, streaming_episodes, relations, last_synced_at
         ) VALUES (
             %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s,
             %s, %s, %s,
-            %s, %s, now()
+            %s, %s, %s, now()
         )
         ON CONFLICT (id) DO UPDATE SET
             id_mal             = EXCLUDED.id_mal,
@@ -200,6 +223,7 @@ def upsert_anime(cur, media: dict) -> None:
             description        = EXCLUDED.description,
             external_links     = EXCLUDED.external_links,
             streaming_episodes = EXCLUDED.streaming_episodes,
+            relations          = EXCLUDED.relations,
             last_synced_at     = now()
         """,
         (
@@ -223,6 +247,7 @@ def upsert_anime(cur, media: dict) -> None:
             media.get("description"),
             json.dumps(ext_links),
             json.dumps(streaming),
+            json.dumps(relations),
         ),
     )
 
