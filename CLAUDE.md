@@ -5,7 +5,7 @@
 A personal anime tracking, rating, and recommendation site. AniList is the system of
 record for catalog data and list status; this app adds the personal layer AniList's own
 UI doesn't support well (drop reasons, custom tags, a real "watch next" queue) and pulls
-it all into one page hosted on Andreas's own infrastructure.
+it all into one self-hosted page.
 
 ## Scope
 
@@ -15,10 +15,10 @@ it all into one page hosted on Andreas's own infrastructure.
 - Personal notes layer: drop reasons, custom tags, freeform notes, manual queue priority
 - "Watch next" queue driven by the recommender job's output
 - Upcoming-episode view for anything in Watching/Planning status
-- Stats view — embedded Grafana panel (`anime-tracker-stats` dashboard at `grafana.***REDACTED-DOMAIN***`)
+- Built-in stats page (watch time, completion rate, score distribution, top genres)
 
 **Out of scope — do not build these:**
-- No user auth / login system — Cloudflare Access handles who can reach the site
+- No user auth / login system — access control is the operator's responsibility (reverse proxy, Cloudflare Access, etc.)
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
 - No rebuilding AniList's catalog search/browse UI — link out to AniList for that
 - No payment, sharing, or multi-user features — this is single-user
@@ -26,9 +26,9 @@ it all into one page hosted on Andreas's own infrastructure.
 ## Data Source
 
 AniList GraphQL API — `https://graphql.anilist.co`, POST requests, no auth needed for
-public reads, OAuth token needed for anything under the user's own list (already obtained
-during the CrunchyExporter backfill). Rate limit: 90 req/min on the free tier — batch
-queries, don't loop one-anime-per-request where a paginated query works.
+public reads, OAuth token needed for anything under the user's own list. Rate limit:
+90 req/min on the free tier — batch queries, don't loop one-anime-per-request where a
+paginated query works.
 
 Streaming links (`externalLinks`, `streamingEpisodes`) are community-curated on AniList's
 side and can lag real availability — show a "last synced" timestamp next to them rather
@@ -45,61 +45,48 @@ See `schema.sql` in repo root. Two categories, kept in separate tables on purpos
 
 ## Architecture
 
-- **Sync job**: n8n workflow "Anime Tracker — Daily Sync" (04:30 daily) runs the
-  `anime-tracker-crunchysync` container, which chains three steps: Crunchyroll history
-  fetch via crunchyexporter-cli → CR→AniList progress sync (`sync_crunchyroll.py`) →
+- **Sync job**: the `crunchysync` container chains three steps: Crunchyroll history fetch
+  via crunchyexporter-cli → CR→AniList progress sync (`sync_crunchyroll.py`) →
   AniList→Postgres sync (`sync_anilist.py`). Upserts into `anime` / `library_entries` /
   `airing_schedule_cache` / `cr_sync_state`.
-- **Recommender job**: n8n workflow "Anime Tracker — Weekly Recommender" (Sundays 05:00)
-  runs the same `anime-tracker-crunchysync` image with `--entrypoint python` to invoke
-  `run_recommender.py`. Scores unwatched/planning anime against taste profile, writes to
-  `recommendation_scores`. Never touches the `dismissed` flag.
+- **Recommender job**: runs `run_recommender.py`. Scores unwatched/planning anime against
+  taste profile, writes to `recommendation_scores`. Never touches the `dismissed` flag.
 - **App**: reads all tables; writes to `personal_notes`, the `dismissed` flag on
   `recommendation_scores`, and `library_entries.score` (via the rating endpoint).
-  Also pushes ratings to AniList via `SaveMediaListEntry` mutation in real-time.
+  Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry` in real-time.
+- **Built-in scheduler**: APScheduler runs inside the app container. Daily sync and weekly
+  recommender fire automatically; schedule is configurable via the Settings page.
 
-## Deploy Target
+## Deploy
 
-GitHub Actions CI/CD pipeline — no n8n webhook involved:
-1. Push to `main` → GitHub Actions `build` job (hosted runner) builds the Docker image and pushes to `ghcr.io/napandee/anime-tracker:latest`
-2. `deploy` job (self-hosted runner on Unraid) pulls the new image, stops the old container, starts a new one
+GitHub Actions CI/CD pipeline:
+1. Push to `main` → hosted runner builds the app image and pushes to GHCR
+2. Self-hosted runner pulls the new image, stops the old container, starts a new one
 
-Self-hosted runner: `anime-tracker-runner` container on Unraid.
-Runner compose + env template: `homelab-scripts/github-runners/anime-tracker.yml`
-Runner env file on Unraid: `***REDACTED-PATH***/github-runner/anime-tracker.env` (never committed)
+Image tag uses `github.repository_owner` so it works in any fork without config changes.
+The deploy job reads env and paths from `vars.APPDATA_PATH` (set as a GitHub repo variable).
 
-Container name: `anime-tracker`
-Image: `ghcr.io/napandee/anime-tracker:latest`
-Appdata path: `***REDACTED-PATH***/anime-tracker/`
-Env file: `***REDACTED-PATH***/anime-tracker/.env`
-Port: `8889` (internal `8888`)
-
-Public hostname: `anime.***REDACTED-DOMAIN***` — Cloudflare Access-gated to Andreas only.
+See `.github/workflows/build-app.yml` for the full pipeline definition.
 
 ## Guardrails — Non-Negotiable
 
-- Never commit secrets, tokens, or API keys. Env vars only, sourced from Vaultwarden
-  manually — never hardcoded, never logged.
-- Never write to or modify the `unraid-config` repo from this project.
-- The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`,
-  score field), status (`POST /api/anime/{id}/status`, status field), and progress
-  (`POST /api/anime/{id}/progress`, progress field), all using `SaveMediaListEntry`.
-  All other AniList writes go through the crunchysync job.
-  Never add further AniList mutations to the app without agreement.
+- Never commit secrets, tokens, or API keys. Env vars only — never hardcoded, never logged.
+- The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`),
+  status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
+  all using `SaveMediaListEntry`. Never add further AniList mutations to the app without
+  explicit agreement.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
-- Ask before changing the deploy pipeline itself (GitHub Actions workflows, runner config,
-  GHCR image name) — changes here affect the live deployment path.
-- The deploy pipeline uses `docker pull` + `docker run` (no Compose) driven by the
-  GitHub Actions workflow in `.github/workflows/build-app.yml`. Compose files in
-  `compose/` exist solely for Unraid's Compose Manager Plus plugin to track containers;
-  they are not the deployment mechanism and must never be used as a substitute.
+- Ask before changing the deploy pipeline (GitHub Actions workflows, image name) — changes
+  here affect the live deployment path.
+- The deploy pipeline uses `docker pull` + `docker run` (no Compose) driven by the GitHub
+  Actions workflow. Compose files in `compose/` exist solely for container managers that
+  track containers via Compose; they are not the deployment mechanism.
 
 ## Decisions Made
 
-- **Repo**: `Napandee/anime-tracker` (private)
 - **Tech stack**: Python + FastAPI + Jinja2 + psycopg2 — server-rendered HTML, no
   frontend build step. Uvicorn inside a slim Python Docker image.
-- **Stats view**: embedded Grafana panel (`anime-tracker-stats` dashboard) — no stats
-  page or stats API in the app itself.
-- **Container + infra**: see Deploy Target section above.
+- **Stats**: built-in stats page served from `/stats` — no external dashboard dependency.
+- **Single-user**: no auth layer in the app itself. Deploy behind a reverse proxy or
+  access control tool of your choice.

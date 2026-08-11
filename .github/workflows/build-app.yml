@@ -37,7 +37,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/napandee/anime-tracker:latest
+          tags: ghcr.io/${{ github.repository_owner }}/anime-tracker:latest
 
   deploy:
     needs: build
@@ -46,11 +46,11 @@ jobs:
     steps:
       - name: Log in to GHCR
         run: |
-          GHCR_TOKEN=$(grep '^GHCR_TOKEN=' ***REDACTED-PATH***/anime-tracker/.env | cut -d= -f2- | tr -d '\r\n')
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u Napandee --password-stdin
+          GHCR_TOKEN=$(grep '^GHCR_TOKEN=' ${{ vars.APPDATA_PATH }}/.env | cut -d= -f2- | tr -d '\r\n')
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
       - name: Pull new image
-        run: docker pull ghcr.io/napandee/anime-tracker:latest
+        run: docker pull ghcr.io/${{ github.repository_owner }}/anime-tracker:latest
 
       - name: Restart container
         run: |
@@ -60,5 +60,5 @@ jobs:
             --name anime-tracker \
             --restart unless-stopped \
             -p 8889:8888 \
-            --env-file ***REDACTED-PATH***/anime-tracker/.env \
-            ghcr.io/napandee/anime-tracker:latest
+            --env-file ${{ vars.APPDATA_PATH }}/.env \
+            ghcr.io/${{ github.repository_owner }}/anime-tracker:latest

@@ -1,9 +1,11 @@
 services:
   anime-tracker:
-    image: ghcr.io/napandee/anime-tracker:latest
+    # Replace with your image, e.g. ghcr.io/yourusername/anime-tracker:latest
+    # or build locally: image: anime-tracker:local
+    image: ghcr.io/yourusername/anime-tracker:latest
     container_name: anime-tracker
     restart: unless-stopped
     ports:
-      - "8889:8888"
+      - "8888:8888"
     env_file:
-      - ***REDACTED-PATH***/anime-tracker/.env
+      - /path/to/your/.env

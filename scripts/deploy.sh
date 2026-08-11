@@ -1,25 +1,22 @@
 #!/bin/bash
-# deploy.sh — pull latest code, rebuild image, restart container
-# Runs on Unraid via n8n SSH step after a push to main.
+# deploy.sh — manual fallback: pull latest image and restart the app container.
+# Normal deployments are handled automatically by GitHub Actions (build-app.yml).
+#
+# Usage: ENV_FILE=/path/to/.env OWNER=yourghcruser ./deploy.sh
 
 set -euo pipefail
 
-REPO_DIR=***REDACTED-PATH***/anime-tracker/repo
-ENV_FILE=***REDACTED-PATH***/anime-tracker/.env
+ENV_FILE=${ENV_FILE:-".env"}
+OWNER=${OWNER:-"$(git remote get-url origin | sed 's|.*github.com/||;s|/.*||')"}
 CONTAINER=anime-tracker
-IMAGE=ghcr.io/napandee/anime-tracker:latest
+IMAGE=ghcr.io/${OWNER}/anime-tracker:latest
 PORT=8889
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-log "Pulling latest code..."
-cd "$REPO_DIR"
-git fetch origin main
-git reset --hard origin/main
-
 log "Authenticating with GHCR..."
 GHCR_TOKEN=$(grep '^GHCR_TOKEN=' "$ENV_FILE" | cut -d= -f2-)
-echo "$GHCR_TOKEN" | docker login ghcr.io -u napandee --password-stdin
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "$OWNER" --password-stdin
 
 log "Pulling image..."
 docker pull "$IMAGE"

@@ -34,4 +34,4 @@ jobs:
           context: .
           file: Dockerfile.crunchysync
           push: true
-          tags: ghcr.io/napandee/anime-tracker-crunchysync:latest
+          tags: ghcr.io/${{ github.repository_owner }}/anime-tracker-crunchysync:latest
