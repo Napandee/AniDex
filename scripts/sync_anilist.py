@@ -44,7 +44,7 @@ query ($userName: String, $chunk: Int, $perChunk: Int) {
       entries {
         id
         status
-        score(format: POINT_100)
+        score(format: POINT_5)
         progress
         repeat
         startedAt  { year month day }
@@ -134,11 +134,11 @@ def parse_date(d: dict | None) -> date | None:
         return None
 
 
-def score_to_stars(score_100: float | None) -> int | None:
-    """Convert AniList 0-100 score to 1-5 full stars."""
-    if not score_100:
+def score_to_stars(score_5: float | None) -> int | None:
+    """Return AniList POINT_5 score (1–5) as an integer, or None if unrated."""
+    if not score_5:
         return None
-    return max(1, round(score_100 / 20))
+    return int(score_5)
 
 
 def upsert_anime(cur, media: dict) -> None:
