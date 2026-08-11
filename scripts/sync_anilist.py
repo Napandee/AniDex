@@ -65,6 +65,7 @@ query ($userName: String, $chunk: Int, $perChunk: Int) {
           averageScore
           coverImage { large }
           bannerImage
+          duration
           description(asHtml: false)
           externalLinks { site url }
           streamingEpisodes { title url site thumbnail }
@@ -168,13 +169,13 @@ def upsert_anime(cur, media: dict) -> None:
         """
         INSERT INTO anime (
             id, id_mal, title_romaji, title_english, title_native,
-            format, status, episodes, season, season_year,
+            format, status, episodes, duration, season, season_year,
             genres, tags, studios, average_score,
             cover_image_url, banner_image_url, description,
             external_links, streaming_episodes, last_synced_at
         ) VALUES (
             %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s,
             %s, %s, %s,
             %s, %s, now()
@@ -187,6 +188,7 @@ def upsert_anime(cur, media: dict) -> None:
             format             = EXCLUDED.format,
             status             = EXCLUDED.status,
             episodes           = EXCLUDED.episodes,
+            duration           = EXCLUDED.duration,
             season             = EXCLUDED.season,
             season_year        = EXCLUDED.season_year,
             genres             = EXCLUDED.genres,
@@ -209,6 +211,7 @@ def upsert_anime(cur, media: dict) -> None:
             media.get("format"),
             media.get("status"),
             media.get("episodes"),
+            media.get("duration"),
             media.get("season"),
             media.get("seasonYear"),
             json.dumps(media.get("genres") or []),

@@ -12,6 +12,9 @@
     <div class="stat-headline"><span class="stat-num" id="hl-completed">—</span><span class="stat-label">Completed</span></div>
     <div class="stat-headline"><span class="stat-num" id="hl-watching">—</span><span class="stat-label">Watching</span></div>
     <div class="stat-headline"><span class="stat-num" id="hl-episodes">—</span><span class="stat-label">Episodes watched</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-watchtime">—</span><span class="stat-label">Watch time</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-completion">—</span><span class="stat-label">Completion rate</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-meanscore">—</span><span class="stat-label">Mean score</span></div>
   </div>
 
   <div class="stats-grid">
@@ -44,6 +47,14 @@
   document.getElementById('hl-completed').textContent = data.totals.completed;
   document.getElementById('hl-watching').textContent  = data.totals.watching;
   document.getElementById('hl-episodes').textContent  = data.totals.total_episodes.toLocaleString();
+  const wh = data.totals.watch_hours;
+  document.getElementById('hl-watchtime').textContent =
+    wh >= 24 ? `${data.totals.watch_days}d` : `${wh}h`;
+  document.getElementById('hl-completion').textContent =
+    data.totals.completion_rate != null ? `${data.totals.completion_rate}%` : '—';
+  const ms = data.totals.mean_score;
+  document.getElementById('hl-meanscore').textContent =
+    ms != null ? `${'★'.repeat(Math.round(ms))} ${ms.toFixed(1)}` : '—';
 
   const GRID_COLOR = '#2a2a2a';
   const LABEL_COLOR = '#888';

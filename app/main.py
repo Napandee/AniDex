@@ -572,21 +572,35 @@ def stats_data():
     totals = db.fetchone(
         """
         SELECT
-            COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed,
-            COUNT(*) FILTER (WHERE status = 'WATCHING')  AS watching,
-            COALESCE(SUM(progress), 0)                   AS total_episodes
-        FROM library_entries
+            COUNT(*) FILTER (WHERE le.status = 'COMPLETED') AS completed,
+            COUNT(*) FILTER (WHERE le.status = 'WATCHING')  AS watching,
+            COUNT(*) FILTER (WHERE le.status = 'DROPPED')   AS dropped,
+            COALESCE(SUM(le.progress), 0)                   AS total_episodes,
+            COALESCE(SUM(le.progress * COALESCE(a.duration, 24)), 0) AS watch_minutes,
+            ROUND(AVG(le.score) FILTER (WHERE le.score IS NOT NULL AND le.score > 0), 1) AS mean_score
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
         """
     )
+    completed = int(totals["completed"])
+    dropped = int(totals["dropped"])
+    completion_rate = round(completed / (completed + dropped) * 100) if (completed + dropped) > 0 else None
+    watch_minutes = int(totals["watch_minutes"])
+    watch_hours = watch_minutes // 60
+    watch_days = round(watch_minutes / 1440, 1)
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
         "genres": [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows],
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "totals": {
-            "completed": totals["completed"],
-            "watching": totals["watching"],
+            "completed": completed,
+            "watching": int(totals["watching"]),
             "total_episodes": int(totals["total_episodes"]),
+            "watch_hours": watch_hours,
+            "watch_days": watch_days,
+            "completion_rate": completion_rate,
+            "mean_score": float(totals["mean_score"]) if totals["mean_score"] else None,
         },
     })
 

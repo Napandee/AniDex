@@ -18,6 +18,7 @@ CREATE TABLE anime (
     format              TEXT,                        -- TV, MOVIE, OVA, ONA, SPECIAL
     status              TEXT,                        -- FINISHED, RELEASING, NOT_YET_RELEASED, CANCELLED
     episodes            INTEGER,                     -- total episode count, null if unknown/ongoing
+    duration            INTEGER,                     -- average episode length in minutes
     season              TEXT,                        -- WINTER, SPRING, SUMMER, FALL
     season_year         INTEGER,
     genres              JSONB DEFAULT '[]',           -- ["Action", "Drama", ...]
