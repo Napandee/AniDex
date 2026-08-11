@@ -1213,6 +1213,16 @@ main {
 }
 .btn-anilist-sm:hover { color: #818cf8; }
 
+.btn-notes-sm {
+  color: #4a5568;
+  font-size: 0.8rem;
+  text-decoration: none;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.btn-notes-sm:hover { color: #a78bfa; }
+
 /* ── Nav search ──────────────────────────────────────────────────────────────── */
 .nav-search-form { display: flex; }
 .nav-search {
