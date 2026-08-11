@@ -71,7 +71,7 @@
         <div class="rec-dismiss-row">
           <span class="dismiss-label">Dismiss:</span>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="not_interested">Not interested</button>
-          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="already_watched">Seen it</button>
+          <button class="dismiss-chip seen-it-chip" data-anime-id="{{ e.id }}" data-title="{{ e.title_english or e.title_romaji }}" data-reason="already_watched">Seen it</button>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="wrong_genre">Wrong genre</button>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="too_long">Too long</button>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="">✕</button>
@@ -85,7 +85,26 @@
 <p class="empty">No recommendations yet — run the recommender to generate them.</p>
 {% endif %}
 
+<div id="seen-it-backdrop" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-title" id="seen-it-title"></div>
+    <p class="seen-it-hint">Rate it (optional) then confirm to mark as completed on AniList.</p>
+    <div class="seen-it-stars">
+      {% for i in [1,2,3,4,5] %}
+      <span class="star seen-it-star" data-value="{{ i }}">★</span>
+      {% endfor %}
+    </div>
+    <div class="modal-actions">
+      <button id="seen-it-confirm" class="btn-save">Mark as seen</button>
+      <button id="seen-it-cancel" class="btn-cancel-modal">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
+let _seenItAnimeId = null;
+let _seenItScore = 0;
+
 async function doDismiss(animeId, reason) {
   const card = document.querySelector(`.rec-card[data-anime-id="${animeId}"]`);
   if (card) { card.style.opacity = '0.3'; card.style.pointerEvents = 'none'; }
@@ -97,7 +116,62 @@ async function doDismiss(animeId, reason) {
   if (card) card.remove();
 }
 
-document.querySelectorAll('.dismiss-chip').forEach(chip => {
+// "Seen it" — intercept to show rating modal
+document.querySelectorAll('.seen-it-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    _seenItAnimeId = chip.dataset.animeId;
+    _seenItScore = 0;
+    document.getElementById('seen-it-title').textContent = chip.dataset.title;
+    document.querySelectorAll('.seen-it-star').forEach(s => s.classList.remove('filled'));
+    document.getElementById('seen-it-backdrop').hidden = false;
+  });
+});
+
+// Star hover + click in modal
+document.querySelectorAll('.seen-it-star').forEach(star => {
+  star.addEventListener('mouseenter', () => {
+    const v = +star.dataset.value;
+    document.querySelectorAll('.seen-it-star').forEach(s => s.classList.toggle('filled', +s.dataset.value <= v));
+  });
+  star.addEventListener('mouseleave', () => {
+    document.querySelectorAll('.seen-it-star').forEach(s => s.classList.toggle('filled', +s.dataset.value <= _seenItScore));
+  });
+  star.addEventListener('click', () => {
+    _seenItScore = _seenItScore === +star.dataset.value ? 0 : +star.dataset.value;
+    document.querySelectorAll('.seen-it-star').forEach(s => s.classList.toggle('filled', +s.dataset.value <= _seenItScore));
+  });
+});
+
+document.getElementById('seen-it-cancel').addEventListener('click', () => {
+  document.getElementById('seen-it-backdrop').hidden = true;
+});
+
+document.getElementById('seen-it-confirm').addEventListener('click', async () => {
+  const btn = document.getElementById('seen-it-confirm');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  const id = _seenItAnimeId;
+
+  await fetch(`/api/anime/${id}/status`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'COMPLETED'}),
+  });
+
+  if (_seenItScore > 0) {
+    await fetch(`/api/anime/${id}/rating`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({score: _seenItScore}),
+    });
+  }
+
+  document.getElementById('seen-it-backdrop').hidden = true;
+  await doDismiss(id, 'already_watched');
+});
+
+// All other dismiss chips (not seen-it)
+document.querySelectorAll('.dismiss-chip:not(.seen-it-chip)').forEach(chip => {
   chip.addEventListener('click', () => doDismiss(chip.dataset.animeId, chip.dataset.reason));
 });
 </script>
