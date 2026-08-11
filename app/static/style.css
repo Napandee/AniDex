@@ -1101,3 +1101,146 @@ main {
 .status-chip--planning  { color: #a78bfa; border-color: #4c1d95; background: #1a1033; }
 .status-chip--paused    { color: #facc15; border-color: #713f12; background: #2a1a04; }
 .status-chip--repeating { color: #fb923c; border-color: #7c2d12; background: #2a1006; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — mobile first fixes
+   Primary breakpoint: 768px (tablet/phone)
+   Secondary:          480px (phone only)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+
+  /* ── Nav ──────────────────────────────────────────────────────────────── */
+  header { padding: 0.75rem 1rem; }
+
+  nav {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .site-name { flex: 1; }
+
+  .nav-search-form { order: 2; flex: 1; }
+  .nav-search { width: 100%; }
+  .nav-search:focus { width: 100%; }
+
+  .nav-links {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    gap: 0.25rem;
+    padding-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar { display: none; }
+
+  .nav-link {
+    white-space: nowrap;
+    padding: 0.3rem 0.6rem;
+    background: #1a1a1a;
+    border-radius: 6px;
+    font-size: 0.8rem;
+  }
+
+  /* ── Main padding ─────────────────────────────────────────────────────── */
+  main { padding: 1rem; }
+
+  /* ── Library grid — 2 columns on tablet, handled by auto-fill ─────────── */
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; }
+
+  /* ── Library toolbar ─────────────────────────────────────────────────── */
+  .library-toolbar { gap: 0.5rem; }
+  .library-search { max-width: 100%; width: 100%; }
+  .toolbar-right { margin-left: 0; width: 100%; gap: 0.4rem; }
+
+  /* ── Filter/sort buttons — smaller on mobile ──────────────────────────── */
+  .filter-btn, .sort-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  .sort-label { display: none; }
+
+  /* ── Status tabs — scrollable ─────────────────────────────────────────── */
+  .status-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.25rem;
+    margin-bottom: 1rem;
+  }
+  .status-tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; }
+
+  /* ── Card body — tighten up ───────────────────────────────────────────── */
+  .card-body { padding: 0.6rem; gap: 0.4rem; }
+  .title { font-size: 0.8rem; }
+  .title-sub { font-size: 0.7rem; }
+  .meta { gap: 0.3rem; }
+
+  /* ── Progress stepper — compact ───────────────────────────────────────── */
+  .prog-btn { width: 20px; height: 20px; font-size: 0.8rem; }
+  .prog-val { font-size: 0.8rem; }
+  .prog-total, .prog-unit { font-size: 0.75rem; }
+
+  /* ── Queue items ──────────────────────────────────────────────────────── */
+  .queue-item { gap: 0.6rem; padding: 0.65rem 0.75rem; }
+  .queue-cover { width: 48px; height: 68px; }
+  .queue-rank { font-size: 0.9rem; min-width: 1.25rem; }
+  .queue-actions { flex-direction: column; gap: 0.35rem; }
+  .btn-mark-watched { font-size: 0.75rem; padding: 0.3rem 0.5rem; }
+
+  /* ── Stats grid — single column ───────────────────────────────────────── */
+  .stats-grid { grid-template-columns: 1fr; }
+  .chart-card--wide { grid-column: 1; }
+  .stats-headlines { gap: 0.75rem; }
+  .stat-headline { padding: 0.75rem 1.25rem; }
+  .stat-num { font-size: 1.5rem; }
+
+  /* ── Recommendations grid ─────────────────────────────────────────────── */
+  .rec-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+
+  /* ── Search page ──────────────────────────────────────────────────────── */
+  .search-form { flex-direction: column; }
+  .search-submit { width: 100%; }
+
+  /* ── Notes / settings pages ───────────────────────────────────────────── */
+  .notes-page, .settings-page { padding: 0; }
+  .form-input { font-size: 0.9rem; }
+
+  /* ── Upcoming page ────────────────────────────────────────────────────── */
+  .upcoming-list { gap: 0.5rem; }
+  .upcoming-item { gap: 0.6rem; padding: 0.6rem 0.75rem; }
+  .upcoming-cover { width: 40px; }
+
+  /* ── Modal — full screen on mobile ───────────────────────────────────── */
+  .modal-box {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    border-radius: 12px 12px 0 0;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  .modal-backdrop { align-items: flex-end; }
+}
+
+@media (max-width: 480px) {
+
+  /* ── Single column card grid on small phones ──────────────────────────── */
+  .grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* ── Hide less-critical meta on tiny screens ──────────────────────────── */
+  .avg-score { display: none; }
+  .genre { font-size: 0.65rem; padding: 0.1rem 0.35rem; }
+
+  /* ── Queue: hide drag handle to save space ────────────────────────────── */
+  .queue-drag-handle { display: none; }
+
+  /* ── Stats headlines — 2 per row ──────────────────────────────────────── */
+  .stats-headlines { display: grid; grid-template-columns: 1fr 1fr; }
+}
