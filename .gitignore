@@ -1,4 +1,3 @@
-.env
 __pycache__/
 *.pyc
 *.pyo
@@ -7,3 +6,13 @@ venv/
 *.egg-info/
 dist/
 .pytest_cache/
+
+# Secrets — never commit
+.env
+
+# Local Claude Code context and machine-specific settings
+.claude/
+CLAUDE.local.md
+
+# Compose data directories
+compose/postgres-data/

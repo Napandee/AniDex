@@ -210,20 +210,12 @@ mutation ($mediaId: Int!, $progress: Int!) {
 VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
 STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
 
-GRAFANA_PUBLIC_URL = os.getenv("GRAFANA_PUBLIC_URL", "")
-
 STREAMING_SITES = {
     "Crunchyroll", "Netflix", "Hulu", "Amazon Prime Video", "HIDIVE",
     "Disney Plus", "Bilibili TV", "Bilibili", "iQ", "WeTV", "Tubi TV",
     "Adult Swim", "Hoopla", "Max", "Tencent Video", "Bandai Channel",
     "Niconico Video", "Funimation", "VRV",
 }
-GRAFANA_EMBED_URL = os.getenv("GRAFANA_EMBED_URL", GRAFANA_PUBLIC_URL)
-STATS_DASHBOARD_URL = (
-    f"{GRAFANA_EMBED_URL}/d/anime-tracker-stats/anime-tracker-stats"
-    "?kiosk=tv&theme=dark&orgId=1&from=now-10y&to=now"
-)
-
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
