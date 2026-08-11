@@ -1214,14 +1214,18 @@ main {
 .btn-anilist-sm:hover { color: #818cf8; }
 
 .btn-notes-sm {
-  color: #4a5568;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  background: #1a1a2e;
+  color: #a78bfa;
+  border: 1px solid #3730a3;
+  border-radius: 5px;
   text-decoration: none;
-  line-height: 1;
   flex-shrink: 0;
-  transition: color 0.15s;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
 }
-.btn-notes-sm:hover { color: #a78bfa; }
+.btn-notes-sm:hover { background: #2e1065; color: #c4b5fd; }
 
 /* ── Nav search ──────────────────────────────────────────────────────────────── */
 .nav-search-form { display: flex; }
