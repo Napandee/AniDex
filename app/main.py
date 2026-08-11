@@ -342,6 +342,17 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     related.sort(key=lambda r: _RELATION_ORDER.index(r["relation_type"])
                  if r["relation_type"] in _RELATION_ORDER else 99)
 
+    if related:
+        in_library = {
+            row["anime_id"]
+            for row in db.fetchall(
+                "SELECT anime_id FROM library_entries WHERE anime_id = ANY(%s)",
+                ([r["id"] for r in related],),
+            )
+        }
+        for r in related:
+            r["in_library"] = r["id"] in in_library
+
     return templates.TemplateResponse(
         "notes.html",
         {"request": request, "anime": anime, "notes": notes, "back": back,

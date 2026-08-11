@@ -44,12 +44,19 @@
       {% if related %}
       <div class="related-list">
         {% for r in related %}
+        {% if r.in_library %}
+        <a href="/anime/{{ r.id }}/notes?back={{ back }}" class="related-card related-card--library">
+        {% else %}
         <a href="https://anilist.co/anime/{{ r.id }}" target="_blank" rel="noopener" class="related-card">
+        {% endif %}
           {% if r.cover %}<img src="{{ r.cover }}" alt="{{ r.title }}" class="related-cover">{% endif %}
           <div class="related-info">
             <div class="related-type">{{ relation_labels.get(r.relation_type, r.relation_type) }}</div>
             <div class="related-title">{{ r.title }}</div>
-            {% if r.format %}<div class="related-format">{{ r.format }}</div>{% endif %}
+            <div class="related-meta">
+              {% if r.format %}<span class="related-format">{{ r.format }}</span>{% endif %}
+              {% if r.in_library %}<span class="related-in-library">In library</span>{% endif %}
+            </div>
           </div>
         </a>
         {% endfor %}
