@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set lowercase owner
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -34,4 +37,4 @@ jobs:
           context: .
           file: Dockerfile.crunchysync
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/anime-tracker-crunchysync:latest
+          tags: ghcr.io/${{ env.OWNER }}/anime-tracker-crunchysync:latest

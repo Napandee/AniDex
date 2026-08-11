@@ -24,6 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set lowercase owner
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -37,7 +40,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/anime-tracker:latest
+          tags: ghcr.io/${{ env.OWNER }}/anime-tracker:latest
 
   deploy:
     needs: build
@@ -46,14 +49,18 @@ jobs:
     steps:
       - name: Log in to GHCR
         run: |
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           GHCR_TOKEN=$(grep '^GHCR_TOKEN=' ${{ vars.APPDATA_PATH }}/.env | cut -d= -f2- | tr -d '\r\n')
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$OWNER" --password-stdin
 
       - name: Pull new image
-        run: docker pull ghcr.io/${{ github.repository_owner }}/anime-tracker:latest
+        run: |
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          docker pull ghcr.io/$OWNER/anime-tracker:latest
 
       - name: Restart container
         run: |
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           docker stop anime-tracker 2>/dev/null || true
           docker rm   anime-tracker 2>/dev/null || true
           docker run -d \
@@ -61,4 +68,4 @@ jobs:
             --restart unless-stopped \
             -p 8889:8888 \
             --env-file ${{ vars.APPDATA_PATH }}/.env \
-            ghcr.io/${{ github.repository_owner }}/anime-tracker:latest
+            ghcr.io/$OWNER/anime-tracker:latest
