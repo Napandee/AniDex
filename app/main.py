@@ -455,6 +455,50 @@ def stats(request: Request):
     return templates.TemplateResponse("stats.html", {"request": request})
 
 
+@app.get("/search", response_class=HTMLResponse)
+def search(request: Request, q: str = ""):
+    q = q.strip()
+    entries = []
+    if q:
+        pattern = f"%{q}%"
+        rows = db.fetchall(
+            """
+            SELECT
+                a.id,
+                a.title_english,
+                a.title_romaji,
+                a.cover_image_url,
+                a.format,
+                a.episodes,
+                a.average_score,
+                a.genres,
+                a.external_links,
+                le.status,
+                le.score,
+                le.progress
+            FROM library_entries le
+            JOIN anime a ON a.id = le.anime_id
+            WHERE
+                a.title_english ILIKE %s
+                OR a.title_romaji ILIKE %s
+                OR a.title_native ILIKE %s
+            ORDER BY le.status, a.title_romaji
+            """,
+            (pattern, pattern, pattern),
+        )
+        for row in rows:
+            entry = dict(row)
+            entry["streaming_links"] = [
+                lnk for lnk in (row["external_links"] or [])
+                if lnk.get("site") in STREAMING_SITES
+            ]
+            entries.append(entry)
+    return templates.TemplateResponse(
+        "search.html",
+        {"request": request, "q": q, "entries": entries},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def library(request: Request, response: Response, status: str = None):
     response.headers["Cache-Control"] = "no-store"
