@@ -35,7 +35,27 @@
         <option value="">All seasons</option>
       </select>
     </div>
+
+    <div class="filter-group score-filter-group">
+      <button class="filter-btn active" data-score-filter="">All ★</button>
+      {% for s in [1,2,3,4,5] %}
+      <button class="filter-btn" data-score-filter="{{ s }}">{{ '★' * s }}</button>
+      {% endfor %}
+    </div>
+
+    <button id="bulk-toggle" class="filter-btn">Select</button>
   </div>
+</div>
+
+<div id="bulk-bar" class="bulk-bar" hidden>
+  <span id="bulk-count">0 selected</span>
+  <select id="bulk-status-select" class="form-input form-input--narrow">
+    {% for s in ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'] %}
+    <option value="{{ s }}">{{ s.title() }}</option>
+    {% endfor %}
+  </select>
+  <button id="bulk-apply" class="btn-save">Apply status</button>
+  <button id="bulk-clear" class="filter-btn">Clear</button>
 </div>
 
 {% if entries %}
@@ -56,6 +76,7 @@
        data-season="{{ e.season or '' }}"
        data-season-year="{{ e.season_year or '' }}">
 
+    <input type="checkbox" class="bulk-checkbox" data-anime-id="{{ e.id }}" hidden>
     {% if e.cover_image_url %}
     <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
     {% endif %}
@@ -172,5 +193,86 @@
     </div>
   </div>
 </div>
+
+<script>
+// ── Score filter ──────────────────────────────────────────────────────────────
+(function () {
+  let activeScore = '';
+  document.querySelectorAll('[data-score-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-score-filter]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeScore = btn.dataset.scoreFilter;
+      applyScoreFilter();
+    });
+  });
+
+  function applyScoreFilter() {
+    document.querySelectorAll('#library-grid .card').forEach(card => {
+      if (!activeScore) { card.dataset.scoreHidden = ''; return; }
+      const score = parseInt(card.dataset.score) || 0;
+      card.dataset.scoreHidden = String(score !== parseInt(activeScore));
+    });
+    if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
+  }
+}());
+
+// ── Bulk select ───────────────────────────────────────────────────────────────
+(function () {
+  const toggleBtn = document.getElementById('bulk-toggle');
+  const bar = document.getElementById('bulk-bar');
+  const countEl = document.getElementById('bulk-count');
+  const applyBtn = document.getElementById('bulk-apply');
+  const clearBtn = document.getElementById('bulk-clear');
+  const statusSel = document.getElementById('bulk-status-select');
+  let bulkMode = false;
+
+  function getChecked() {
+    return [...document.querySelectorAll('.bulk-checkbox:checked')];
+  }
+
+  function updateBar() {
+    const n = getChecked().length;
+    countEl.textContent = `${n} selected`;
+    bar.hidden = n === 0;
+  }
+
+  toggleBtn.addEventListener('click', () => {
+    bulkMode = !bulkMode;
+    toggleBtn.classList.toggle('active', bulkMode);
+    toggleBtn.textContent = bulkMode ? 'Done' : 'Select';
+    document.querySelectorAll('.bulk-checkbox').forEach(cb => {
+      cb.hidden = !bulkMode;
+      if (!bulkMode) cb.checked = false;
+    });
+    if (!bulkMode) { bar.hidden = true; }
+  });
+
+  document.addEventListener('change', e => {
+    if (e.target.classList.contains('bulk-checkbox')) updateBar();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    document.querySelectorAll('.bulk-checkbox').forEach(cb => cb.checked = false);
+    updateBar();
+  });
+
+  applyBtn.addEventListener('click', async () => {
+    const checked = getChecked();
+    if (!checked.length) return;
+    const newStatus = statusSel.value;
+    applyBtn.disabled = true;
+    await Promise.all(checked.map(cb =>
+      fetch(`/api/anime/${cb.dataset.animeId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: newStatus}),
+      })
+    ));
+    applyBtn.disabled = false;
+    location.reload();
+  });
+}());
+</script>
 
 {% endblock %}

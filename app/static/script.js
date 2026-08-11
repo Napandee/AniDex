@@ -83,7 +83,8 @@ function applyLibraryFilters() {
     const seasonKey = card.dataset.seasonYear && card.dataset.season
       ? `${card.dataset.seasonYear}|${card.dataset.season}` : '';
     const seasonOk  = !activeSeason || seasonKey === activeSeason;
-    const show    = textOk && fmtOk && seasonOk;
+    const scoreOk   = card.dataset.scoreHidden !== 'true';
+    const show    = textOk && fmtOk && seasonOk && scoreOk;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
