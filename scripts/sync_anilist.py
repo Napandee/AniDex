@@ -246,7 +246,7 @@ def upsert_library_entry(cur, entry: dict) -> None:
         ON CONFLICT (anime_id) DO UPDATE SET
             anilist_entry_id   = EXCLUDED.anilist_entry_id,
             status             = EXCLUDED.status,
-            score              = EXCLUDED.score,
+            score              = COALESCE(EXCLUDED.score, library_entries.score),
             progress           = EXCLUDED.progress,
             repeat_count       = EXCLUDED.repeat_count,
             start_date         = EXCLUDED.start_date,

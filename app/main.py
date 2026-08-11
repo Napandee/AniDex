@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -8,6 +9,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
+
+log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
@@ -443,8 +446,21 @@ async def set_rating(anime_id: int, request: Request):
         resp.raise_for_status()
         data = resp.json()
         if "errors" in data:
+            log.error("AniList rating error for %s: %s", anime_id, data["errors"])
             return JSONResponse({"error": str(data["errors"])}, status_code=502)
+        saved = ((data.get("data") or {}).get("SaveMediaListEntry")) or {}
+        if not saved:
+            log.error("AniList rating: SaveMediaListEntry returned null for mediaId=%s", anime_id)
+            return JSONResponse({"error": "AniList returned null — entry may not be in your list"}, status_code=502)
+        returned_score = saved.get("score")
+        if returned_score != score_100:
+            log.warning(
+                "AniList score mismatch for %s: sent %s, got back %s — "
+                "check your AniList score format setting",
+                anime_id, score_100, returned_score,
+            )
     except Exception as e:
+        log.error("AniList rating request failed for %s: %s", anime_id, e)
         return JSONResponse({"error": str(e)}, status_code=502)
 
     local_score = stars if stars > 0 else None
