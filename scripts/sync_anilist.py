@@ -67,6 +67,7 @@ query ($userName: String, $chunk: Int, $perChunk: Int) {
           bannerImage
           duration
           description(asHtml: false)
+          trailer { id site }
           externalLinks { site url }
           streamingEpisodes { title url site thumbnail }
           relations {
@@ -175,6 +176,13 @@ def upsert_anime(cur, media: dict) -> None:
         }
         for ep in (media.get("streamingEpisodes") or [])
     ]
+    trailer_raw = media.get("trailer") or {}
+    trailer_yt_id = (
+        trailer_raw.get("id")
+        if trailer_raw.get("site", "").lower() == "youtube"
+        else None
+    )
+
     relations = [
         {
             "id": edge["node"]["id"],
@@ -195,13 +203,13 @@ def upsert_anime(cur, media: dict) -> None:
             format, status, episodes, duration, season, season_year,
             genres, tags, studios, average_score,
             cover_image_url, banner_image_url, description,
-            external_links, streaming_episodes, relations, last_synced_at
+            trailer_yt_id, external_links, streaming_episodes, relations, last_synced_at
         ) VALUES (
             %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s,
             %s, %s, %s,
-            %s, %s, %s, now()
+            %s, %s, %s, %s, now()
         )
         ON CONFLICT (id) DO UPDATE SET
             id_mal             = EXCLUDED.id_mal,
@@ -221,6 +229,7 @@ def upsert_anime(cur, media: dict) -> None:
             cover_image_url    = EXCLUDED.cover_image_url,
             banner_image_url   = EXCLUDED.banner_image_url,
             description        = EXCLUDED.description,
+            trailer_yt_id      = EXCLUDED.trailer_yt_id,
             external_links     = EXCLUDED.external_links,
             streaming_episodes = EXCLUDED.streaming_episodes,
             relations          = EXCLUDED.relations,
@@ -245,6 +254,7 @@ def upsert_anime(cur, media: dict) -> None:
             (media.get("coverImage") or {}).get("large"),
             media.get("bannerImage"),
             media.get("description"),
+            trailer_yt_id,
             json.dumps(ext_links),
             json.dumps(streaming),
             json.dumps(relations),

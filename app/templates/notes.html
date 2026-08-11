@@ -22,22 +22,41 @@
   </div>
 
   {# ── Trailer + related ────────────────────────────────────────────── #}
+  {% set relation_labels = {
+    'PREQUEL': 'Prequel', 'SEQUEL': 'Sequel', 'PARENT': 'Parent',
+    'SIDE_STORY': 'Side story', 'SPIN_OFF': 'Spin-off', 'ALTERNATIVE': 'Alternative',
+    'COMPILATION': 'Compilation', 'CONTAINS': 'Contains', 'SUMMARY': 'Summary', 'OTHER': 'Related'
+  } %}
   <div class="extra-section">
     <div>
       <h2 class="extra-heading">Trailer</h2>
-      <div id="trailer-wrap">
-        <a id="trailer-link" href="#" target="_blank" rel="noopener" class="trailer-link" hidden>
-          <img id="trailer-thumb" src="" alt="Watch trailer" class="trailer-thumb">
-          <span class="trailer-play">▶</span>
-        </a>
-        <p id="trailer-none" class="extra-empty">Loading…</p>
-      </div>
+      {% if trailer %}
+      <a href="{{ trailer.url }}" target="_blank" rel="noopener" class="trailer-link">
+        <img src="{{ trailer.thumbnail }}" alt="Watch trailer" class="trailer-thumb">
+        <span class="trailer-play">▶</span>
+      </a>
+      {% else %}
+      <p class="extra-empty">No trailer available</p>
+      {% endif %}
     </div>
     <div>
       <h2 class="extra-heading">Related</h2>
-      <div id="related-list" class="related-list">
-        <p id="related-none" class="extra-empty">Loading…</p>
+      {% if related %}
+      <div class="related-list">
+        {% for r in related %}
+        <a href="/anime/{{ r.id }}/notes?back={{ back }}" class="related-card">
+          {% if r.cover %}<img src="{{ r.cover }}" alt="{{ r.title }}" class="related-cover">{% endif %}
+          <div class="related-info">
+            <div class="related-type">{{ relation_labels.get(r.relation_type, r.relation_type) }}</div>
+            <div class="related-title">{{ r.title }}</div>
+            {% if r.format %}<div class="related-format">{{ r.format }}</div>{% endif %}
+          </div>
+        </a>
+        {% endfor %}
       </div>
+      {% else %}
+      <p class="extra-empty">No related anime</p>
+      {% endif %}
     </div>
   </div>
 
@@ -95,44 +114,4 @@
 
 </div>
 
-<script>
-(async function () {
-  const RELATION_LABELS = {
-    PREQUEL: 'Prequel', SEQUEL: 'Sequel', PARENT: 'Parent',
-    SIDE_STORY: 'Side story', SPIN_OFF: 'Spin-off', ALTERNATIVE: 'Alternative',
-    COMPILATION: 'Compilation', CONTAINS: 'Contains', SUMMARY: 'Summary', OTHER: 'Related',
-  };
-
-  const data = await fetch('/api/anime/{{ anime.id }}/extra').then(r => r.json()).catch(() => null);
-
-  const trailerLink = document.getElementById('trailer-link');
-  const trailerNone = document.getElementById('trailer-none');
-  if (data && data.trailer) {
-    trailerLink.href = data.trailer.url;
-    document.getElementById('trailer-thumb').src = data.trailer.thumbnail;
-    trailerLink.hidden = false;
-    trailerNone.remove();
-  } else {
-    trailerNone.textContent = 'No trailer available';
-  }
-
-  const relatedList = document.getElementById('related-list');
-  const relatedNone = document.getElementById('related-none');
-  if (data && data.related && data.related.length) {
-    relatedNone.remove();
-    relatedList.insertAdjacentHTML('beforeend', data.related.map(r => `
-      <a href="/anime/${r.id}/notes?back={{ back }}" class="related-card">
-        <img src="${r.cover || ''}" alt="${r.title}" class="related-cover">
-        <div class="related-info">
-          <div class="related-type">${RELATION_LABELS[r.relation_type] || r.relation_type}</div>
-          <div class="related-title">${r.title}</div>
-          ${r.format ? `<div class="related-format">${r.format}</div>` : ''}
-        </div>
-      </a>
-    `).join(''));
-  } else {
-    relatedNone.textContent = 'No related anime';
-  }
-}());
-</script>
 {% endblock %}

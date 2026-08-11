@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 import subprocess
 import sys
 import threading
@@ -319,7 +318,8 @@ async def dismiss(anime_id: int, request: Request):
 def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     anime = db.fetchone(
         """
-        SELECT a.id, a.title_english, a.title_romaji, a.cover_image_url, le.status
+        SELECT a.id, a.title_english, a.title_romaji, a.cover_image_url, le.status,
+               a.trailer_yt_id, a.relations
         FROM anime a
         LEFT JOIN library_entries le ON le.anime_id = a.id
         WHERE a.id = %s
@@ -329,9 +329,23 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     notes = db.fetchone(
         "SELECT * FROM personal_notes WHERE anime_id = %s", (anime_id,)
     )
+
+    trailer = None
+    if anime and anime["trailer_yt_id"]:
+        vid = anime["trailer_yt_id"]
+        trailer = {
+            "url": f"https://www.youtube.com/watch?v={vid}",
+            "thumbnail": f"https://img.youtube.com/vi/{vid}/mqdefault.jpg",
+        }
+
+    related = list(anime["relations"] if anime and anime["relations"] else [])
+    related.sort(key=lambda r: _RELATION_ORDER.index(r["relation_type"])
+                 if r["relation_type"] in _RELATION_ORDER else 99)
+
     return templates.TemplateResponse(
         "notes.html",
-        {"request": request, "anime": anime, "notes": notes, "back": back},
+        {"request": request, "anime": anime, "notes": notes, "back": back,
+         "trailer": trailer, "related": related},
     )
 
 
@@ -414,29 +428,19 @@ _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
                    "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
 
 
-def _yt_trailer_from_url(url: str) -> dict | None:
-    m = re.search(r'(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})', url)
-    if not m:
-        return None
-    vid = m.group(1)
-    return {
-        "url": f"https://www.youtube.com/watch?v={vid}",
-        "thumbnail": f"https://img.youtube.com/vi/{vid}/mqdefault.jpg",
-    }
-
-
 @app.get("/api/anime/{anime_id}/extra")
 def anime_extra(anime_id: int):
     row = db.fetchone(
-        "SELECT external_links, relations FROM anime WHERE id = %s", (anime_id,)
+        "SELECT trailer_yt_id, relations FROM anime WHERE id = %s", (anime_id,)
     )
 
     trailer = None
-    for link in (row["external_links"] if row else []) or []:
-        if link.get("site", "").lower() == "youtube":
-            trailer = _yt_trailer_from_url(link["url"])
-            if trailer:
-                break
+    if row and row["trailer_yt_id"]:
+        vid = row["trailer_yt_id"]
+        trailer = {
+            "url": f"https://www.youtube.com/watch?v={vid}",
+            "thumbnail": f"https://img.youtube.com/vi/{vid}/mqdefault.jpg",
+        }
 
     relations = list(row["relations"] if row else []) or []
     relations.sort(key=lambda r: _RELATION_ORDER.index(r["relation_type"])

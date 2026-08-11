@@ -28,6 +28,7 @@ CREATE TABLE anime (
     cover_image_url     TEXT,
     banner_image_url    TEXT,
     description         TEXT,
+    trailer_yt_id       TEXT,                        -- YouTube video ID from AniList trailer field
     external_links      JSONB DEFAULT '[]',           -- [{"site": "Crunchyroll", "url": "..."}, ...]
     streaming_episodes  JSONB DEFAULT '[]',           -- [{"title": "Ep 1", "url": "...", "site": "...", "thumbnail": "..."}]
     relations           JSONB DEFAULT '[]',           -- [{"id": 123, "title": "...", "cover": "...", "format": "TV", "relation_type": "SEQUEL"}]
