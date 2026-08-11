@@ -917,6 +917,32 @@ main {
 .btn-add-planning:hover { background: #1e3a5f; color: #93c5fd; }
 .btn-add-planning:disabled { opacity: 0.5; cursor: default; }
 
+.similar-to-title { font-size: 0.78rem; color: #a0aec0; font-style: italic; }
+
+.dismiss-reason-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #1f1f1f;
+}
+.dismiss-reason-label { font-size: 0.72rem; color: #555; margin-right: 0.2rem; }
+.dismiss-reason-chip {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 20px;
+  color: #aaa;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.dismiss-reason-chip:hover { border-color: #ef4444; color: #ef4444; }
+.dismiss-reason-skip { color: #555; border-color: #222; }
+.dismiss-reason-skip:hover { border-color: #555; color: #888; }
+
 /* ── Inline notes panel ─────────────────────────────────────────────────────── */
 .notes-toggle {
   background: none;

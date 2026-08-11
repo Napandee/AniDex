@@ -12,7 +12,7 @@
 
 <div class="rec-grid">
   {% for e in entries %}
-  <div class="rec-card" data-genres="{{ e.genres | join(',') if e.genres else '' }}">
+  <div class="rec-card" data-anime-id="{{ e.id }}" data-genres="{{ e.genres | join(',') if e.genres else '' }}">
     <div class="rec-cover-wrap">
       {% if e.cover_image_url %}
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
@@ -64,12 +64,24 @@
         {% endif %}
       {% endif %}
 
+      {% if e.similar_to %}
+      <div class="match-row">
+        <span class="match-label">Similar to</span>
+        <span class="similar-to-title">{{ e.similar_to }}</span>
+      </div>
+      {% endif %}
+
       <div class="rec-actions">
         <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist">AniList ↗</a>
         <button class="btn-add-planning" data-anime-id="{{ e.id }}">+ Planning</button>
-        <form method="post" action="/recommendations/{{ e.id }}/dismiss">
-          <button type="submit" class="btn-dismiss">Dismiss</button>
-        </form>
+        <button class="btn-dismiss" data-anime-id="{{ e.id }}">Dismiss</button>
+      </div>
+      <div class="dismiss-reason-row" id="dismiss-reasons-{{ e.id }}" hidden>
+        <span class="dismiss-reason-label">Reason:</span>
+        {% for r, label in [('not_interested','Not interested'),('already_watched','Already watched'),('wrong_genre','Wrong genre'),('too_long','Too long')] %}
+        <button class="dismiss-reason-chip" data-anime-id="{{ e.id }}" data-reason="{{ r }}">{{ label }}</button>
+        {% endfor %}
+        <button class="dismiss-reason-chip dismiss-reason-skip" data-anime-id="{{ e.id }}" data-reason="">Skip</button>
       </div>
     </div>
   </div>
@@ -78,4 +90,30 @@
 {% else %}
 <p class="empty">No recommendations yet — run <code>scripts/run_recommender.py</code> to generate them.</p>
 {% endif %}
+
+<script>
+// Dismiss flow: first click shows reason row; reason chip fires API call and removes card
+document.querySelectorAll('.btn-dismiss').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.animeId;
+    const reasonRow = document.getElementById('dismiss-reasons-' + id);
+    if (reasonRow) reasonRow.hidden = false;
+    btn.hidden = true;
+  });
+});
+
+async function doDismiss(animeId, reason) {
+  await fetch(`/recommendations/${animeId}/dismiss`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason: reason || null}),
+  });
+  const card = document.querySelector(`.rec-card[data-anime-id="${animeId}"]`);
+  if (card) card.remove();
+}
+
+document.querySelectorAll('.dismiss-reason-chip').forEach(chip => {
+  chip.addEventListener('click', () => doDismiss(chip.dataset.animeId, chip.dataset.reason));
+});
+</script>
 {% endblock %}

@@ -85,6 +85,7 @@ CREATE TABLE recommendation_scores (
     score                NUMERIC(5,2) NOT NULL,         -- higher = stronger match
     reason               JSONB DEFAULT '{}',            -- {"matched_genres": [...], "matched_tags": [...], "matched_studio": "..."}
     dismissed            BOOLEAN NOT NULL DEFAULT false,  -- user said "not interested" — exclude from future runs
+    dismiss_reason       TEXT,                            -- optional chip: "not_interested", "already_watched", "wrong_genre", "too_long"
     computed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (anime_id)
 );

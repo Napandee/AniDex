@@ -264,14 +264,49 @@ def recommendations(request: Request):
         LIMIT 100
         """
     )
+    # Build genre → completed_anime index for "similar to" lookup
+    completed = db.fetchall(
+        """
+        SELECT a.id, a.title_english, a.title_romaji, a.genres
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.status = 'COMPLETED' AND a.genres IS NOT NULL
+        """
+    )
+    comp_genres: list[tuple[int, str, list]] = [
+        (r["id"], r["title_english"] or r["title_romaji"], r["genres"] or [])
+        for r in completed
+    ]
+
+    entries = []
+    for row in rows:
+        rec_genres = set(row["genres"] or [])
+        best_title, best_overlap = None, 0
+        for _, title, cg in comp_genres:
+            overlap = len(rec_genres & set(cg))
+            if overlap > best_overlap:
+                best_overlap, best_title = overlap, title
+        entry = dict(row)
+        entry["similar_to"] = best_title if best_overlap >= 2 else None
+        entries.append(entry)
+
     return templates.TemplateResponse(
         "recommendations.html",
-        {"request": request, "entries": rows},
+        {"request": request, "entries": entries},
     )
 
 
 @app.post("/recommendations/{anime_id}/dismiss")
-def dismiss(anime_id: int):
+async def dismiss(anime_id: int, request: Request):
+    reason = None
+    if request.headers.get("content-type", "").startswith("application/json"):
+        body = await request.json()
+        reason = body.get("reason") or None
+        db.execute(
+            "UPDATE recommendation_scores SET dismissed = true, dismiss_reason = %s WHERE anime_id = %s",
+            (reason, anime_id),
+        )
+        return JSONResponse({"ok": True})
     db.execute(
         "UPDATE recommendation_scores SET dismissed = true WHERE anime_id = %s",
         (anime_id,),
