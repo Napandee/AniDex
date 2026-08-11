@@ -23,12 +23,100 @@
       </select>
     </div>
 
-    <div class="settings-section-label">More settings coming soon.</div>
-
     <div class="form-actions">
       <button type="submit" class="btn-save">Save</button>
     </div>
   </form>
 
+  <div class="settings-section">
+    <h2 class="settings-section-title">Library Sync</h2>
+    <p class="settings-section-desc">
+      Pull the latest data from AniList into your local library.
+      The daily sync runs automatically at 04:30; use this to trigger it on demand.
+    </p>
+    <div class="sync-row">
+      <button id="sync-btn" class="btn-save" onclick="triggerSync()">Sync Now</button>
+      <span id="sync-status" class="sync-status-text">
+        {% if last_synced %}Last synced: <time id="sync-ts" datetime="{{ last_synced }}">{{ last_synced }}</time>{% else %}Never synced{% endif %}
+      </span>
+    </div>
+    <div id="sync-msg" class="sync-msg" hidden></div>
+  </div>
+
 </div>
+
+<script>
+(function () {
+  const btn = document.getElementById('sync-btn');
+  const msg = document.getElementById('sync-msg');
+  const statusEl = document.getElementById('sync-status');
+  let pollTimer = null;
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
+  // Format any existing timestamp on load
+  const tsEl = document.getElementById('sync-ts');
+  if (tsEl) tsEl.textContent = fmtDate(tsEl.getAttribute('datetime'));
+
+  function setMsg(text, cls) {
+    msg.textContent = text;
+    msg.className = 'sync-msg sync-msg--' + cls;
+    msg.hidden = false;
+  }
+
+  function poll() {
+    fetch('/api/sync/status')
+      .then(r => r.json())
+      .then(data => {
+        if (data.running) {
+          setMsg('Sync in progress…', 'running');
+          btn.disabled = true;
+          pollTimer = setTimeout(poll, 2000);
+        } else {
+          btn.disabled = false;
+          if (data.last_result === 'ok') {
+            const ts = data.last_synced ? fmtDate(data.last_synced) : '';
+            statusEl.innerHTML = ts ? 'Last synced: <time>' + ts + '</time>' : 'Last synced: just now';
+            setMsg('Sync completed successfully.', 'ok');
+          } else if (data.last_result === 'error') {
+            setMsg('Sync failed — check container logs for details.', 'error');
+          }
+        }
+      })
+      .catch(() => {
+        btn.disabled = false;
+        setMsg('Could not reach server.', 'error');
+      });
+  }
+
+  window.triggerSync = function () {
+    if (pollTimer) clearTimeout(pollTimer);
+    btn.disabled = true;
+    msg.hidden = true;
+    fetch('/api/sync', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'already_running') {
+          setMsg('Sync already in progress…', 'running');
+          poll();
+        } else {
+          poll();
+        }
+      })
+      .catch(() => {
+        btn.disabled = false;
+        setMsg('Could not reach server.', 'error');
+      });
+  };
+
+  // On page load, check if a sync is already running
+  fetch('/api/sync/status')
+    .then(r => r.json())
+    .then(data => { if (data.running) poll(); });
+}());
+</script>
 {% endblock %}

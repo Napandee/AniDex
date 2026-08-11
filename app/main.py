@@ -1,10 +1,13 @@
 import json
 import logging
 import os
+import subprocess
+import sys
+import threading
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
-from fastapi import FastAPI, Form, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -17,6 +20,28 @@ load_dotenv()
 from app import db, config
 
 ANILIST_TOKEN = os.getenv("ANILIST_TOKEN")
+
+# ── Manual sync state ─────────────────────────────────────────────────────────
+_SYNC_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "sync_anilist.py")
+_sync_lock = threading.Lock()
+_sync_state: dict = {"running": False, "last_result": None}
+
+def _run_sync_task():
+    try:
+        result = subprocess.run(
+            [sys.executable, _SYNC_SCRIPT],
+            capture_output=True, text=True, timeout=300, env=os.environ.copy(),
+        )
+        if result.returncode == 0:
+            _sync_state["last_result"] = "ok"
+        else:
+            _sync_state["last_result"] = "error"
+            log.error("Manual sync stderr: %s", result.stderr[-800:])
+    except Exception as e:
+        _sync_state["last_result"] = "error"
+        log.error("Manual sync exception: %s", e)
+    finally:
+        _sync_state["running"] = False
 ANILIST_API = "https://graphql.anilist.co"
 
 SAVE_SCORE_MUTATION = """
@@ -331,12 +356,15 @@ def queue(request: Request, status: str = None):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
     current = config.get_all()
+    row = db.fetchone("SELECT MAX(synced_at) AS ts FROM library_entries")
+    last_synced = row["ts"].isoformat() if row and row["ts"] else None
     return templates.TemplateResponse(
         "settings.html",
         {
             "request": request,
             "settings": current,
             "timezones": COMMON_TIMEZONES,
+            "last_synced": last_synced,
         },
     )
 
@@ -349,6 +377,28 @@ def settings_save(timezone: str = Form(...)):
         timezone = "Europe/London"
     config.set_value("timezone", timezone)
     return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.post("/api/sync")
+async def trigger_sync(background_tasks: BackgroundTasks):
+    with _sync_lock:
+        if _sync_state["running"]:
+            return JSONResponse({"status": "already_running"})
+        _sync_state["running"] = True
+        _sync_state["last_result"] = None
+    background_tasks.add_task(_run_sync_task)
+    return JSONResponse({"status": "started"})
+
+
+@app.get("/api/sync/status")
+def sync_status():
+    row = db.fetchone("SELECT MAX(synced_at) AS ts FROM library_entries")
+    last_synced = row["ts"].isoformat() if row and row["ts"] else None
+    return JSONResponse({
+        "running": _sync_state["running"],
+        "last_result": _sync_state["last_result"],
+        "last_synced": last_synced,
+    })
 
 
 @app.get("/stats", response_class=HTMLResponse)
