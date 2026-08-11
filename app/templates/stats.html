@@ -1,12 +1,139 @@
 {% extends "base.html" %}
 {% block title %}Stats — Anime Tracker{% endblock %}
-{% block bodyclass %}stats{% endblock %}
 
 {% block content %}
-<iframe
-  src="{{ dashboard_url }}"
-  class="stats-iframe"
-  allowfullscreen
-  title="Anime stats dashboard"
-></iframe>
+<div class="stats-page">
+
+  <div class="page-header">
+    <h1 class="page-title">Stats</h1>
+  </div>
+
+  <div class="stats-headlines" id="stats-headlines">
+    <div class="stat-headline"><span class="stat-num" id="hl-completed">—</span><span class="stat-label">Completed</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-watching">—</span><span class="stat-label">Watching</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-episodes">—</span><span class="stat-label">Episodes watched</span></div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="chart-card">
+      <h2 class="chart-title">Library status</h2>
+      <canvas id="chart-status"></canvas>
+    </div>
+    <div class="chart-card">
+      <h2 class="chart-title">Score distribution</h2>
+      <canvas id="chart-scores"></canvas>
+    </div>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">Top genres (completed)</h2>
+      <canvas id="chart-genres"></canvas>
+    </div>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">Completed by year</h2>
+      <canvas id="chart-year"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+(async function () {
+  const data = await fetch('/api/stats').then(r => r.json());
+
+  // Headlines
+  document.getElementById('hl-completed').textContent = data.totals.completed;
+  document.getElementById('hl-watching').textContent  = data.totals.watching;
+  document.getElementById('hl-episodes').textContent  = data.totals.total_episodes.toLocaleString();
+
+  const GRID_COLOR = '#2a2a2a';
+  const LABEL_COLOR = '#888';
+  const baseOpts = {
+    plugins: { legend: { labels: { color: LABEL_COLOR, boxWidth: 12 } } },
+  };
+
+  // Status donut
+  const statusColors = {
+    'Completed': '#4ade80', 'Watching': '#60a5fa', 'Dropped': '#f87171',
+    'Planning': '#a78bfa', 'Paused': '#facc15', 'Repeating': '#fb923c',
+  };
+  new Chart(document.getElementById('chart-status'), {
+    type: 'doughnut',
+    data: {
+      labels: data.status.map(d => d.label),
+      datasets: [{
+        data: data.status.map(d => d.value),
+        backgroundColor: data.status.map(d => statusColors[d.label] || '#888'),
+        borderWidth: 0,
+      }],
+    },
+    options: { ...baseOpts, cutout: '60%' },
+  });
+
+  // Score bar
+  const STAR_LABELS = { 1: '★', 2: '★★', 3: '★★★', 4: '★★★★', 5: '★★★★★' };
+  const scoreMap = Object.fromEntries(data.scores.map(d => [d.score, d.count]));
+  new Chart(document.getElementById('chart-scores'), {
+    type: 'bar',
+    data: {
+      labels: [1, 2, 3, 4, 5].map(s => STAR_LABELS[s]),
+      datasets: [{
+        data: [1, 2, 3, 4, 5].map(s => scoreMap[s] || 0),
+        backgroundColor: '#2563eb',
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      ...baseOpts,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+        y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+      },
+    },
+  });
+
+  // Genres horizontal bar
+  new Chart(document.getElementById('chart-genres'), {
+    type: 'bar',
+    data: {
+      labels: data.genres.map(d => d.genre),
+      datasets: [{
+        data: data.genres.map(d => d.count),
+        backgroundColor: '#7c3aed',
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      ...baseOpts,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+        y: { grid: { color: 'transparent' }, ticks: { color: LABEL_COLOR } },
+      },
+    },
+  });
+
+  // By year bar
+  new Chart(document.getElementById('chart-year'), {
+    type: 'bar',
+    data: {
+      labels: data.by_year.map(d => d.year),
+      datasets: [{
+        data: data.by_year.map(d => d.count),
+        backgroundColor: '#0891b2',
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      ...baseOpts,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+        y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+      },
+    },
+  });
+}());
+</script>
 {% endblock %}

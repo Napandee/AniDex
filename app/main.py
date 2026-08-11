@@ -401,12 +401,58 @@ def sync_status():
     })
 
 
+@app.get("/api/stats")
+def stats_data():
+    status_rows = db.fetchall(
+        "SELECT status, COUNT(*) AS cnt FROM library_entries GROUP BY status ORDER BY cnt DESC"
+    )
+    score_rows = db.fetchall(
+        "SELECT score::int AS score, COUNT(*) AS cnt FROM library_entries "
+        "WHERE score IS NOT NULL GROUP BY score ORDER BY score"
+    )
+    genre_rows = db.fetchall(
+        """
+        SELECT genre, COUNT(*) AS cnt
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id,
+             jsonb_array_elements_text(a.genres) AS genre
+        WHERE le.status = 'COMPLETED'
+        GROUP BY genre ORDER BY cnt DESC LIMIT 12
+        """
+    )
+    year_rows = db.fetchall(
+        """
+        SELECT a.season_year AS year, COUNT(*) AS cnt
+        FROM library_entries le JOIN anime a ON a.id = le.anime_id
+        WHERE le.status = 'COMPLETED' AND a.season_year IS NOT NULL AND a.season_year >= 2010
+        GROUP BY a.season_year ORDER BY a.season_year
+        """
+    )
+    totals = db.fetchone(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'COMPLETED') AS completed,
+            COUNT(*) FILTER (WHERE status = 'WATCHING')  AS watching,
+            COALESCE(SUM(progress), 0)                   AS total_episodes
+        FROM library_entries
+        """
+    )
+    return JSONResponse({
+        "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
+        "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
+        "genres": [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows],
+        "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
+        "totals": {
+            "completed": totals["completed"],
+            "watching": totals["watching"],
+            "total_episodes": int(totals["total_episodes"]),
+        },
+    })
+
+
 @app.get("/stats", response_class=HTMLResponse)
 def stats(request: Request):
-    return templates.TemplateResponse(
-        "stats.html",
-        {"request": request, "dashboard_url": STATS_DASHBOARD_URL},
-    )
+    return templates.TemplateResponse("stats.html", {"request": request})
 
 
 @app.get("/", response_class=HTMLResponse)
