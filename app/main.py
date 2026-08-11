@@ -7,6 +7,8 @@ import threading
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,29 +21,78 @@ load_dotenv()
 
 from app import db, config
 
-ANILIST_TOKEN = os.getenv("ANILIST_TOKEN")
+def _get_anilist_token() -> str:
+    """Return AniList token from settings DB, falling back to env var."""
+    return config.get("anilist_token") or os.getenv("ANILIST_TOKEN", "")
 
-# ── Manual sync state ─────────────────────────────────────────────────────────
-_SYNC_SCRIPT = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "sync_anilist.py")
+# ── Sync orchestration ────────────────────────────────────────────────────────
+_SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts")
+_FULL_SYNC_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_full_sync.py")
+_RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
+
 _sync_lock = threading.Lock()
 _sync_state: dict = {"running": False, "last_result": None}
 
-def _run_sync_task():
+_scheduler = BackgroundScheduler(timezone="UTC")
+
+
+def _run_sync_task(script: str = _FULL_SYNC_SCRIPT) -> None:
     try:
         result = subprocess.run(
-            [sys.executable, _SYNC_SCRIPT],
-            capture_output=True, text=True, timeout=300, env=os.environ.copy(),
+            [sys.executable, script],
+            capture_output=True, text=True, timeout=600, env=os.environ.copy(),
         )
         if result.returncode == 0:
             _sync_state["last_result"] = "ok"
+            log.info("Sync completed: %s", script)
         else:
             _sync_state["last_result"] = "error"
-            log.error("Manual sync stderr: %s", result.stderr[-800:])
+            log.error("Sync failed (%s) stderr: %s", script, result.stderr[-800:])
     except Exception as e:
         _sync_state["last_result"] = "error"
-        log.error("Manual sync exception: %s", e)
+        log.error("Sync exception (%s): %s", script, e)
     finally:
         _sync_state["running"] = False
+
+
+def _scheduled_full_sync() -> None:
+    with _sync_lock:
+        if _sync_state["running"]:
+            log.warning("Scheduled sync skipped — already running")
+            return
+        _sync_state["running"] = True
+        _sync_state["last_result"] = None
+    _run_sync_task(_FULL_SYNC_SCRIPT)
+
+
+def _scheduled_recommender() -> None:
+    log.info("Running scheduled recommender")
+    subprocess.run([sys.executable, _RECOMMENDER_SCRIPT], env=os.environ.copy(), timeout=600)
+
+
+def _apply_schedule() -> None:
+    """Read schedule from settings DB and (re)configure APScheduler jobs."""
+    daily_time = config.get("sync_daily_time") or "04:30"
+    rec_day    = config.get("sync_recommender_day") or "sunday"
+    rec_time   = config.get("sync_recommender_time") or "05:00"
+
+    try:
+        d_hour, d_min = daily_time.split(":")
+        r_hour, r_min = rec_time.split(":")
+    except ValueError:
+        d_hour, d_min = "4", "30"
+        r_hour, r_min = "5", "0"
+
+    _scheduler.add_job(
+        _scheduled_full_sync,
+        CronTrigger(hour=d_hour, minute=d_min, timezone="UTC"),
+        id="daily_sync", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _scheduled_recommender,
+        CronTrigger(day_of_week=rec_day, hour=r_hour, minute=r_min, timezone="UTC"),
+        id="weekly_recommender", replace_existing=True,
+    )
 ANILIST_API = "https://graphql.anilist.co"
 
 SAVE_SCORE_MUTATION = """
@@ -88,6 +139,19 @@ STATS_DASHBOARD_URL = (
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+@app.on_event("startup")
+def startup() -> None:
+    _apply_schedule()
+    _scheduler.start()
+    log.info("APScheduler started")
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    _scheduler.shutdown(wait=False)
+    log.info("APScheduler stopped")
 
 
 @app.get("/recommendations", response_class=HTMLResponse)
@@ -358,24 +422,83 @@ def settings_page(request: Request):
     current = config.get_all()
     row = db.fetchone("SELECT MAX(synced_at) AS ts FROM library_entries")
     last_synced = row["ts"].isoformat() if row and row["ts"] else None
+
+    # Next run times from scheduler
+    def _next(job_id: str) -> str | None:
+        try:
+            job = _scheduler.get_job(job_id)
+            if job and job.next_run_time:
+                return job.next_run_time.isoformat()
+        except Exception:
+            pass
+        return None
+
     return templates.TemplateResponse(
         "settings.html",
         {
             "request": request,
             "settings": current,
             "timezones": COMMON_TIMEZONES,
+            "days_of_week": DAYS_OF_WEEK,
+            "day_labels": DAY_LABELS,
             "last_synced": last_synced,
+            "next_daily_sync": _next("daily_sync"),
+            "next_recommender": _next("weekly_recommender"),
         },
     )
 
 
+DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+DAY_LABELS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
+              "fri": "Friday", "sat": "Saturday", "sun": "Sunday"}
+
+
 @app.post("/settings")
-def settings_save(timezone: str = Form(...)):
+def settings_save(
+    timezone: str = Form(...),
+    anilist_username: str = Form(""),
+    anilist_token: str = Form(""),
+    cr_etp_rt: str = Form(""),
+    sync_daily_time: str = Form("04:30"),
+    sync_recommender_day: str = Form("sunday"),
+    sync_recommender_time: str = Form("05:00"),
+):
     try:
         ZoneInfo(timezone)
     except ZoneInfoNotFoundError:
         timezone = "Europe/London"
+
     config.set_value("timezone", timezone)
+    config.set_value("anilist_username", anilist_username.strip())
+
+    # Only overwrite token if a non-empty value was submitted (empty = leave unchanged)
+    if anilist_token.strip():
+        config.set_value("anilist_token", anilist_token.strip())
+    if cr_etp_rt.strip():
+        config.set_value("cr_etp_rt", cr_etp_rt.strip())
+
+    # Validate and save schedule
+    try:
+        h, m = sync_daily_time.split(":")
+        assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+    except Exception:
+        sync_daily_time = "04:30"
+    config.set_value("sync_daily_time", sync_daily_time)
+
+    if sync_recommender_day not in DAYS_OF_WEEK:
+        sync_recommender_day = "sun"
+    config.set_value("sync_recommender_day", sync_recommender_day)
+
+    try:
+        h, m = sync_recommender_time.split(":")
+        assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+    except Exception:
+        sync_recommender_time = "05:00"
+    config.set_value("sync_recommender_time", sync_recommender_time)
+
+    # Apply new schedule immediately — no restart needed
+    _apply_schedule()
+
     return RedirectResponse(url="/settings", status_code=303)
 
 
@@ -386,7 +509,7 @@ async def trigger_sync(background_tasks: BackgroundTasks):
             return JSONResponse({"status": "already_running"})
         _sync_state["running"] = True
         _sync_state["last_result"] = None
-    background_tasks.add_task(_run_sync_task)
+    background_tasks.add_task(_run_sync_task, _FULL_SYNC_SCRIPT)
     return JSONResponse({"status": "started"})
 
 
@@ -601,14 +724,14 @@ async def set_rating(anime_id: int, request: Request):
     # Reading back via sync uses score(format: POINT_100), which AniList converts correctly.
     anilist_score = float(stars)
 
-    if not ANILIST_TOKEN:
-        return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
+    if not _get_anilist_token():
+        return JSONResponse({"error": "AniList token not configured"}, status_code=500)
 
     try:
         resp = httpx.post(
             ANILIST_API,
             json={"query": SAVE_SCORE_MUTATION, "variables": {"mediaId": anime_id, "score": anilist_score}},
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {_get_anilist_token()}"},
             timeout=10,
         )
         resp.raise_for_status()
@@ -645,14 +768,14 @@ async def set_status(anime_id: int, request: Request):
 
     anilist_status = STATUS_TO_ANILIST.get(status, status)
 
-    if not ANILIST_TOKEN:
-        return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
+    if not _get_anilist_token():
+        return JSONResponse({"error": "AniList token not configured"}, status_code=500)
 
     try:
         resp = httpx.post(
             ANILIST_API,
             json={"query": SAVE_STATUS_MUTATION, "variables": {"mediaId": anime_id, "status": anilist_status}},
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {_get_anilist_token()}"},
             timeout=10,
         )
         resp.raise_for_status()
@@ -680,14 +803,14 @@ async def set_progress(anime_id: int, request: Request):
     if not isinstance(progress, int) or progress < 0:
         return JSONResponse({"error": "progress must be a non-negative integer"}, status_code=400)
 
-    if not ANILIST_TOKEN:
-        return JSONResponse({"error": "ANILIST_TOKEN not configured"}, status_code=500)
+    if not _get_anilist_token():
+        return JSONResponse({"error": "AniList token not configured"}, status_code=500)
 
     try:
         resp = httpx.post(
             ANILIST_API,
             json={"query": SAVE_PROGRESS_MUTATION, "variables": {"mediaId": anime_id, "progress": progress}},
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ANILIST_TOKEN}"},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {_get_anilist_token()}"},
             timeout=10,
         )
         resp.raise_for_status()

@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""
+Full sync pipeline orchestrator.
+
+Reads credentials from the settings DB table (falling back to env vars),
+then runs the three sync steps in sequence:
+  1. crunchyexporter-cli fetch  — pull CR watch history to history.json
+  2. sync_crunchyroll.py        — CR history → AniList progress updates
+  3. sync_anilist.py            — AniList library → Postgres
+
+Exit 0 = all steps succeeded. Exit 1 = any step failed.
+"""
+
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+SCRIPTS_DIR = Path(__file__).parent
+CRUNCHYEXPORTER_DIR = Path(os.environ.get("CRUNCHYEXPORTER_DIR", "/opt/crunchyexporter"))
+HISTORY_PATH = CRUNCHYEXPORTER_DIR / "data" / "history.json"
+
+
+def log(msg: str) -> None:
+    print(f"[run_full_sync] {msg}", flush=True)
+
+
+def load_settings() -> dict:
+    """Pull all settings from DB; return as dict."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT key, value FROM settings")
+            return {row["key"]: row["value"] for row in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None) -> bool:
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+    result = subprocess.run(cmd, env=env, cwd=cwd)
+    return result.returncode == 0
+
+
+def main() -> None:
+    log("Starting full sync pipeline")
+    settings = load_settings()
+
+    # Resolve credentials: DB settings take priority over env vars
+    anilist_token    = settings.get("anilist_token")    or os.environ.get("ANILIST_TOKEN", "")
+    anilist_username = settings.get("anilist_username") or os.environ.get("ANILIST_USERNAME", "")
+    cr_etp_rt        = settings.get("cr_etp_rt")        or os.environ.get("CRUNCHYROLL_ETP_RT", "")
+
+    if not anilist_token or not anilist_username:
+        log("ERROR: AniList credentials not configured. Set them in Settings.")
+        sys.exit(1)
+
+    credentials_env = {
+        "ANILIST_TOKEN":    anilist_token,
+        "ANILIST_USERNAME": anilist_username,
+        "DATABASE_URL":     DATABASE_URL,
+    }
+
+    # ── Step 1: Crunchyroll fetch ─────────────────────────────────────────────
+    if cr_etp_rt:
+        log("Step 1/3 — Fetching Crunchyroll watch history")
+        CRUNCHYEXPORTER_DIR.mkdir(parents=True, exist_ok=True)
+        (CRUNCHYEXPORTER_DIR / "data").mkdir(exist_ok=True)
+
+        config_path = CRUNCHYEXPORTER_DIR / "config.yaml"
+        config_path.write_text(f"crunchyroll:\n  etp_rt: \"{cr_etp_rt}\"\n")
+
+        ok = run(
+            [sys.executable, "src/main.py", "fetch"],
+            cwd=CRUNCHYEXPORTER_DIR,
+        )
+        if not ok:
+            log("ERROR: Crunchyroll fetch failed")
+            sys.exit(1)
+
+        # ── Step 2: CR → AniList sync ─────────────────────────────────────────
+        log("Step 2/3 — Syncing Crunchyroll → AniList")
+        ok = run(
+            [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
+            extra_env={**credentials_env, "HISTORY_PATH": str(HISTORY_PATH)},
+        )
+        if not ok:
+            log("ERROR: Crunchyroll → AniList sync failed")
+            sys.exit(1)
+    else:
+        log("Step 1-2/3 — No Crunchyroll ETP-RT configured, skipping CR sync")
+
+    # ── Step 3: AniList → Postgres sync ──────────────────────────────────────
+    log("Step 3/3 — Syncing AniList → Postgres")
+    ok = run(
+        [sys.executable, str(SCRIPTS_DIR / "sync_anilist.py")],
+        extra_env=credentials_env,
+    )
+    if not ok:
+        log("ERROR: AniList → Postgres sync failed")
+        sys.exit(1)
+
+    log("Full sync pipeline complete")
+
+
+if __name__ == "__main__":
+    main()

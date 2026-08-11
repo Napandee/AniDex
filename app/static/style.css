@@ -425,9 +425,44 @@ main {
 
 .settings-section-label { font-size: 0.8rem; color: #444; padding-top: 0.5rem; }
 
+/* Sections inside the form (no border — form boundary is the container) */
+.settings-form { display: flex; flex-direction: column; gap: 0; }
+.settings-section-inner {
+  border-top: 1px solid #2a2a2a;
+  padding: 1.5rem 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.settings-section-inner:first-child { border-top: none; padding-top: 0; }
+
+/* Manual sync section below the form */
 .settings-section { max-width: 640px; margin: 2rem auto 0; border-top: 1px solid #2a2a2a; padding-top: 1.5rem; }
 .settings-section-title { font-size: 1rem; font-weight: 600; color: #e0e0e0; margin: 0 0 0.4rem; }
 .settings-section-desc { font-size: 0.85rem; color: #666; margin: 0 0 1rem; line-height: 1.5; }
+
+/* Secret input + reveal button */
+.form-field { position: relative; }
+.form-input--secret { padding-right: 4rem; }
+.btn-reveal {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.45rem;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+}
+.btn-reveal:hover { color: #aaa; }
+
+/* Narrow input for time/day pickers */
+.form-input--narrow { width: auto; min-width: 0; }
+
+/* Schedule row: day select + "at" + time input */
+.schedule-row { display: flex; align-items: center; gap: 0.5rem; }
+.schedule-at { font-size: 0.85rem; color: #666; }
 .sync-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .sync-status-text { font-size: 0.82rem; color: #666; }
 .sync-msg { font-size: 0.82rem; margin-top: 0.6rem; padding: 0.4rem 0.6rem; border-radius: 4px; }

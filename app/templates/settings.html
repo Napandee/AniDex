@@ -6,21 +6,102 @@
 
   <div class="page-header">
     <h1 class="page-title">Settings</h1>
-    <p class="page-sub">Preferences for this tracker.</p>
+    <p class="page-sub">Preferences and credentials for this tracker.</p>
   </div>
 
-  <form method="post" action="/settings" class="notes-form">
+  <form method="post" action="/settings" class="settings-form">
 
-    <div class="form-field">
-      <label class="form-label" for="timezone">
-        Timezone
-        <span class="form-label-hint">— used for all date and time display</span>
-      </label>
-      <select class="form-input" id="timezone" name="timezone">
-        {% for tz in timezones %}
-        <option value="{{ tz }}" {% if tz == settings.timezone %}selected{% endif %}>{{ tz }}</option>
-        {% endfor %}
-      </select>
+    {# ── Display ──────────────────────────────────────────────────────────── #}
+    <div class="settings-section-inner">
+      <h2 class="settings-section-title">Display</h2>
+
+      <div class="form-field">
+        <label class="form-label" for="timezone">
+          Timezone
+          <span class="form-label-hint">— used for all date and time display</span>
+        </label>
+        <select class="form-input" id="timezone" name="timezone">
+          {% for tz in timezones %}
+          <option value="{{ tz }}" {% if tz == settings.timezone %}selected{% endif %}>{{ tz }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    {# ── Credentials ──────────────────────────────────────────────────────── #}
+    <div class="settings-section-inner">
+      <h2 class="settings-section-title">Credentials</h2>
+      <p class="settings-section-desc">
+        Used by the sync pipeline. Leave a token field blank to keep the existing value.
+        Stored in Postgres — not in the container env file.
+      </p>
+
+      <div class="form-field">
+        <label class="form-label" for="anilist_username">AniList username</label>
+        <input class="form-input" type="text" id="anilist_username" name="anilist_username"
+               value="{{ settings.anilist_username or '' }}" autocomplete="off" spellcheck="false">
+      </div>
+
+      <div class="form-field">
+        <label class="form-label" for="anilist_token">
+          AniList token
+          <span class="form-label-hint">— OAuth bearer token</span>
+        </label>
+        <input class="form-input form-input--secret" type="password" id="anilist_token"
+               name="anilist_token" placeholder="{% if settings.anilist_token %}set (leave blank to keep){% else %}not set{% endif %}"
+               autocomplete="new-password">
+        <button type="button" class="btn-reveal" data-target="anilist_token">Show</button>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label" for="cr_etp_rt">
+          Crunchyroll ETP-RT token
+          <span class="form-label-hint">— etp_rt cookie value from your browser</span>
+        </label>
+        <input class="form-input form-input--secret" type="password" id="cr_etp_rt"
+               name="cr_etp_rt" placeholder="{% if settings.cr_etp_rt %}set (leave blank to keep){% else %}not set{% endif %}"
+               autocomplete="new-password">
+        <button type="button" class="btn-reveal" data-target="cr_etp_rt">Show</button>
+      </div>
+    </div>
+
+    {# ── Sync schedule ────────────────────────────────────────────────────── #}
+    <div class="settings-section-inner">
+      <h2 class="settings-section-title">Sync schedule</h2>
+      <p class="settings-section-desc">
+        Times are UTC. The daily sync runs the full pipeline (Crunchyroll fetch → AniList → Postgres).
+        The recommender scores unwatched/planning titles weekly.
+      </p>
+
+      <div class="form-field">
+        <label class="form-label" for="sync_daily_time">
+          Daily sync time (HH:MM UTC)
+          {% if next_daily_sync %}
+          <span class="form-label-hint">— next run <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
+          {% endif %}
+        </label>
+        <input class="form-input form-input--narrow" type="time" id="sync_daily_time"
+               name="sync_daily_time" value="{{ settings.sync_daily_time or '04:30' }}">
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">
+          Weekly recommender
+          {% if next_recommender %}
+          <span class="form-label-hint">— next run <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
+          {% endif %}
+        </label>
+        <div class="schedule-row">
+          <select class="form-input form-input--narrow" name="sync_recommender_day">
+            {% for d in days_of_week %}
+            <option value="{{ d }}" {% if d == settings.sync_recommender_day %}selected{% endif %}>{{ day_labels[d] }}</option>
+            {% endfor %}
+          </select>
+          <span class="schedule-at">at</span>
+          <input class="form-input form-input--narrow" type="time" name="sync_recommender_time"
+                 value="{{ settings.sync_recommender_time or '05:00' }}">
+        </div>
+      </div>
     </div>
 
     <div class="form-actions">
@@ -28,11 +109,11 @@
     </div>
   </form>
 
+  {# ── Manual sync trigger ──────────────────────────────────────────────── #}
   <div class="settings-section">
-    <h2 class="settings-section-title">Library Sync</h2>
+    <h2 class="settings-section-title">Manual sync</h2>
     <p class="settings-section-desc">
-      Pull the latest data from AniList into your local library.
-      The daily sync runs automatically at 04:30; use this to trigger it on demand.
+      Trigger the full sync pipeline on demand instead of waiting for the scheduled run.
     </p>
     <div class="sync-row">
       <button id="sync-btn" class="btn-save" onclick="triggerSync()">Sync Now</button>
@@ -46,21 +127,36 @@
 </div>
 
 <script>
+// ── Reveal toggle for secret fields ──────────────────────────────────────────
+document.querySelectorAll('.btn-reveal').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = 'Hide';
+    } else {
+      input.type = 'password';
+      btn.textContent = 'Show';
+    }
+  });
+});
+
+// ── Format next-run timestamps ───────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+['next-daily-ts', 'next-rec-ts', 'sync-ts'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.textContent = fmtDate(el.getAttribute('datetime'));
+});
+
+// ── Manual sync ───────────────────────────────────────────────────────────────
 (function () {
   const btn = document.getElementById('sync-btn');
   const msg = document.getElementById('sync-msg');
   const statusEl = document.getElementById('sync-status');
   let pollTimer = null;
-
-  function fmtDate(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  }
-
-  // Format any existing timestamp on load
-  const tsEl = document.getElementById('sync-ts');
-  if (tsEl) tsEl.textContent = fmtDate(tsEl.getAttribute('datetime'));
 
   function setMsg(text, cls) {
     msg.textContent = text;
@@ -87,10 +183,7 @@
           }
         }
       })
-      .catch(() => {
-        btn.disabled = false;
-        setMsg('Could not reach server.', 'error');
-      });
+      .catch(() => { btn.disabled = false; setMsg('Could not reach server.', 'error'); });
   }
 
   window.triggerSync = function () {
@@ -100,23 +193,13 @@
     fetch('/api/sync', { method: 'POST' })
       .then(r => r.json())
       .then(data => {
-        if (data.status === 'already_running') {
-          setMsg('Sync already in progress…', 'running');
-          poll();
-        } else {
-          poll();
-        }
+        if (data.status === 'already_running') setMsg('Sync already in progress…', 'running');
+        poll();
       })
-      .catch(() => {
-        btn.disabled = false;
-        setMsg('Could not reach server.', 'error');
-      });
+      .catch(() => { btn.disabled = false; setMsg('Could not reach server.', 'error'); });
   };
 
-  // On page load, check if a sync is already running
-  fetch('/api/sync/status')
-    .then(r => r.json())
-    .then(data => { if (data.running) poll(); });
+  fetch('/api/sync/status').then(r => r.json()).then(data => { if (data.running) poll(); });
 }());
 </script>
 {% endblock %}
