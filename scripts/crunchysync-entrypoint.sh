@@ -1,4 +1,5 @@
 #!/bin/bash
+# anidex-crunchysync entrypoint
 set -euo pipefail
 
 log() { echo "[crunchysync] $*"; }
