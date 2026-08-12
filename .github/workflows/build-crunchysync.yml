@@ -1,4 +1,4 @@
-name: Build anime-tracker-crunchysync
+name: Build anidex-crunchysync
 
 on:
   push:
@@ -37,4 +37,4 @@ jobs:
           context: .
           file: Dockerfile.crunchysync
           push: true
-          tags: ghcr.io/${{ env.OWNER }}/anime-tracker-crunchysync:latest
+          tags: ghcr.io/${{ env.OWNER }}/anidex-crunchysync:latest

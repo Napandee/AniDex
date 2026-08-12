@@ -1,4 +1,4 @@
-# anime-tracker
+# AniDex
 
 A self-hosted anime tracking, rating, and recommendation app built on top of AniList.
 
@@ -53,8 +53,8 @@ weekly recommender automatically. Schedule is configurable via the Settings page
 **1. Clone the repo and set up your environment**
 
 ```bash
-git clone https://github.com/yourname/anime-tracker.git
-cd anime-tracker
+git clone https://github.com/yourname/AniDex.git
+cd AniDex
 cp .env.example .env
 ```
 
@@ -64,7 +64,7 @@ Edit `.env` and fill in at minimum `DATABASE_URL` and `ANILIST_USERNAME`.
 
 ```bash
 # Set a password and start
-POSTGRES_PASSWORD=yourpassword docker compose -f compose/anime-tracker-postgres.yml up -d
+POSTGRES_PASSWORD=yourpassword docker compose -f compose/anidex-postgres.yml up -d
 ```
 
 Then add the same password to your `DATABASE_URL` in `.env`.
@@ -82,24 +82,24 @@ docker run --rm --env-file .env \
 
 ```bash
 docker run -d \
-  --name anime-tracker \
+  --name anidex \
   --restart unless-stopped \
   -p 8888:8888 \
   --env-file .env \
-  ghcr.io/yourname/anime-tracker:latest
+  ghcr.io/yourname/anidex:latest
 ```
 
 Or build locally first:
 
 ```bash
-docker build -t anime-tracker:local .
-docker run -d --name anime-tracker -p 8888:8888 --env-file .env anime-tracker:local
+docker build -t anidex:local .
+docker run -d --name anidex -p 8888:8888 --env-file .env anidex:local
 ```
 
 **5. Run your first sync**
 
 ```bash
-docker exec anime-tracker python scripts/sync_anilist.py
+docker exec anidex python scripts/sync_anilist.py
 ```
 
 **6. Open the app**
@@ -122,6 +122,14 @@ syncing progress back to AniList. Without it the app is read-only.
 If you watch on Crunchyroll, the crunchysync container can pull your watch history and
 push progress updates to AniList.
 
+> **Note:** this relies on [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli),
+> an unofficial, community-maintained tool that reads your Crunchyroll session cookie —
+> it isn't affiliated with or supported by Crunchyroll, and could stop working if
+> Crunchyroll changes their site. It's MIT-licensed, so there's no license concern using
+> it here, but using any tool that acts on your behalf with your session credentials is
+> ultimately your own call with respect to Crunchyroll's Terms of Service. This feature
+> is entirely optional — skip it if you'd rather not take that on.
+
 For how to extract your Crunchyroll session cookie (`etp_rt`) see the
 [crunchyexporter-cli documentation](https://github.com/ruflas/crunchyexporter-cli).
 Once you have the cookie, set `CRUNCHYROLL_ETP_RT` in your `.env`.
@@ -130,7 +138,7 @@ To run a manual CR sync:
 
 ```bash
 docker run --rm --env-file .env \
-  ghcr.io/yourname/anime-tracker-crunchysync:latest
+  ghcr.io/yourname/anidex-crunchysync:latest
 ```
 
 The built-in scheduler will run this automatically as part of the daily sync once
@@ -156,7 +164,7 @@ To use them in your own fork:
 
 1. Fork the repo
 2. Go to **Settings → Actions → Variables** and add:
-   - `APPDATA_PATH` — the directory on your host where `.env` lives (e.g. `/opt/anime-tracker`)
+   - `APPDATA_PATH` — the directory on your host where `.env` lives (e.g. `/opt/anidex`)
 3. Add a [self-hosted GitHub Actions runner](https://docs.github.com/en/actions/hosting-your-own-runners)
    on your server with the labels `self-hosted` and `unraid` (or edit the workflow to
    match your own labels)
@@ -191,3 +199,8 @@ Credentials stored in Settings are saved to the `settings` table in Postgres.
 | Container | Docker |
 | Scheduler | APScheduler (built into the app container) |
 | CI/CD | GitHub Actions → GHCR → self-hosted runner |
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE). If you fork or redistribute a modified version,
+the license requires keeping the source open under the same terms.

@@ -1,4 +1,4 @@
-name: Build and deploy anime-tracker
+name: Build and deploy anidex
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/${{ env.OWNER }}/anime-tracker:latest
+          tags: ghcr.io/${{ env.OWNER }}/anidex:latest
 
   deploy:
     needs: build
@@ -56,16 +56,16 @@ jobs:
       - name: Pull new image
         run: |
           OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
-          docker pull ghcr.io/$OWNER/anime-tracker:latest
+          docker pull ghcr.io/$OWNER/anidex:latest
 
       - name: Restart container
         run: |
           OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
-          docker stop anime-tracker 2>/dev/null || true
-          docker rm   anime-tracker 2>/dev/null || true
+          docker stop anidex 2>/dev/null || true
+          docker rm   anidex 2>/dev/null || true
           docker run -d \
-            --name anime-tracker \
+            --name anidex \
             --restart unless-stopped \
             -p 8889:8888 \
             --env-file ${{ vars.APPDATA_PATH }}/.env \
-            ghcr.io/$OWNER/anime-tracker:latest
+            ghcr.io/$OWNER/anidex:latest

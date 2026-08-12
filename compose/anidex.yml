@@ -1,0 +1,11 @@
+services:
+  anidex:
+    # Replace with your image, e.g. ghcr.io/yourusername/anidex:latest
+    # or build locally: image: anidex:local
+    image: ghcr.io/yourusername/anidex:latest
+    container_name: anidex
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    env_file:
+      - /path/to/your/.env

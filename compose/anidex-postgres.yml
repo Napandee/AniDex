@@ -1,7 +1,7 @@
 services:
-  anime-tracker-postgres:
+  anidex-postgres:
     image: postgres:16-alpine
-    container_name: anime-tracker-postgres
+    container_name: anidex-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"

@@ -7,7 +7,7 @@ set -euo pipefail
 
 ENV_FILE=${ENV_FILE:-".env"}
 OWNER=${OWNER:-"$(git remote get-url origin | sed 's|.*github.com/||;s|/.*||')"}
-IMAGE=ghcr.io/${OWNER}/anime-tracker-crunchysync:latest
+IMAGE=ghcr.io/${OWNER}/anidex-crunchysync:latest
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 

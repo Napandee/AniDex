@@ -8,8 +8,8 @@ set -euo pipefail
 
 ENV_FILE=${ENV_FILE:-".env"}
 OWNER=${OWNER:-"$(git remote get-url origin | sed 's|.*github.com/||;s|/.*||')"}
-CONTAINER=anime-tracker
-IMAGE=ghcr.io/${OWNER}/anime-tracker:latest
+CONTAINER=anidex
+IMAGE=ghcr.io/${OWNER}/anidex:latest
 PORT=8889
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
