@@ -11,7 +11,7 @@ dist/
 .env
 
 # Local Claude Code context and machine-specific settings
-.claude/
+.claude/settings.local.json
 CLAUDE.local.md
 
 # Compose data directories

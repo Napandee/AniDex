@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; case \"$f\" in */CLAUDE.md) echo \"{\\\"systemMessage\\\": \\\"Reminder: also check whether CLAUDE.local.md needs updating (title, container/repo names, infra references) to match this CLAUDE.md change.\\\"}\" ;; */CLAUDE.local.md) echo \"{\\\"systemMessage\\\": \\\"Reminder: also check whether CLAUDE.md needs updating to match this CLAUDE.local.md change.\\\"}\" ;; esac; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
