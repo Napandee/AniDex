@@ -1,4 +1,4 @@
-# Anime Tracker — Project Context for Claude Code
+# AniDex — Project Context for Claude Code
 
 ## Purpose
 
@@ -71,6 +71,19 @@ The deploy job reads env and paths from `vars.APPDATA_PATH` (set as a GitHub rep
 
 See `.github/workflows/build-app.yml` for the full pipeline definition.
 
+Pull requests (including Dependabot's) run `.github/workflows/pr-validate.yml` — a
+build-only check (no push, no deploy) that gates merges before the real pipeline ever
+touches production. `.github/dependabot.yml` proposes weekly version bumps for
+`requirements.txt` and both base images; Postgres major-version bumps are deliberately
+excluded (see comment in that file — needs a real migration, not just a new tag).
+`.github/workflows/notify-dependabot.yml` pings Telegram when a Dependabot PR opens.
+
+**GHCR gotcha worth knowing:** a package's automatic `GITHUB_TOKEN` write access is tied
+to whichever repo *first created* it, not the current repo — if a package ever needs to
+move to a differently-named/forked repo, the new repo needs an explicit grant under
+`Manage Actions access` on the package's settings page, or every build fails with
+`permission_denied: write_package` no matter what `permissions:` the workflow declares.
+
 ## Guardrails — Non-Negotiable
 
 - Never commit secrets, tokens, or API keys. Env vars only — never hardcoded, never logged.
@@ -93,3 +106,12 @@ See `.github/workflows/build-app.yml` for the full pipeline definition.
 - **Stats**: built-in stats page served from `/stats` — no external dashboard dependency.
 - **Single-user**: no auth layer in the app itself. Deploy behind a reverse proxy or
   access control tool of your choice.
+- **License**: GPL-3.0. Dependency audit (Aug 2026) confirmed no dependency — including
+  `crunchyexporter-cli`, vendored via git rather than pip — imposes a stricter license
+  that would have constrained this choice.
+- **One sync path, not two**: `crunchyexporter-cli` is vendored once, in the main
+  Dockerfile only. There used to be a second, standalone `crunchysync` image/container;
+  it was removed (Aug 2026) because it was strictly redundant with the in-app scheduler
+  and manual "Sync Now" trigger, and its existence let the tool's pin drift out of sync
+  between two Dockerfiles. Don't reintroduce a second container for this without a real
+  new reason — isolation/scheduling needs the first one never actually served.
