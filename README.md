@@ -169,6 +169,19 @@ To use them in your own fork:
 The `GHCR_TOKEN` referenced in the deploy job should be a GitHub PAT with
 `read:packages` scope, stored in your `APPDATA_PATH/.env` file.
 
+Two more pieces round out the pipeline:
+
+- **PR validation** (`pr-validate.yml`) — builds (but doesn't push or deploy) on every
+  pull request, so a broken dependency bump fails its check before you ever merge it.
+- **Dependabot** (`dependabot.yml`) — proposes weekly version bumps for `requirements.txt`
+  and the base images. Postgres major-version bumps are deliberately excluded — that
+  needs a real migration, not just a new tag, so it's left as a manual decision.
+
+Optionally, `notify-dependabot.yml` pings a Telegram bot whenever Dependabot opens a PR.
+To enable it, add two repo secrets: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` — note
+these are separate from the app's own `TELEGRAM_BOT_TOKEN` in `.env` below (that one's
+for in-app notifications; this one's a GitHub Actions secret for repo maintainers).
+
 ## Environment variables
 
 | Variable | Required | Purpose |
