@@ -9,6 +9,7 @@ on:
       - '.claude/**'
       - '.github/dependabot.yml'
       - '.github/workflows/pr-validate.yml'
+      - '.github/workflows/notify-dependabot.yml'
 
 jobs:
   build:
