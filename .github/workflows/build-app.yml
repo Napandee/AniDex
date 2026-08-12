@@ -4,12 +4,6 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - 'Dockerfile.crunchysync'
-      - 'requirements-crunchysync.txt'
-      - 'scripts/sync_crunchyroll.py'
-      - 'scripts/sync_anilist.py'
-      - 'scripts/run_recommender.py'
-      - 'scripts/crunchysync-entrypoint.sh'
       - 'compose/**'
       - '**.md'
       - '.claude/**'

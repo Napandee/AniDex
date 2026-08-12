@@ -119,8 +119,9 @@ syncing progress back to AniList. Without it the app is read-only.
 
 ## Crunchyroll sync (optional)
 
-If you watch on Crunchyroll, the crunchysync container can pull your watch history and
-push progress updates to AniList.
+If you watch on Crunchyroll, the app can pull your watch history and push progress
+updates to AniList — this runs inside the main app container as part of the same daily
+sync, no separate container needed.
 
 > **Note:** this relies on [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli),
 > an unofficial, community-maintained tool that reads your Crunchyroll session cookie —
@@ -132,17 +133,11 @@ push progress updates to AniList.
 
 For how to extract your Crunchyroll session cookie (`etp_rt`) see the
 [crunchyexporter-cli documentation](https://github.com/ruflas/crunchyexporter-cli).
-Once you have the cookie, set `CRUNCHYROLL_ETP_RT` in your `.env`.
+Once you have the cookie, set `CRUNCHYROLL_ETP_RT` in your `.env` (or in Settings after
+first launch).
 
-To run a manual CR sync:
-
-```bash
-docker run --rm --env-file .env \
-  ghcr.io/yourname/anidex-crunchysync:latest
-```
-
-The built-in scheduler will run this automatically as part of the daily sync once
-`CRUNCHYROLL_ETP_RT` is set.
+Once set, it runs automatically as part of the daily sync — or trigger it anytime via
+the "Sync Now" button on the Settings page (or `POST /api/sync`).
 
 ## Telegram notifications (optional)
 

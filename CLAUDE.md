@@ -45,10 +45,13 @@ See `schema.sql` in repo root. Two categories, kept in separate tables on purpos
 
 ## Architecture
 
-- **Sync job**: the `crunchysync` container chains three steps: Crunchyroll history fetch
-  via crunchyexporter-cli → CR→AniList progress sync (`sync_crunchyroll.py`) →
-  AniList→Postgres sync (`sync_anilist.py`). Upserts into `anime` / `library_entries` /
-  `airing_schedule_cache` / `cr_sync_state`.
+- **Sync job**: `scripts/run_full_sync.py`, run inside the app container (via the
+  built-in scheduler or the manual "Sync Now" trigger). Chains three steps: Crunchyroll
+  history fetch via crunchyexporter-cli (skipped if no CR credentials configured) →
+  CR→AniList progress sync (`sync_crunchyroll.py`) → AniList→Postgres sync
+  (`sync_anilist.py`). Upserts into `anime` / `library_entries` / `airing_schedule_cache`
+  / `cr_sync_state`. There is no separate sync container — `crunchyexporter-cli` is
+  vendored directly into the main Dockerfile.
 - **Recommender job**: runs `run_recommender.py`. Scores unwatched/planning anime against
   taste profile, writes to `recommendation_scores`. Never touches the `dismissed` flag.
 - **App**: reads all tables; writes to `personal_notes`, the `dismissed` flag on
