@@ -7,6 +7,7 @@ on:
       - 'compose/**'
       - '**.md'
       - '.claude/**'
+      - '.github/dependabot.yml'
 
 jobs:
   build:

@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Python dependencies (requirements.txt)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Base image in the main Dockerfile (python:3.12-slim)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Base image referenced in the Postgres compose file (postgres:16-alpine)
+  - package-ecosystem: "docker"
+    directory: "/compose"
+    schedule:
+      interval: "weekly"
