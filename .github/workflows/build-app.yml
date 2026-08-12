@@ -8,6 +8,7 @@ on:
       - '**.md'
       - '.claude/**'
       - '.github/dependabot.yml'
+      - '.github/workflows/pr-validate.yml'
 
 jobs:
   build:

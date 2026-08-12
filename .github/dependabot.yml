@@ -12,8 +12,15 @@ updates:
     schedule:
       interval: "weekly"
 
-  # Base image referenced in the Postgres compose file (postgres:16-alpine)
+  # Base image referenced in the Postgres compose file (postgres:16-alpine).
+  # Major version bumps ignored deliberately: a new Postgres major version
+  # isn't a drop-in image swap — the on-disk format changes, and the existing
+  # data volume needs an actual pg_upgrade/dump-restore, not just a new tag.
+  # Patch/minor bumps within 16.x are safe to propose automatically.
   - package-ecosystem: "docker"
     directory: "/compose"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]

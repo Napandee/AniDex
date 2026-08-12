@@ -1,0 +1,26 @@
+name: Validate PR build
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'compose/**'
+      - '**.md'
+      - '.claude/**'
+      - '.github/dependabot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
