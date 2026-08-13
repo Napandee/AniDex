@@ -418,8 +418,9 @@ def recommendations(request: Request):
         entries.append(entry)
 
     return templates.TemplateResponse(
+        request,
         "recommendations.html",
-        {"request": request, "entries": entries},
+        {"entries": entries},
     )
 
 
@@ -481,8 +482,9 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
             r["in_library"] = r["id"] in in_library
 
     return templates.TemplateResponse(
+        request,
         "notes.html",
-        {"request": request, "anime": anime, "notes": notes, "back": back,
+        {"anime": anime, "notes": notes, "back": back,
          "trailer": trailer, "related": related},
     )
 
@@ -645,8 +647,9 @@ def upcoming(request: Request):
         entries.append(entry)
 
     return templates.TemplateResponse(
+        request,
         "upcoming.html",
-        {"request": request, "entries": entries},
+        {"entries": entries},
     )
 
 
@@ -721,9 +724,9 @@ def queue(request: Request, status: str = None):
         entries.append(entry)
 
     return templates.TemplateResponse(
+        request,
         "queue.html",
         {
-            "request": request,
             "entries": entries,
             "queue_statuses": queue_statuses,
             "active_status": active_status,
@@ -748,9 +751,9 @@ def settings_page(request: Request):
         return None
 
     return templates.TemplateResponse(
+        request,
         "settings.html",
         {
-            "request": request,
             "settings": current,
             "timezones": COMMON_TIMEZONES,
             "days_of_week": DAYS_OF_WEEK,
@@ -921,7 +924,7 @@ def stats_data():
 
 @app.get("/stats", response_class=HTMLResponse)
 def stats(request: Request):
-    return templates.TemplateResponse("stats.html", {"request": request})
+    return templates.TemplateResponse(request, "stats.html")
 
 
 @app.get("/api/export")
@@ -1013,8 +1016,9 @@ def search(request: Request, q: str = ""):
             ]
             entries.append(entry)
     return templates.TemplateResponse(
+        request,
         "search.html",
-        {"request": request, "q": q, "entries": entries},
+        {"q": q, "entries": entries},
     )
 
 
@@ -1099,9 +1103,9 @@ def library(request: Request, response: Response, status: str = None):
         entries.append(entry)
 
     return templates.TemplateResponse(
+        request,
         "library.html",
         {
-            "request": request,
             "entries": entries,
             "statuses": statuses,
             "active_status": active_status,
