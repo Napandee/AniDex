@@ -554,6 +554,8 @@ main {
 }
 .btn-unlink:hover { background: #3f1515; color: #fca5a5; border-color: #7f1d1d; }
 .linked-account-row .btn-save { margin-left: auto; text-decoration: none; display: inline-block; }
+.password-form { display: flex; gap: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid #222; }
+.password-form .form-input { flex: 1; }
 .sync-msg--error { color: #fca5a5; background: #7f1d1d22; }
 
 .sync-log-table {

@@ -122,6 +122,12 @@
       <span class="linked-account-name">Password</span>
       <span class="linked-account-status">{% if account.has_password %}set{% else %}not set{% endif %}</span>
     </div>
+    {% if password_error %}<p class="settings-error">{{ password_error }}</p>{% endif %}
+    <form method="post" action="/settings/password" class="password-form">
+      <input class="form-input" type="password" name="password" minlength="8" required
+             placeholder="{% if account.has_password %}new password (min 8 characters){% else %}set a password (min 8 characters){% endif %}">
+      <button type="submit" class="btn-save">{% if account.has_password %}Change{% else %}Set{% endif %} password</button>
+    </form>
 
     <div class="linked-account-row">
       <span class="linked-account-name">Google</span>
