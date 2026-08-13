@@ -310,75 +310,6 @@ def upsert_library_entry(cur, entry: dict) -> None:
     )
 
 
-AIRING_QUERY = """
-query ($ids: [Int], $page: Int) {
-  Page(page: $page, perPage: 50) {
-    pageInfo { hasNextPage }
-    airingSchedules(mediaId_in: $ids, notYetAired: true) {
-      mediaId
-      episode
-      airingAt
-    }
-  }
-}
-"""
-
-
-def fetch_airing_schedules(media_ids: list[int]) -> list[dict]:
-    """Return all not-yet-aired episodes for the given media IDs."""
-    schedules = []
-    # AniList accepts up to ~50 IDs per airingSchedules query reliably
-    chunk_size = 50
-    for i in range(0, len(media_ids), chunk_size):
-        id_chunk = media_ids[i : i + chunk_size]
-        page = 1
-        while True:
-            data = gql(AIRING_QUERY, {"ids": id_chunk, "page": page})
-            page_data = data["Page"]
-            schedules.extend(page_data["airingSchedules"])
-            if not page_data["pageInfo"]["hasNextPage"]:
-                break
-            page += 1
-            time.sleep(0.5)
-        time.sleep(0.5)
-    return schedules
-
-
-def sync_airing_schedule(cur, entries: list[dict]) -> None:
-    """Fetch and upsert upcoming episodes for RELEASING anime in WATCHING/PLANNING."""
-    releasing_ids = [
-        e["media"]["id"]
-        for e in entries
-        if e.get("status") in ("CURRENT", "PLANNING")
-        and e["media"].get("status") == "RELEASING"
-    ]
-    if not releasing_ids:
-        print("  No releasing anime in watching/planning — skipping airing sync.")
-        return
-
-    print(f"  Fetching airing schedules for {len(releasing_ids)} releasing anime...", flush=True)
-    schedules = fetch_airing_schedules(releasing_ids)
-    print(f"  {len(schedules)} upcoming episodes found.")
-
-    # Delete stale entries (already aired or no longer in scope)
-    cur.execute(
-        "DELETE FROM airing_schedule_cache WHERE anime_id = ANY(%s)",
-        (releasing_ids,),
-    )
-
-    for s in schedules:
-        airing_at = datetime.fromtimestamp(s["airingAt"], tz=timezone.utc)
-        cur.execute(
-            """
-            INSERT INTO airing_schedule_cache (anime_id, episode, airing_at)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (anime_id, episode) DO UPDATE SET
-                airing_at = EXCLUDED.airing_at
-            """,
-            (s["mediaId"], s["episode"], airing_at),
-        )
-
-
 def main() -> None:
     print(f"Syncing AniList library for: {ANILIST_USERNAME} (user_id={USER_ID})")
     print(f"  Token present: {'yes' if ANILIST_TOKEN else 'NO — private lists will be skipped'}")
@@ -400,7 +331,6 @@ def main() -> None:
                     upsert_library_entry(cur, entry)
                     if i % 100 == 0:
                         print(f"  {i}/{len(entries)} upserted...", flush=True)
-                sync_airing_schedule(cur, entries)
         print(f"Done — {len(entries)} entries synced successfully.")
     except Exception as e:
         print(f"ERROR writing to database: {e}", file=sys.stderr)
