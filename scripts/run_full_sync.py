@@ -30,8 +30,14 @@ load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 SCRIPTS_DIR = Path(__file__).parent
-# Per-user subdirectory — avoids one user's leftover history.json/config.yaml ever
-# being read by another user's sync, even across separate runs.
+# Where crunchyexporter-cli itself is vendored (fixed, global — see Dockerfile).
+# Not to be confused with CRUNCHYEXPORTER_DIR below, which is per-user.
+CRUNCHYEXPORTER_INSTALL_DIR = Path(os.environ.get("CRUNCHYEXPORTER_INSTALL_DIR", "/opt/crunchyexporter"))
+# Per-user subdirectory for config.yaml/data — avoids one user's leftover
+# history.json/config.yaml ever being read by another user's sync, even across
+# separate runs. main.py itself always runs from CRUNCHYEXPORTER_INSTALL_DIR (that's
+# the only place it exists); this is just cwd, so its own relative config/data reads
+# land in the right per-user spot.
 CRUNCHYEXPORTER_DIR = Path(os.environ.get("CRUNCHYEXPORTER_DIR", "/opt/crunchyexporter")) / str(USER_ID)
 HISTORY_PATH = CRUNCHYEXPORTER_DIR / "data" / "history.json"
 
@@ -106,7 +112,7 @@ def main() -> None:
         config_path.write_text(f"crunchyroll:\n  etp_rt: \"{cr_etp_rt}\"\n")
 
         ok = run(
-            [sys.executable, "src/main.py", "fetch"],
+            [sys.executable, str(CRUNCHYEXPORTER_INSTALL_DIR / "src" / "main.py"), "fetch"],
             cwd=CRUNCHYEXPORTER_DIR,
         )
         if not ok:
