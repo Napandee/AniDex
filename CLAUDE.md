@@ -121,7 +121,11 @@ up first and get explicit confirmation before running one against real data.
 - Track bugs, enhancements, and research spikes as GitHub issues (use
   `.github/ISSUE_TEMPLATE/task.md`) before starting work on them, not just in commit
   messages or chat — the reasoning behind scope/tradeoffs needs to be findable later
-  without digging through history.
+  without digging through history. When work actually starts: assign the issue
+  (`gh issue edit <n> --add-assignee Napandee`) and reference it in the eventual
+  commit(s) with a closing keyword (`Fixes #n` / `Closes #n`) so it auto-closes on
+  merge — that's the real link between an issue and the code that resolved it, not
+  a manual comment.
 - Never commit secrets, tokens, or API keys. Env vars only — never hardcoded, never logged.
 - The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`),
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
