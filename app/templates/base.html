@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Anime Tracker{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=32">
+  <link rel="stylesheet" href="/static/style.css?v=33">
   <script src="/static/script.js?v=17" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   <header>
     <nav>
       <a href="/" class="site-name">Anime Tracker</a>
+      {% block nav_extra %}
       <div class="nav-links">
         <a href="/" class="nav-link">Library</a>
         <a href="/upcoming" class="nav-link">Upcoming</a>
@@ -23,6 +24,7 @@
       <form class="nav-search-form" action="/search" method="get">
         <input class="nav-search" type="search" name="q" placeholder="Search…" autocomplete="off">
       </form>
+      {% endblock %}
     </nav>
   </header>
   <main>

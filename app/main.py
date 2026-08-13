@@ -670,23 +670,15 @@ def _no_users_exist() -> bool:
 def auth_login_page(request: Request, error: str = ""):
     if _no_users_exist():
         return RedirectResponse(url="/auth/register", status_code=303)
-    oauth_links = ""
-    if oauth_configured("google"):
-        oauth_links += '<p><a href="/auth/login/google">Log in with Google</a></p>'
-    if oauth_configured("discord"):
-        oauth_links += '<p><a href="/auth/login/discord">Log in with Discord</a></p>'
-    error_html = f"<p style='color:red'>{html.escape(error)}</p>" if error else ""
-    return HTMLResponse(f"""
-        <h1>Log in</h1>
-        {error_html}
-        <form method="post" action="/auth/login">
-            <input type="email" name="email" placeholder="email@example.com" required><br>
-            <input type="password" name="password" placeholder="password" required><br>
-            <button type="submit">Log in</button>
-        </form>
-        <p><a href="/auth/register">Need an account?</a></p>
-        {oauth_links}
-    """)
+    return templates.TemplateResponse(
+        request,
+        "auth_login.html",
+        {
+            "error": error,
+            "oauth_google_configured": oauth_configured("google"),
+            "oauth_discord_configured": oauth_configured("discord"),
+        },
+    )
 
 
 @app.post("/auth/login")
@@ -734,17 +726,7 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
 
 @app.get("/auth/register", response_class=HTMLResponse)
 def auth_register_page(request: Request, error: str = ""):
-    error_html = f"<p style='color:red'>{html.escape(error)}</p>" if error else ""
-    return HTMLResponse(f"""
-        <h1>Create account</h1>
-        {error_html}
-        <form method="post" action="/auth/register">
-            <input type="email" name="email" placeholder="email@example.com" required><br>
-            <input type="password" name="password" placeholder="password (min 8 characters)" required minlength="8"><br>
-            <button type="submit">Create account</button>
-        </form>
-        <p><a href="/auth/login">Already have an account?</a></p>
-    """)
+    return templates.TemplateResponse(request, "auth_register.html", {"error": error})
 
 
 @app.post("/auth/register")
@@ -784,33 +766,24 @@ def _valid_reset_token(token: str):
 
 
 @app.get("/auth/reset-password/{token}", response_class=HTMLResponse)
-def auth_reset_password_page(token: str, error: str = ""):
-    if not _valid_reset_token(token):
-        return HTMLResponse(
-            "<h1>Invalid or expired link</h1>"
-            "<p>This password reset link is invalid, expired, or already used. "
-            "Ask an admin to generate a new one.</p>",
-            status_code=400,
-        )
-    error_html = f"<p style='color:red'>{html.escape(error)}</p>" if error else ""
-    return HTMLResponse(f"""
-        <h1>Set a new password</h1>
-        {error_html}
-        <form method="post" action="/auth/reset-password/{token}">
-            <input type="password" name="password" placeholder="new password (min 8 characters)" required minlength="8"><br>
-            <button type="submit">Set password</button>
-        </form>
-    """)
+def auth_reset_password_page(request: Request, token: str, error: str = ""):
+    valid = bool(_valid_reset_token(token))
+    return templates.TemplateResponse(
+        request,
+        "auth_reset_password.html",
+        {"valid": valid, "token": token, "error": error},
+        status_code=200 if valid else 400,
+    )
 
 
 @app.post("/auth/reset-password/{token}")
-def auth_reset_password_submit(token: str, password: str = Form(...)):
+def auth_reset_password_submit(request: Request, token: str, password: str = Form(...)):
     reset = _valid_reset_token(token)
     if not reset:
-        return HTMLResponse(
-            "<h1>Invalid or expired link</h1>"
-            "<p>This password reset link is invalid, expired, or already used. "
-            "Ask an admin to generate a new one.</p>",
+        return templates.TemplateResponse(
+            request,
+            "auth_reset_password.html",
+            {"valid": False, "token": token, "error": ""},
             status_code=400,
         )
     if len(password) < 8:
