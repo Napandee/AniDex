@@ -1247,6 +1247,21 @@ main {
 }
 .btn-notes-sm:hover { background: #2e1065; color: #c4b5fd; }
 
+.btn-delete-sm {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  background: #1a1a1a;
+  color: #666;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.3;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.btn-delete-sm:hover { background: #3f1515; color: #fca5a5; border-color: #7f1d1d; }
+.btn-delete-sm:disabled { opacity: 0.5; cursor: default; }
+
 
 /* ── Nav search ──────────────────────────────────────────────────────────────── */
 .nav-search-form { display: flex; }

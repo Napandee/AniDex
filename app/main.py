@@ -207,6 +207,26 @@ mutation ($mediaId: Int!, $progress: Int!) {
 }
 """
 
+DELETE_MEDIA_LIST_ENTRY_MUTATION = """
+mutation ($id: Int!) {
+  DeleteMediaListEntry(id: $id) {
+    deleted
+  }
+}
+"""
+
+# Fallback lookup for entries added via this app but not yet backfilled with
+# anilist_entry_id by a sync run — resolves the viewer's own list-entry id by mediaId.
+MEDIA_LIST_ENTRY_ID_QUERY = """
+query ($mediaId: Int!) {
+  Media(id: $mediaId) {
+    mediaListEntry {
+      id
+    }
+  }
+}
+"""
+
 VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
 STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
 
@@ -1224,6 +1244,64 @@ async def set_progress(anime_id: int, request: Request):
     return JSONResponse({"ok": True, "progress": progress})
 
 
+@app.post("/api/anime/{anime_id}/delete")
+async def delete_anime(anime_id: int):
+    token = _get_anilist_token()
+    if not token:
+        return JSONResponse({"error": "AniList token not configured"}, status_code=500)
+
+    row = db.fetchone("SELECT anilist_entry_id FROM library_entries WHERE anime_id = %s", (anime_id,))
+    if not row:
+        return JSONResponse({"error": "not in library"}, status_code=404)
+
+    entry_id = row["anilist_entry_id"]
+    if not entry_id:
+        # Not yet backfilled by a sync run (e.g. added moments ago) — resolve it live.
+        try:
+            resp = httpx.post(
+                ANILIST_API,
+                json={"query": MEDIA_LIST_ENTRY_ID_QUERY, "variables": {"mediaId": anime_id}},
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if "errors" in data:
+                return JSONResponse({"error": str(data["errors"])}, status_code=502)
+            media = (data.get("data") or {}).get("Media") or {}
+            entry_id = (media.get("mediaListEntry") or {}).get("id")
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=502)
+
+    if not entry_id:
+        return JSONResponse({"error": "could not resolve AniList list entry"}, status_code=502)
+
+    try:
+        del_resp = httpx.post(
+            ANILIST_API,
+            json={"query": DELETE_MEDIA_LIST_ENTRY_MUTATION, "variables": {"id": entry_id}},
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        del_resp.raise_for_status()
+        del_data = del_resp.json()
+        if "errors" in del_data:
+            log.error("AniList delete error for anime_id=%s entry_id=%s: %s", anime_id, entry_id, del_data["errors"])
+            return JSONResponse({"error": str(del_data["errors"])}, status_code=502)
+        deleted = ((del_data.get("data") or {}).get("DeleteMediaListEntry")) or {}
+        if not deleted.get("deleted"):
+            log.error("AniList delete: not confirmed for anime_id=%s entry_id=%s", anime_id, entry_id)
+            return JSONResponse({"error": "AniList did not confirm deletion"}, status_code=502)
+    except Exception as e:
+        log.error("AniList delete request failed for anime_id=%s: %s", anime_id, e)
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    # personal_notes / recommendation_scores are deliberately left in place — if the
+    # anime gets re-added later, drop reasons/tags/notes should still be there.
+    db.execute("DELETE FROM library_entries WHERE anime_id = %s", (anime_id,))
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/queue/reorder")
 async def reorder_queue(request: Request):
     """Accept [{anime_id, priority}] and bulk-update personal_notes.watch_next_priority."""
@@ -1330,19 +1408,22 @@ async def add_anime(anime_id: int, request: Request):
         al_data = al_resp.json()
         if "errors" in al_data:
             return JSONResponse({"error": str(al_data["errors"])}, status_code=502)
+        saved = ((al_data.get("data") or {}).get("SaveMediaListEntry")) or {}
+        entry_id = saved.get("id")
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
 
     _upsert_anime_row(media)
     db.execute(
         """
-        INSERT INTO library_entries (anime_id, status, synced_at)
-        VALUES (%s, %s, now())
+        INSERT INTO library_entries (anime_id, anilist_entry_id, status, synced_at)
+        VALUES (%s, %s, %s, now())
         ON CONFLICT (anime_id) DO UPDATE SET
-            status    = EXCLUDED.status,
-            synced_at = now()
+            anilist_entry_id = EXCLUDED.anilist_entry_id,
+            status           = EXCLUDED.status,
+            synced_at        = now()
         """,
-        (anime_id, status),
+        (anime_id, entry_id, status),
     )
 
     return JSONResponse({

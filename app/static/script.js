@@ -419,6 +419,36 @@ if (notesModal) {
   });
 }
 
+// ── Delete anime ─────────────────────────────────────────────────────────────
+document.querySelectorAll('.btn-delete-sm').forEach(btn => {
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    const card = btn.closest('.card');
+    const animeId = btn.dataset.animeId;
+    const title = card?.dataset.cardTitle || 'this anime';
+    if (!confirm(`Remove "${title}" from your library and AniList? This can't be undone here.`)) return;
+
+    btn.disabled = true;
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/delete`, { method: 'POST' });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        alert(data.error || 'Delete failed.');
+        btn.disabled = false;
+        return;
+      }
+      if (card) {
+        card.style.transition = 'opacity 0.3s';
+        card.style.opacity = '0';
+        setTimeout(() => card.remove(), 300);
+      }
+    } catch {
+      alert('Delete failed — check connection.');
+      btn.disabled = false;
+    }
+  });
+});
+
 // ── Mark watched (queue page) ─────────────────────────────────────────────────
 document.querySelectorAll('.btn-mark-watched').forEach(btn => {
   btn.addEventListener('click', async () => {
