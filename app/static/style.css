@@ -1282,9 +1282,9 @@ main {
 .btn-delete-sm {
   font-size: 0.85rem;
   padding: 0.2rem 0.4rem;
-  background: #1a1a1a;
-  color: #666;
-  border: 1px solid #333;
+  background: none;
+  color: #7f1d1d;
+  border: 1px solid #3f1515;
   border-radius: 4px;
   cursor: pointer;
   line-height: 1.3;
