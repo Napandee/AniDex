@@ -38,29 +38,50 @@ than presenting them as guaranteed-current.
 
 ## Data Model
 
-See `schema.sql` in repo root. Two categories, kept in separate tables on purpose:
+See `schema.sql` in repo root. Three categories, kept in separate tables on purpose:
 - **AniList-sourced** (`anime`, `library_entries`, `airing_schedule_cache`) — fully
   rebuildable by the sync job. Never hand-edit rows in these tables.
 - **Personal layer** (`personal_notes`, `recommendation_scores`) — the actual reason this
   app exists. Sync jobs must never write to `personal_notes`; `recommendation_scores` is
   rebuilt by the recommender job but must preserve the `dismissed` flag across rebuilds.
+- **Auth/instance** (`users`, `invites`, `instance_config`, `password_resets`,
+  `notified_episodes`) — added for multi-user (Aug 2026). Neither AniList-sourced nor
+  personal-layer; sync jobs never touch these either. `library_entries` /
+  `personal_notes` / `recommendation_scores` / `cr_sync_state` / `sync_log` /
+  `settings` all carry a `user_id` scoping every row to one account.
 
 ## Architecture
 
-- **Sync job**: `scripts/run_full_sync.py`, run inside the app container (via the
-  built-in scheduler or the manual "Sync Now" trigger). Chains three steps: Crunchyroll
-  history fetch via crunchyexporter-cli (skipped if no CR credentials configured) →
-  CR→AniList progress sync (`sync_crunchyroll.py`) → AniList→Postgres sync
-  (`sync_anilist.py`). Upserts into `anime` / `library_entries` / `airing_schedule_cache`
-  / `cr_sync_state`. There is no separate sync container — `crunchyexporter-cli` is
-  vendored directly into the main Dockerfile.
-- **Recommender job**: runs `run_recommender.py`. Scores unwatched/planning anime against
-  taste profile, writes to `recommendation_scores`. Never touches the `dismissed` flag.
-- **App**: reads all tables; writes to `personal_notes`, the `dismissed` flag on
-  `recommendation_scores`, and `library_entries.score` (via the rating endpoint).
-  Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry` in real-time.
+- **Sync job**: `scripts/run_full_sync.py`, single-user primitive — always invoked with a
+  `USER_ID` env var, either by the manual "Sync Now" trigger (that user only) or the
+  built-in scheduler's loop over every user with credentials configured (sequential, one
+  user's failure caught and logged without blocking the rest — see `_scheduled_full_sync`
+  in `app/main.py`). Chains three steps: Crunchyroll history fetch via crunchyexporter-cli
+  (skipped if no CR credentials configured for that user) → CR→AniList progress sync
+  (`sync_crunchyroll.py`) → AniList→Postgres sync (`sync_anilist.py`). Upserts into `anime`
+  / `library_entries` / `airing_schedule_cache` / `cr_sync_state`, all scoped to that user
+  except `anime`/`airing_schedule_cache` which stay global. There is no separate sync
+  container — `crunchyexporter-cli` is vendored directly into the main Dockerfile.
+- **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
+  sync job. Scores unwatched/planning anime against that user's taste profile, writes to
+  `recommendation_scores`. Never touches the `dismissed` flag.
+- **App**: reads all tables, scoped to the logged-in user; writes to `personal_notes`, the
+  `dismissed` flag on `recommendation_scores`, and `library_entries.score` (via the rating
+  endpoint). Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry`
+  in real-time.
 - **Built-in scheduler**: APScheduler runs inside the app container. Daily sync and weekly
-  recommender fire automatically; schedule is configurable via the Settings page.
+  recommender fire automatically for every eligible user; schedule *time* is instance-wide
+  (one cron trigger regardless of user count), configurable via Settings, admin-only.
+
+**crunchyexporter-cli gotcha worth knowing:** each user's Crunchyroll config/data lives in
+its own subdirectory (`/opt/crunchyexporter/{user_id}/`) so one user's history/cookie can
+never leak into another's sync — but the tool itself (`src/main.py`) is vendored once, at
+the top-level `/opt/crunchyexporter/`, never duplicated per user. `run_full_sync.py` must
+invoke it by absolute path (`CRUNCHYEXPORTER_INSTALL_DIR / "src" / "main.py"`) while still
+running with `cwd` set to the per-user directory (so the tool's own relative config/data
+reads land in the right isolated spot) — using a relative path for the script itself broke
+every sync in production the day multi-user shipped (`FileNotFoundError`, fixed same day).
+Don't reintroduce a relative invocation here.
 
 ## Deploy
 
@@ -86,8 +107,21 @@ move to a differently-named/forked repo, the new repo needs an explicit grant un
 `Manage Actions access` on the package's settings page, or every build fails with
 `permission_denied: write_package` no matter what `permissions:` the workflow declares.
 
+**Schema migrations are manual, not part of the deploy pipeline.** `migrations/` holds
+numbered SQL files (`001_add_multi_user.sql`, `002_backfill_and_tighten.sql`) for
+upgrading an already-running instance's database — nothing in the Dockerfile or GitHub
+Actions applies them automatically; they're run by hand against the live Postgres
+(`docker exec -i <postgres-container> psql -U ... -d ... < migrations/00N_*.sql`) as a
+deliberate, separate step from the code deploy. `schema.sql` is the fresh-install target
+schema; migrations exist only for the upgrade path. Per the guardrail below, always back
+up first and get explicit confirmation before running one against real data.
+
 ## Guardrails — Non-Negotiable
 
+- Track bugs, enhancements, and research spikes as GitHub issues (use
+  `.github/ISSUE_TEMPLATE/task.md`) before starting work on them, not just in commit
+  messages or chat — the reasoning behind scope/tradeoffs needs to be findable later
+  without digging through history.
 - Never commit secrets, tokens, or API keys. Env vars only — never hardcoded, never logged.
 - The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`),
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
