@@ -467,7 +467,6 @@
       await Promise.all(calls);
 
       form.innerHTML = `<span class="add-rate-done">Saved as ${status.toLowerCase()}${selectedScore ? ' · ' + '★'.repeat(selectedScore) : ''}</span>`;
-      row.classList.remove('add-result-item--expanded');
     });
   }
 }());
