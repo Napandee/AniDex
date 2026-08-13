@@ -658,8 +658,18 @@ def _resolve_or_create_user(
     return user, None
 
 
+def _no_users_exist() -> bool:
+    """True on a fresh install (empty users table) — same condition
+    _resolve_or_create_user already checks to decide bootstrap-admin, surfaced here
+    too so an unauthenticated visit lands on registration instead of a login form
+    with no one to log in as yet."""
+    return db.fetchone("SELECT COUNT(*) AS n FROM users")["n"] == 0
+
+
 @app.get("/auth/login", response_class=HTMLResponse)
 def auth_login_page(request: Request, error: str = ""):
+    if _no_users_exist():
+        return RedirectResponse(url="/auth/register", status_code=303)
     oauth_links = ""
     if oauth_configured("google"):
         oauth_links += '<p><a href="/auth/login/google">Log in with Google</a></p>'
@@ -1117,9 +1127,12 @@ def admin_reset_password(request: Request, user_id: int):
 
 def _require_user(request: Request):
     """Returns (user, None) if authenticated, or (None, redirect) to send back if not.
-    For page routes — browser-friendly redirect to the login page."""
+    For page routes — browser-friendly redirect to the login page, or to registration
+    on a fresh install where there's no one to log in as yet."""
     user = get_current_user(request)
     if not user:
+        if _no_users_exist():
+            return None, RedirectResponse(url="/auth/register", status_code=303)
         return None, RedirectResponse(url="/auth/login", status_code=303)
     return user, None
 
