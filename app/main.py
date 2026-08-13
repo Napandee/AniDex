@@ -694,10 +694,12 @@ def auth_login_page(request: Request, error: str = ""):
 @app.post("/auth/login")
 def auth_login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
     email = email.strip().lower()
-    user = db.fetchone(
-        "SELECT * FROM users WHERE auth_provider = 'local' AND auth_provider_id = %s",
-        (email,),
-    )
+    # Match by email regardless of auth_provider — an OAuth-originated account can
+    # have a local password set from Settings too (see #11), and auth_provider is
+    # purely historical ("how this account was originally created"), not a gate on
+    # which login methods currently work. password_hash being unset (OAuth-only,
+    # never added a password) still correctly fails the check below.
+    user = db.fetchone("SELECT * FROM users WHERE email = %s", (email,))
 
     if user and user["locked_until"] and user["locked_until"] > datetime.now(timezone.utc):
         minutes_left = max(1, int((user["locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
@@ -1483,7 +1485,7 @@ def queue(request: Request, status: str = None):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, link_error: str = ""):
+def settings_page(request: Request, link_error: str = "", password_error: str = ""):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -1531,6 +1533,7 @@ def settings_page(request: Request, link_error: str = ""):
             "oauth_google_configured": oauth_configured("google"),
             "oauth_discord_configured": oauth_configured("discord"),
             "link_error": link_error,
+            "password_error": password_error,
         },
     )
 
@@ -1594,6 +1597,27 @@ def settings_save(
         # Apply new schedule immediately — no restart needed
         _apply_schedule()
 
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.post("/settings/password")
+def settings_set_password(request: Request, password: str = Form(...)):
+    """Set or change the current session's local password, regardless of
+    auth_provider — the symmetric counterpart to account linking, for accounts
+    that started OAuth-only and previously had no way to get a password except
+    an admin-mediated reset."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    if len(password) < 8:
+        return RedirectResponse(
+            url="/settings?password_error=Password+must+be+at+least+8+characters",
+            status_code=303,
+        )
+
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user["id"]))
     return RedirectResponse(url="/settings", status_code=303)
 
 
