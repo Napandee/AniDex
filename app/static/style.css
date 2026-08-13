@@ -137,6 +137,7 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1.25rem;
+  align-items: start;
 }
 
 .card {
@@ -193,6 +194,8 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-height: 1.4em;
+  line-height: 1.4;
 }
 
 .meta {
@@ -272,6 +275,8 @@ main {
   gap: 0.25rem;
   margin-top: auto;
   padding-top: 0.4rem;
+  min-height: 1.5rem;
+  align-content: flex-start;
 }
 
 .genre {
