@@ -510,6 +510,16 @@ def get_current_user(request: Request) -> dict | None:
     return db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
 
 
+def _nav_context(request: Request) -> dict:
+    """Context processor: makes the logged-in user available to every template as
+    nav_user, so base.html's nav can gate the admin link on is_admin without every
+    single route that renders a template needing to pass it explicitly."""
+    return {"nav_user": get_current_user(request)}
+
+
+templates.context_processors.append(_nav_context)
+
+
 def _instance_config_get(key: str) -> str:
     row = db.fetchone("SELECT value FROM instance_config WHERE key = %s", (key,))
     return row["value"] if row else ""
@@ -958,83 +968,57 @@ def _require_admin(request: Request):
     """Returns a Response to send back if the caller isn't an admin, else None."""
     user = get_current_user(request)
     if not user:
-        return HTMLResponse(
-            "<h1>Not logged in</h1>"
-            "<p><a href='/auth/login/google'>Log in with Google</a> or "
-            "<a href='/auth/login/discord'>Log in with Discord</a></p>",
-            status_code=401,
-        )
+        return RedirectResponse(url="/auth/login", status_code=303)
     if not user["is_admin"]:
         return HTMLResponse("<h1>Forbidden</h1><p>Admin access required.</p>", status_code=403)
     return None
 
 
-@app.get("/admin/invites", response_class=HTMLResponse)
-def admin_invites(request: Request):
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
     denied = _require_admin(request)
     if denied:
         return denied
 
     invites = db.fetchall("SELECT * FROM invites ORDER BY created_at DESC")
-    rows_html = "".join(
-        f"<tr><td>{html.escape(i['email'])}</td><td>{'accepted' if i['accepted_at'] else 'pending'}</td>"
-        f"<td>{i['created_at']}</td></tr>"
-        for i in invites
-    )
 
     now = datetime.now(timezone.utc)
     users = db.fetchall("SELECT * FROM users ORDER BY created_at DESC")
-    users_rows_html = "".join(
-        f"<tr><td>{html.escape(u['email'])}</td><td>{'yes' if u['is_admin'] else ''}</td>"
-        f"<td>{u['created_at']}</td><td>{u['last_login_at'] or '—'}</td>"
-        f"<td>{'🔒 locked' if u['locked_until'] and u['locked_until'] > now else ''}</td>"
-        f"<td><form method='post' action='/admin/users/{u['id']}/reset-password' style='display:inline'>"
-        f"<button type='submit'>Reset password</button></form></td></tr>"
-        for u in users
+
+    # Most recent full_sync row per user — operability visibility for the admin
+    # running the instance, not just invite/user management.
+    sync_rows = db.fetchall(
+        """
+        SELECT DISTINCT ON (user_id) user_id, run_at, status, error_msg
+        FROM sync_log
+        WHERE type = 'full_sync'
+        ORDER BY user_id, run_at DESC
+        """
     )
+    last_sync_by_user = {r["user_id"]: r for r in sync_rows}
 
-    def _provider_status(provider: str) -> str:
+    users_view = []
+    for u in users:
+        users_view.append({
+            **u,
+            "locked": bool(u["locked_until"] and u["locked_until"] > now),
+            "last_sync": last_sync_by_user.get(u["id"]),
+        })
+
+    def _provider_status(provider: str) -> dict:
         client_id, client_secret = _oauth_config(provider)
-        if client_id and client_secret:
-            return f"configured (client id: {html.escape(client_id)})"
-        return "not configured"
+        return {"configured": bool(client_id and client_secret), "client_id": client_id}
 
-    return HTMLResponse(f"""
-        <h1>Invites</h1>
-        <form method="post" action="/admin/invites">
-            <input type="email" name="email" placeholder="email@example.com" required>
-            <button type="submit">Invite</button>
-        </form>
-        <table border="1" cellpadding="4">
-            <tr><th>Email</th><th>Status</th><th>Created</th></tr>
-            {rows_html}
-        </table>
-
-        <h1>Users</h1>
-        <table border="1" cellpadding="4">
-            <tr><th>Email</th><th>Admin</th><th>Created</th><th>Last login</th><th>Status</th><th></th></tr>
-            {users_rows_html}
-        </table>
-
-        <h1>OAuth settings</h1>
-        <p>Optional — local email/password login always works regardless of these.</p>
-
-        <h2>Google — {_provider_status("google")}</h2>
-        <form method="post" action="/admin/oauth-settings">
-            <input type="hidden" name="provider" value="google">
-            <input type="text" name="client_id" placeholder="Client ID"><br>
-            <input type="text" name="client_secret" placeholder="Client Secret (leave blank to keep current)"><br>
-            <button type="submit">Save</button>
-        </form>
-
-        <h2>Discord — {_provider_status("discord")}</h2>
-        <form method="post" action="/admin/oauth-settings">
-            <input type="hidden" name="provider" value="discord">
-            <input type="text" name="client_id" placeholder="Client ID"><br>
-            <input type="text" name="client_secret" placeholder="Client Secret (leave blank to keep current)"><br>
-            <button type="submit">Save</button>
-        </form>
-    """)
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "invites": invites,
+            "users": users_view,
+            "google_status": _provider_status("google"),
+            "discord_status": _provider_status("discord"),
+        },
+    )
 
 
 @app.post("/admin/invites")
@@ -1049,7 +1033,7 @@ def admin_invites_create(request: Request, email: str = Form(...)):
         "INSERT INTO invites (email, invited_by) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING",
         (email, admin_user["id"]),
     )
-    return RedirectResponse(url="/admin/invites", status_code=303)
+    return RedirectResponse(url="/admin", status_code=303)
 
 
 @app.post("/admin/oauth-settings")
@@ -1070,7 +1054,7 @@ def admin_oauth_settings(
     if client_secret.strip():
         _instance_config_set(f"{provider}_client_secret", client_secret.strip())
 
-    return RedirectResponse(url="/admin/invites", status_code=303)
+    return RedirectResponse(url="/admin", status_code=303)
 
 
 @app.post("/admin/users/{user_id}/reset-password")
@@ -1094,7 +1078,7 @@ def admin_reset_password(request: Request, user_id: int):
         <p>Valid for 1 hour, single use. Copy this link now and send it to them —
         it won't be shown again:</p>
         <p><code>{reset_url}</code></p>
-        <p><a href="/admin/invites">Back to admin</a></p>
+        <p><a href="/admin">Back to admin</a></p>
     """)
 
 

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Admin — Anime Tracker{% endblock %}
+
+{% block content %}
+<div class="notes-page">
+
+  <div class="page-header">
+    <h1 class="page-title">Admin</h1>
+    <p class="page-sub">Instance-wide configuration and operational visibility.</p>
+  </div>
+
+  {# ── Users ────────────────────────────────────────────────────────────── #}
+  <div class="settings-section" style="margin-top:0;border-top:none;padding-top:0;">
+    <h2 class="settings-section-title">Users</h2>
+    <p class="settings-section-desc">Login activity and each user's most recent sync run.</p>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Admin</th>
+          <th>Created</th>
+          <th>Last login</th>
+          <th>Login status</th>
+          <th>Last sync</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.email }}</td>
+          <td>{% if u.is_admin %}yes{% endif %}</td>
+          <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
+          <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else '—' }}</td>
+          <td>{% if u.locked %}<span class="status-error">locked</span>{% else %}—{% endif %}</td>
+          <td>
+            {% if u.last_sync %}
+            <span class="{% if u.last_sync.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
+              {{ u.last_sync.status }}
+            </span>
+            — {{ u.last_sync.run_at.strftime('%Y-%m-%d %H:%M') if u.last_sync.run_at else '' }}
+            {% if u.last_sync.error_msg %}<br><span class="status-error" title="{{ u.last_sync.error_msg }}">{{ u.last_sync.error_msg[:60] }}{% if u.last_sync.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
+            {% else %}
+            <span class="status-empty">never synced</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
+              <button type="submit" class="btn-save">Reset password</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── Invites ──────────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Invites</h2>
+    <form method="post" action="/admin/invites" class="settings-form">
+      <div class="form-field" style="max-width:320px;">
+        <input class="form-input" type="email" name="email" placeholder="email@example.com" required>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Invite</button>
+      </div>
+    </form>
+    <table class="admin-table">
+      <thead>
+        <tr><th>Email</th><th>Status</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {% for i in invites %}
+        <tr>
+          <td>{{ i.email }}</td>
+          <td>{% if i.accepted_at %}<span class="status-ok">accepted</span>{% else %}pending{% endif %}</td>
+          <td>{{ i.created_at.strftime('%Y-%m-%d') if i.created_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="status-empty">No invites yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── OAuth settings ───────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">OAuth settings</h2>
+    <p class="settings-section-desc">Optional — local email/password login always works regardless of these.</p>
+
+    <div class="settings-section-inner">
+      <h2 class="settings-section-title" style="font-size:0.9rem;">
+        Google —
+        {% if google_status.configured %}<span class="status-ok">configured (client id: {{ google_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
+      </h2>
+      <form method="post" action="/admin/oauth-settings" class="settings-form">
+        <input type="hidden" name="provider" value="google">
+        <div class="form-field">
+          <label class="form-label" for="google_client_id">Client ID</label>
+          <input class="form-input" type="text" id="google_client_id" name="client_id">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="google_client_secret">Client Secret</label>
+          <input class="form-input form-input--secret" type="password" id="google_client_secret" name="client_secret" placeholder="leave blank to keep current">
+          <button type="button" class="btn-reveal" data-target="google_client_secret">Show</button>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="settings-section-inner">
+      <h2 class="settings-section-title" style="font-size:0.9rem;">
+        Discord —
+        {% if discord_status.configured %}<span class="status-ok">configured (client id: {{ discord_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
+      </h2>
+      <form method="post" action="/admin/oauth-settings" class="settings-form">
+        <input type="hidden" name="provider" value="discord">
+        <div class="form-field">
+          <label class="form-label" for="discord_client_id">Client ID</label>
+          <input class="form-input" type="text" id="discord_client_id" name="client_id">
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="discord_client_secret">Client Secret</label>
+          <input class="form-input form-input--secret" type="password" id="discord_client_secret" name="client_secret" placeholder="leave blank to keep current">
+          <button type="button" class="btn-reveal" data-target="discord_client_secret">Show</button>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.btn-reveal').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const input = document.getElementById(btn.dataset.target);
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = 'Hide';
+    } else {
+      input.type = 'password';
+      btn.textContent = 'Show';
+    }
+  });
+});
+</script>
+{% endblock %}

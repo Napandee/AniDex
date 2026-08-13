@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Anime Tracker{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=33">
+  <link rel="stylesheet" href="/static/style.css?v=34">
   <script src="/static/script.js?v=17" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
@@ -20,6 +20,9 @@
         <a href="/recommendations" class="nav-link">Recommended</a>
         <a href="/stats" class="nav-link">Stats</a>
         <a href="/settings" class="nav-link">Settings</a>
+        {% if nav_user and nav_user.is_admin %}
+        <a href="/admin" class="nav-link">Admin</a>
+        {% endif %}
       </div>
       <form class="nav-search-form" action="/search" method="get">
         <input class="nav-search" type="search" name="q" placeholder="Search…" autocomplete="off">
