@@ -581,6 +581,35 @@ main {
 .sync-log-table .log-error { color: #fca5a5; }
 .sync-log-empty { color: #444; font-style: italic; }
 
+/* ── Admin page ───────────────────────────────────────────────────────────── */
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 0.75rem;
+}
+.admin-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #2a2a2a;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.admin-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #1c1c1c;
+  color: #aaa;
+  vertical-align: top;
+}
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table .status-ok { color: #86efac; }
+.admin-table .status-error { color: #fca5a5; }
+.admin-table .status-warn { color: #f59e0b; }
+.admin-table .status-empty { color: #444; font-style: italic; }
+.admin-table .btn-save { padding: 0.3rem 0.7rem; font-size: 0.78rem; }
+.admin-inline-form { display: inline; }
+
 /* ── Auth pages (login / register / reset-password) ─────────────────────── */
 body.auth-page main {
   display: flex;
