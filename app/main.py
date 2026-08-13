@@ -39,6 +39,7 @@ def _get_anilist_token(user_id: int) -> str:
 _SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts")
 _FULL_SYNC_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_full_sync.py")
 _RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
+_AIRING_SCHEDULE_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_airing_schedule.py")
 
 _sync_lock = threading.Lock()
 _sync_state: dict[int, dict] = {}  # user_id -> {"running": bool, "last_result": str|None}
@@ -99,6 +100,27 @@ def _users_with_sync_credentials() -> list[dict]:
         WHERE s.key = 'anilist_token' AND s.value != ''
         """
     )
+
+
+def _refresh_airing_schedule() -> None:
+    """Hourly job: refresh airing_schedule_cache once for the union of every user's
+    WATCHING/PLANNING RELEASING anime — a global table, so this replaces what used
+    to be a per-user step inside each sync (redundant re-fetching whenever two users
+    shared a currently-airing show, and a lock/deadlock risk if their syncs happened
+    to overlap). Runs on its own hourly cadence rather than being chained onto the
+    daily full sync, so anime added via a manual sync or "Add Anime" outside that
+    window still get picked up within the hour — offset to minute=45 so a fresh
+    cache is in place before _check_airing_episodes' minute=0 run each hour.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, _AIRING_SCHEDULE_SCRIPT],
+            capture_output=True, text=True, timeout=300, env=os.environ.copy(),
+        )
+        if result.returncode != 0:
+            log.error("Airing schedule refresh failed: %s", result.stderr[-800:])
+    except Exception as e:
+        log.error("Airing schedule refresh exception: %s", e)
 
 
 def _check_airing_episodes() -> None:
@@ -238,6 +260,11 @@ def _apply_schedule() -> None:
         _scheduled_recommender,
         CronTrigger(day_of_week=rec_day, hour=r_hour, minute=r_min, timezone="UTC"),
         id="weekly_recommender", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _refresh_airing_schedule,
+        CronTrigger(minute=45, timezone="UTC"),
+        id="airing_schedule_refresh", replace_existing=True,
     )
     _scheduler.add_job(
         _check_airing_episodes,
@@ -2232,23 +2259,38 @@ async def add_anime(anime_id: int, request: Request):
     if not token:
         return JSONResponse({"error": "AniList token not configured"}, status_code=500)
 
-    try:
-        resp = httpx.post(
-            ANILIST_API,
-            json={"query": ANILIST_MEDIA_QUERY, "variables": {"id": anime_id}},
-            headers={"Content-Type": "application/json"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if "errors" in data:
-            return JSONResponse({"error": str(data["errors"])}, status_code=502)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=502)
+    # anime is a shared/global table — if another user's sync already wrote a
+    # sufficiently fresh row for this anime, reuse it instead of re-fetching
+    # metadata AniList would just hand back unchanged.
+    cached = db.fetchone(
+        "SELECT title_english, title_romaji FROM anime "
+        "WHERE id = %s AND last_synced_at > now() - INTERVAL '24 hours'",
+        (anime_id,),
+    )
+    media = None
+    if cached:
+        title_english = cached["title_english"]
+        title_romaji = cached["title_romaji"]
+    else:
+        try:
+            resp = httpx.post(
+                ANILIST_API,
+                json={"query": ANILIST_MEDIA_QUERY, "variables": {"id": anime_id}},
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if "errors" in data:
+                return JSONResponse({"error": str(data["errors"])}, status_code=502)
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=502)
 
-    media = (data.get("data") or {}).get("Media")
-    if not media:
-        return JSONResponse({"error": "media not found"}, status_code=404)
+        media = (data.get("data") or {}).get("Media")
+        if not media:
+            return JSONResponse({"error": "media not found"}, status_code=404)
+        title_english = media["title"].get("english")
+        title_romaji = media["title"].get("romaji")
 
     anilist_status = STATUS_TO_ANILIST.get(status, status)
     try:
@@ -2267,7 +2309,8 @@ async def add_anime(anime_id: int, request: Request):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
 
-    _upsert_anime_row(media)
+    if media:
+        _upsert_anime_row(media)
     db.execute(
         """
         INSERT INTO library_entries (user_id, anime_id, anilist_entry_id, status, synced_at)
@@ -2283,6 +2326,6 @@ async def add_anime(anime_id: int, request: Request):
     return JSONResponse({
         "ok": True,
         "id": anime_id,
-        "title": media["title"].get("english") or media["title"].get("romaji"),
+        "title": title_english or title_romaji,
         "status": status,
     })
