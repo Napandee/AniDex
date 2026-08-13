@@ -126,6 +126,14 @@ up first and get explicit confirmation before running one against real data.
   commit(s) with a closing keyword (`Fixes #n` / `Closes #n`) so it auto-closes on
   merge — that's the real link between an issue and the code that resolved it, not
   a manual comment.
+- Merge multi-commit feature branches with a real merge commit (`gh pr merge --merge`),
+  not squash — pass the flag explicitly rather than relying on whatever the repo's
+  default merge method happens to be. Each commit stays individually walkable/revertable
+  in `main`'s real history instead of folded into one. (`feature/multi-user` was
+  squash-merged before this was decided — nothing was actually lost, since GitHub's
+  squash concatenates every commit message into the squash commit's body and the PR
+  page keeps the original commits browsable regardless — but don't rely on that as the
+  plan going forward.)
 - Never commit secrets, tokens, or API keys. Env vars only — never hardcoded, never logged.
 - The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`),
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
