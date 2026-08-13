@@ -87,9 +87,7 @@
     {% endif %}
     <div class="card-body">
       <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
-      {% if e.title_english and e.title_english != e.title_romaji %}
-      <p class="title-sub">{{ e.title_romaji }}</p>
-      {% endif %}
+      <p class="title-sub">{% if e.title_english and e.title_english != e.title_romaji %}{{ e.title_romaji }}{% endif %}</p>
 
       <div class="meta">
         <div class="star-rating" data-anime-id="{{ e.id }}" data-score="{{ (e.score | int) if e.score else 0 }}">
