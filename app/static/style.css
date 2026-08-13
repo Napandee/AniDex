@@ -581,6 +581,71 @@ main {
 .sync-log-table .log-error { color: #fca5a5; }
 .sync-log-empty { color: #444; font-style: italic; }
 
+/* ── Auth pages (login / register / reset-password) ─────────────────────── */
+body.auth-page main {
+  display: flex;
+  justify-content: center;
+  padding-top: 3rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: #1a1a1a;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  padding: 1.75rem;
+}
+
+.auth-title { font-size: 1.15rem; font-weight: 700; color: #f0f0f0; margin-bottom: 1.25rem; }
+
+.auth-form { display: flex; flex-direction: column; gap: 1rem; }
+.auth-form .btn-save { width: 100%; padding: 0.6rem 1rem; }
+
+.auth-error {
+  font-size: 0.8rem;
+  color: #fca5a5;
+  background: #7f1d1d22;
+  border: 1px solid #7f1d1d;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.auth-links { margin-top: 1.25rem; font-size: 0.82rem; color: #666; text-align: center; }
+.auth-links a { color: #60a5fa; text-decoration: none; }
+.auth-links a:hover { text-decoration: underline; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+  font-size: 0.75rem;
+  color: #444;
+}
+.auth-divider::before, .auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #2a2a2a;
+}
+
+.auth-oauth-links { display: flex; flex-direction: column; gap: 0.6rem; }
+.btn-oauth {
+  display: block;
+  text-align: center;
+  padding: 0.55rem 1rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-oauth:hover { background: #222; border-color: #3a3a3a; }
+
 /* ── Bulk select + score filter ──────────────────────────────────────────── */
 .score-filter-group .filter-btn { letter-spacing: -0.05em; }
 
