@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-Full sync pipeline orchestrator.
+Full sync pipeline orchestrator — single-user primitive.
 
-Reads credentials from the settings DB table (falling back to env vars),
-then runs the three sync steps in sequence:
+Syncs exactly one user, specified via the USER_ID env var. The scheduled "sync every
+user" loop lives in app/main.py's _scheduled_full_sync(), which invokes this script
+once per eligible user; the manual "Sync Now" button does the same for just the
+logged-in user. This script itself has no concept of "all users."
+
+Reads credentials from that user's settings DB row (falling back to env vars only for
+local dev/testing without a real user), then runs the three sync steps in sequence:
   1. crunchyexporter-cli fetch  — pull CR watch history to history.json
   2. sync_crunchyroll.py        — CR history → AniList progress updates
   3. sync_anilist.py            — AniList library → Postgres
@@ -14,7 +19,6 @@ Exit 0 = all steps succeeded. Exit 1 = any step failed.
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import psycopg2
@@ -24,21 +28,24 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+USER_ID = int(os.environ["USER_ID"])
 SCRIPTS_DIR = Path(__file__).parent
-CRUNCHYEXPORTER_DIR = Path(os.environ.get("CRUNCHYEXPORTER_DIR", "/opt/crunchyexporter"))
+# Per-user subdirectory — avoids one user's leftover history.json/config.yaml ever
+# being read by another user's sync, even across separate runs.
+CRUNCHYEXPORTER_DIR = Path(os.environ.get("CRUNCHYEXPORTER_DIR", "/opt/crunchyexporter")) / str(USER_ID)
 HISTORY_PATH = CRUNCHYEXPORTER_DIR / "data" / "history.json"
 
 
 def log(msg: str) -> None:
-    print(f"[run_full_sync] {msg}", flush=True)
+    print(f"[run_full_sync] user={USER_ID} {msg}", flush=True)
 
 
 def load_settings() -> dict:
-    """Pull all settings from DB; return as dict."""
+    """Pull this user's settings from DB; return as dict."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT key, value FROM settings")
+            cur.execute("SELECT key, value FROM settings WHERE user_id = %s", (USER_ID,))
             return {row["key"]: row["value"] for row in cur.fetchall()}
     finally:
         conn.close()
@@ -57,8 +64,9 @@ def write_log(status: str, entries_updated: int | None = None, error_msg: str | 
         conn = psycopg2.connect(DATABASE_URL)
         with conn, conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO sync_log (type, status, entries_updated, error_msg) VALUES (%s, %s, %s, %s)",
-                ("full_sync", status, entries_updated, error_msg),
+                "INSERT INTO sync_log (user_id, type, status, entries_updated, error_msg) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (USER_ID, "full_sync", status, entries_updated, error_msg),
             )
         conn.close()
     except Exception as e:
@@ -69,7 +77,8 @@ def main() -> None:
     log("Starting full sync pipeline")
     settings = load_settings()
 
-    # Resolve credentials: DB settings take priority over env vars
+    # Resolve credentials: DB settings take priority over env vars (env var fallback
+    # only meaningful for local dev/testing without a real settings row)
     anilist_token    = settings.get("anilist_token")    or os.environ.get("ANILIST_TOKEN", "")
     anilist_username = settings.get("anilist_username") or os.environ.get("ANILIST_USERNAME", "")
     cr_etp_rt        = settings.get("cr_etp_rt")        or os.environ.get("CRUNCHYROLL_ETP_RT", "")
@@ -84,6 +93,7 @@ def main() -> None:
         "ANILIST_TOKEN":    anilist_token,
         "ANILIST_USERNAME": anilist_username,
         "DATABASE_URL":     DATABASE_URL,
+        "USER_ID":          str(USER_ID),
     }
 
     # ── Step 1: Crunchyroll fetch ─────────────────────────────────────────────
@@ -131,7 +141,7 @@ def main() -> None:
     try:
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM library_entries")
+            cur.execute("SELECT COUNT(*) FROM library_entries WHERE user_id = %s", (USER_ID,))
             total = cur.fetchone()[0]
         conn.close()
     except Exception:

@@ -109,6 +109,49 @@
     </div>
   </form>
 
+  {# ── Linked accounts ──────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Linked accounts</h2>
+    <p class="settings-section-desc">
+      Connect Google or Discord to log in without a password. You always need at
+      least one working login method.
+    </p>
+    {% if link_error %}<p class="settings-error">{{ link_error }}</p>{% endif %}
+
+    <div class="linked-account-row">
+      <span class="linked-account-name">Password</span>
+      <span class="linked-account-status">{% if account.has_password %}set{% else %}not set{% endif %}</span>
+    </div>
+
+    <div class="linked-account-row">
+      <span class="linked-account-name">Google</span>
+      {% if account.google_linked %}
+      <span class="linked-account-status linked-account-status--on">linked</span>
+      <form method="post" action="/settings/unlink/google" class="linked-account-action">
+        <button type="submit" class="btn-unlink">Disconnect</button>
+      </form>
+      {% elif oauth_google_configured %}
+      <a href="/settings/link/google" class="btn-save">Connect</a>
+      {% else %}
+      <span class="linked-account-status">not configured on this instance</span>
+      {% endif %}
+    </div>
+
+    <div class="linked-account-row">
+      <span class="linked-account-name">Discord</span>
+      {% if account.discord_linked %}
+      <span class="linked-account-status linked-account-status--on">linked</span>
+      <form method="post" action="/settings/unlink/discord" class="linked-account-action">
+        <button type="submit" class="btn-unlink">Disconnect</button>
+      </form>
+      {% elif oauth_discord_configured %}
+      <a href="/settings/link/discord" class="btn-save">Connect</a>
+      {% else %}
+      <span class="linked-account-status">not configured on this instance</span>
+      {% endif %}
+    </div>
+  </div>
+
   {# ── Manual sync trigger ──────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Manual sync</h2>

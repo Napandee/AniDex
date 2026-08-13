@@ -7,8 +7,11 @@ fetches candidate anime via AniList's recommendations API, scores them, and
 upserts results into recommendation_scores. Re-runnable and idempotent.
 The `dismissed` flag on existing rows is never touched by this script.
 
+Single-user, invoked once per user by app/main.py's _scheduled_recommender() (which
+sets USER_ID) or directly for local dev/testing.
+
 Usage:
-    python scripts/run_recommender.py
+    USER_ID=1 python scripts/run_recommender.py
 """
 
 import json
@@ -26,6 +29,7 @@ load_dotenv()
 ANILIST_API = "https://graphql.anilist.co"
 DATABASE_URL = os.environ["DATABASE_URL"]
 ANILIST_TOKEN = os.environ.get("ANILIST_TOKEN")
+USER_ID = int(os.environ["USER_ID"])
 
 TOP_SHOWS_FOR_RECS = 30   # how many of the user's top completed shows to pull recs for
 RECS_PER_SHOW_PAGES = 2   # pages of recommendations per show (25 per page = up to 50 recs/show)
@@ -130,8 +134,8 @@ def build_taste_profile(conn) -> dict:
             SELECT a.genres, a.tags, a.studios, le.status, le.score
             FROM library_entries le
             JOIN anime a ON a.id = le.anime_id
-            WHERE le.status IN ('COMPLETED', 'WATCHING', 'PLANNING')
-        """)
+            WHERE le.status IN ('COMPLETED', 'WATCHING', 'PLANNING') AND le.user_id = %s
+        """, (USER_ID,))
         rows = cur.fetchall()
 
     genre_weights: dict[str, float] = {}
@@ -172,7 +176,7 @@ def build_taste_profile(conn) -> dict:
 
 def get_library_ids(conn) -> set[int]:
     with conn.cursor() as cur:
-        cur.execute("SELECT anime_id FROM library_entries")
+        cur.execute("SELECT anime_id FROM library_entries WHERE user_id = %s", (USER_ID,))
         return {row[0] for row in cur.fetchall()}
 
 
@@ -180,16 +184,19 @@ def get_top_completed_ids(conn, limit: int) -> list[int]:
     with conn.cursor() as cur:
         cur.execute("""
             SELECT anime_id FROM library_entries
-            WHERE status = 'COMPLETED'
+            WHERE status = 'COMPLETED' AND user_id = %s
             ORDER BY score DESC NULLS LAST, synced_at DESC
             LIMIT %s
-        """, (limit,))
+        """, (USER_ID, limit))
         return [row[0] for row in cur.fetchall()]
 
 
 def get_planning_ids(conn) -> set[int]:
     with conn.cursor() as cur:
-        cur.execute("SELECT anime_id FROM library_entries WHERE status = 'PLANNING'")
+        cur.execute(
+            "SELECT anime_id FROM library_entries WHERE status = 'PLANNING' AND user_id = %s",
+            (USER_ID,),
+        )
         return {row[0] for row in cur.fetchall()}
 
 
@@ -334,14 +341,14 @@ def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
     with conn.cursor() as cur:
         for anime_id, score, reason in scored:
             cur.execute("""
-                INSERT INTO recommendation_scores (anime_id, score, reason, dismissed, computed_at)
-                VALUES (%s, %s, %s, false, now())
-                ON CONFLICT (anime_id) DO UPDATE SET
+                INSERT INTO recommendation_scores (user_id, anime_id, score, reason, dismissed, computed_at)
+                VALUES (%s, %s, %s, %s, false, now())
+                ON CONFLICT (user_id, anime_id) DO UPDATE SET
                     score       = EXCLUDED.score,
                     reason      = EXCLUDED.reason,
                     computed_at = now()
                     -- dismissed is intentionally excluded: user decisions survive re-runs
-            """, (anime_id, score, json.dumps(reason)))
+            """, (USER_ID, anime_id, score, json.dumps(reason)))
     conn.commit()
     return len(scored)
 

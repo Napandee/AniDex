@@ -16,12 +16,14 @@ it all into one self-hosted page.
 - "Watch next" queue driven by the recommender job's output
 - Upcoming-episode view for anything in Watching/Planning status
 - Built-in stats page (watch time, completion rate, score distribution, top genres)
+- Multi-user: local email+password auth by default, Google/Discord OAuth optional
+  per-instance, invite-only signup, admin-managed. See Decisions Made.
 
 **Out of scope — do not build these:**
-- No user auth / login system — access control is the operator's responsibility (reverse proxy, Cloudflare Access, etc.)
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
 - No rebuilding AniList's catalog search/browse UI — link out to AniList for that
-- No payment, sharing, or multi-user features — this is single-user
+- No payment or public sharing features — invite-only multi-user is the ceiling here,
+  not a social/sharing platform
 
 ## Data Source
 
@@ -104,8 +106,24 @@ move to a differently-named/forked repo, the new repo needs an explicit grant un
 - **Tech stack**: Python + FastAPI + Jinja2 + psycopg2 — server-rendered HTML, no
   frontend build step. Uvicorn inside a slim Python Docker image.
 - **Stats**: built-in stats page served from `/stats` — no external dashboard dependency.
-- **Single-user**: no auth layer in the app itself. Deploy behind a reverse proxy or
-  access control tool of your choice.
+- **Multi-user** (pivoted from the original single-user design, Aug 2026): the app now
+  has its own auth layer rather than relying solely on the reverse proxy / access
+  control tool in front of it. Local email+password is the zero-config default; Google
+  and Discord OAuth are optional, admin-configured per-instance via `/admin/invites`.
+  Signup is invite-only except for the very first account on an empty `users` table,
+  which bootstraps as admin automatically. Every route and sync script (`run_full_sync.py`,
+  `sync_anilist.py`, `sync_crunchyroll.py`, `run_recommender.py`) is scoped to the
+  logged-in/invoking user; the sync schedule *time* stays instance-wide (one cron
+  trigger regardless of user count), gated to admins in Settings. Account linking
+  (attaching Google/Discord to an existing account) is explicit-only — never automatic
+  by email match, since that would mean trusting a bare provider-supplied email as
+  proof of identity. Linking only ever happens via `/settings/link/{provider}` while
+  already authenticated, through a callback route (`/auth/link-callback/{provider}`)
+  kept deliberately separate from the ordinary login callback so it can't fire as a
+  side effect of an ordinary login click. Reverse-proxy access control (Cloudflare
+  Access, etc.) is still expected as an outer layer, especially while invite-only
+  signup keeps this to a small trusted group — the app's own auth doesn't replace it,
+  it adds a second, inner gate.
 - **License**: GPL-3.0. Dependency audit (Aug 2026) confirmed no dependency — including
   `crunchyexporter-cli`, vendored via git rather than pip — imposes a stricter license
   that would have constrained this choice.

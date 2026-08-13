@@ -38,12 +38,13 @@ load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
 ANILIST_TOKEN = os.environ["ANILIST_TOKEN"]
 ANILIST_USERNAME = os.environ["ANILIST_USERNAME"]
+USER_ID = int(os.environ["USER_ID"])
 HISTORY_PATH = os.environ.get("HISTORY_PATH", "/crunchyexporter/data/history.json")
 ANILIST_API = "https://graphql.anilist.co"
 
 
 def log(msg):
-    print(f"[crunchysync] {msg}", flush=True)
+    print(f"[crunchysync] user={USER_ID} {msg}", flush=True)
 
 
 # ── History parsing ───────────────────────────────────────────────────────────
@@ -99,37 +100,47 @@ def db_connect():
 
 
 def ensure_table(conn):
+    """Defensive fallback if run against a DB that somehow skipped schema.sql/migrations
+    — matches the current multi-user schema (composite PK) so it can never create a
+    table shape schema.sql wouldn't recognize. In normal operation this is a no-op
+    since the table already exists by the time any sync script runs."""
     with conn.cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS cr_sync_state (
-                anilist_id            INTEGER PRIMARY KEY,
-                series_title          TEXT,
-                last_seen_episode     INTEGER NOT NULL DEFAULT 0,
-                rewatch_in_progress   BOOLEAN NOT NULL DEFAULT FALSE,
-                last_synced_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+                user_id                INTEGER NOT NULL,
+                anilist_id             INTEGER NOT NULL,
+                series_title           TEXT,
+                last_seen_episode      INTEGER NOT NULL DEFAULT 0,
+                rewatch_in_progress    BOOLEAN NOT NULL DEFAULT FALSE,
+                last_synced_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (user_id, anilist_id)
             )
         """)
     conn.commit()
 
 
 def load_cr_state(conn) -> dict[int, dict]:
-    """Return {anilist_id: {last_seen_episode, rewatch_in_progress}}."""
+    """Return {anilist_id: {last_seen_episode, rewatch_in_progress}} for this user."""
     with conn.cursor() as cur:
-        cur.execute("SELECT anilist_id, last_seen_episode, rewatch_in_progress FROM cr_sync_state")
+        cur.execute(
+            "SELECT anilist_id, last_seen_episode, rewatch_in_progress "
+            "FROM cr_sync_state WHERE user_id = %s",
+            (USER_ID,),
+        )
         return {row["anilist_id"]: dict(row) for row in cur.fetchall()}
 
 
 def save_cr_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
     with conn.cursor() as cur:
         cur.execute("""
-            INSERT INTO cr_sync_state (anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
-            VALUES (%s, %s, %s, %s, now())
-            ON CONFLICT (anilist_id) DO UPDATE SET
+            INSERT INTO cr_sync_state (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, now())
+            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
                 series_title        = EXCLUDED.series_title,
                 last_seen_episode   = EXCLUDED.last_seen_episode,
                 rewatch_in_progress = EXCLUDED.rewatch_in_progress,
                 last_synced_at      = now()
-        """, (anilist_id, title, last_ep, rewatch))
+        """, (USER_ID, anilist_id, title, last_ep, rewatch))
     conn.commit()
 
 

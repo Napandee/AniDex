@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Standalone AniList sync script.
+Standalone AniList sync script — single-user, invoked once per user by
+run_full_sync.py (which sets USER_ID) or directly for local dev/testing.
 
 Pulls the full library for the configured AniList user and upserts into the
-anime + library_entries tables. Idempotent — safe to re-run at any time.
+anime (global) + library_entries (this user only) tables. Idempotent — safe
+to re-run at any time.
 
 Usage:
-    python scripts/sync_anilist.py
+    USER_ID=1 python scripts/sync_anilist.py
 
 Requires .env (or env vars) with:
-    DATABASE_URL, ANILIST_USERNAME, ANILIST_TOKEN
+    DATABASE_URL, ANILIST_USERNAME, ANILIST_TOKEN, USER_ID
 """
 
 import json
@@ -30,6 +32,7 @@ ANILIST_API = "https://graphql.anilist.co"
 DATABASE_URL = os.environ["DATABASE_URL"]
 ANILIST_USERNAME = os.environ["ANILIST_USERNAME"]
 ANILIST_TOKEN = os.environ.get("ANILIST_TOKEN")
+USER_ID = int(os.environ["USER_ID"])
 
 # Fetch all list entries in chunks; AniList max is 500 per chunk.
 # Each chunk = 1 API call; we sleep between chunks to stay under 90 req/min.
@@ -278,10 +281,10 @@ def upsert_library_entry(cur, entry: dict) -> None:
     cur.execute(
         """
         INSERT INTO library_entries (
-            anime_id, anilist_entry_id, status, score, progress,
+            user_id, anime_id, anilist_entry_id, status, score, progress,
             repeat_count, start_date, finish_date, anilist_updated_at, synced_at
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-        ON CONFLICT (anime_id) DO UPDATE SET
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+        ON CONFLICT (user_id, anime_id) DO UPDATE SET
             anilist_entry_id   = EXCLUDED.anilist_entry_id,
             status             = EXCLUDED.status,
             score              = COALESCE(EXCLUDED.score, library_entries.score),
@@ -293,6 +296,7 @@ def upsert_library_entry(cur, entry: dict) -> None:
             synced_at          = now()
         """,
         (
+            USER_ID,
             media_id,
             entry["id"],
             status,
@@ -376,7 +380,7 @@ def sync_airing_schedule(cur, entries: list[dict]) -> None:
 
 
 def main() -> None:
-    print(f"Syncing AniList library for: {ANILIST_USERNAME}")
+    print(f"Syncing AniList library for: {ANILIST_USERNAME} (user_id={USER_ID})")
     print(f"  Token present: {'yes' if ANILIST_TOKEN else 'NO — private lists will be skipped'}")
 
     try:

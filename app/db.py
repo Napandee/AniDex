@@ -34,3 +34,13 @@ def execute(query, params=None):
         with conn.cursor() as cur:
             cur.execute(query, params)
         conn.commit()
+
+
+def execute_returning(query, params=None):
+    """Like execute(), but for INSERT/UPDATE ... RETURNING — fetches and commits."""
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(query, params)
+            row = cur.fetchone()
+        conn.commit()
+        return row
