@@ -384,10 +384,11 @@ if (notesModal) {
           body: JSON.stringify({status: 'DROPPED'}),
         });
         if (!r2.ok) throw new Error('status failed');
+        const droppedCardEl = activeCardEl;
         closeNotesModal();
-        activeCardEl.style.transition = 'opacity 0.3s';
-        activeCardEl.style.opacity = '0';
-        setTimeout(() => activeCardEl?.remove(), 300);
+        droppedCardEl.style.transition = 'opacity 0.3s';
+        droppedCardEl.style.opacity = '0';
+        setTimeout(() => droppedCardEl.remove(), 300);
         return;
       }
 
