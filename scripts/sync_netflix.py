@@ -388,11 +388,18 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
         return "first-sync (COMPLETED) — state recorded, no change"
 
     # ── AniList status already REPEATING but rewatch not recorded in state ────
+    # _update() must run BEFORE _save_state(), not after — if the write throws (a
+    # transient AniList error, e.g. rate-limiting), saving state anyway would mark
+    # this watermark as handled while the real progress update never landed, and
+    # since fetch_since() only returns activity newer than the watermark, that
+    # miss would never get retried on a later run. Confirmed live: a 429 mid-write
+    # left rewatch_in_progress=true saved with AniList's progress never advanced.
     if status == "REPEATING" and not rewatch_active:
-        _save_state(conn, anilist_id, title, watched_at, True)
         if watched_ep > al_ep:
             _update(anilist_id, progress=watched_ep)
+            _save_state(conn, anilist_id, title, watched_at, True)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {watched_ep}"
+        _save_state(conn, anilist_id, title, watched_at, True)
         return "rewatch detected (already REPEATING) — state recorded"
 
     # ── Rewatch starting: any new activity on an already-COMPLETED series is

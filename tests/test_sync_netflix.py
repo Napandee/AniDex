@@ -164,3 +164,22 @@ def test_already_at_or_ahead_makes_no_anilist_call(monkeypatch):
     assert "already at or ahead" in result
     assert not any(c[0] == "update" for c in calls)
     assert ("save", 42, False) in calls
+
+
+def test_repeating_branch_does_not_save_state_if_update_fails(monkeypatch):
+    # Regression test — confirmed live 2026-08-14: a 429 from AniList mid-write in
+    # this exact branch left rewatch_in_progress=true saved with the real progress
+    # update never landed, permanently hiding the miss from future watermark-based
+    # fetches. _update() must run before _save_state(), not after.
+    calls = []
+    monkeypatch.setattr(nf, "_update", lambda anilist_id, **kw: (_ for _ in ()).throw(RuntimeError("429")))
+    monkeypatch.setattr(
+        nf, "_save_state",
+        lambda conn, anilist_id, title, watched_at, rewatch: calls.append(("save", anilist_id, rewatch)),
+    )
+    entry = _entry(status="REPEATING", progress=2, repeat=1, total=24)
+    try:
+        nf.process("The Night Agent", _watched(episode=4, new_count=2), entry, None, conn=None)
+    except RuntimeError:
+        pass
+    assert calls == []
