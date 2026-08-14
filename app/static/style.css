@@ -137,7 +137,7 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1.25rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .card {
@@ -273,7 +273,6 @@ main {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
-  margin-top: auto;
   padding-top: 0.4rem;
   min-height: 1.5rem;
   align-content: flex-start;
@@ -1266,7 +1265,9 @@ body.auth-page main {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  margin-top: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.6rem;
+  border-top: 1px solid #222;
 }
 
 .card-footer .status-select {
