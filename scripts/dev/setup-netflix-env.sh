@@ -5,21 +5,51 @@
 # command line or a format string, so there's no risk of the % in a URL-encoded
 # cookie value getting misinterpreted (printf's format-string bug, if you build
 # this by hand: any % in the value gets parsed as a format specifier).
+#
+# Re-running this loads whatever's already in .env.netflix.local as defaults —
+# press enter on any prompt to keep the existing value instead of re-pasting it.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-read -rsp "Netflix 'NetflixId' cookie value: " netflix_id; echo
-read -rsp "Netflix 'SecureNetflixId' cookie value: " secure_netflix_id; echo
+if [ -f .env.netflix.local ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env.netflix.local
+  set +a
+fi
+
+# $1 = prompt label, $2 = existing value (may be empty), $3 = 1 for hidden input
+prompt_keep_existing() {
+  local label="$1" existing="$2" hidden="${3:-0}" hint value
+  if [ -n "$existing" ]; then
+    hint=" [already set — enter to keep]"
+  else
+    hint=" (enter to skip)"
+  fi
+  if [ "$hidden" = "1" ]; then
+    read -rsp "$label$hint: " value; echo
+  else
+    read -rp "$label$hint: " value
+  fi
+  if [ -z "$value" ]; then
+    echo "$existing"
+  else
+    echo "$value"
+  fi
+}
+
+netflix_id=$(prompt_keep_existing "Netflix 'NetflixId' cookie value" "${NETFLIX_ID_COOKIE:-}" 1)
+secure_netflix_id=$(prompt_keep_existing "Netflix 'SecureNetflixId' cookie value" "${NETFLIX_SECURE_ID_COOKIE:-}" 1)
 echo
 echo "For the Falcor API probe (scripts/dev/probe_netflix_falcor.py), also paste:"
 echo "  devtools -> Network -> the pathEvaluator/viewingActivity request -> Headers"
 echo "  -> Request Headers -> the full 'cookie' row value (one long string)."
-read -rsp "Full Netflix cookie header (optional, enter to skip): " cookie_header; echo
+cookie_header=$(prompt_keep_existing "Full Netflix cookie header" "${NETFLIX_COOKIE_HEADER:-}" 1)
 echo "  Same request's POST body decodes to {\"guid\": \"...\"} — that guid value:"
-read -rp  "Netflix profile guid (optional, enter to skip): " profile_guid
+profile_guid=$(prompt_keep_existing "Netflix profile guid" "${NETFLIX_PROFILE_GUID:-}" 0)
 echo
-read -rp  "AniList username (optional, enter to skip): " anilist_username
-read -rsp "AniList token (optional, enter to skip): " anilist_token; echo
+anilist_username=$(prompt_keep_existing "AniList username" "${ANILIST_USERNAME:-}" 0)
+anilist_token=$(prompt_keep_existing "AniList token" "${ANILIST_TOKEN:-}" 1)
 
 {
   printf 'NETFLIX_ID_COOKIE=%s\n' "$netflix_id"
