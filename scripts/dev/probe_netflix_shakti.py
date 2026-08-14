@@ -26,14 +26,36 @@ if not netflix_id or not secure_netflix_id:
 
 client = httpx.Client(
     cookies={"NetflixId": netflix_id, "SecureNetflixId": secure_netflix_id},
-    headers={"User-Agent": "Mozilla/5.0"},
+    headers={
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.netflix.com/browse",
+        "X-Requested-With": "XMLHttpRequest",
+    },
     timeout=30,
     follow_redirects=True,
 )
 
+
+def dump_response(resp: httpx.Response, label: str):
+    print(f"--- {label}: HTTP {resp.status_code} ---")
+    print("Response headers:")
+    for k, v in resp.headers.items():
+        print(f"  {k}: {v}")
+    print("Response body (first 2000 chars):")
+    print(resp.text[:2000])
+    print()
+
+
 print("Resolving build_id from https://www.netflix.com/browse ...")
 resp = client.get("https://www.netflix.com/browse")
-resp.raise_for_status()
+if resp.status_code != 200:
+    dump_response(resp, "browse page fetch failed")
+    sys.exit(1)
 match = re.search(r'"BUILD_IDENTIFIER"\s*:\s*"([^"]+)"', resp.text)
 if not match:
     print("FAILED to find BUILD_IDENTIFIER in page state.", file=sys.stderr)
@@ -46,7 +68,11 @@ print(f"build_id = {build_id}\n")
 url = f"https://www.netflix.com/api/shakti/{build_id}/viewingactivity"
 print(f"Fetching {url} (page 0, pgSize=5) ...\n")
 resp = client.get(url, params={"pg": 0, "pgSize": 5})
-resp.raise_for_status()
+if resp.status_code != 200:
+    dump_response(resp, "viewingactivity fetch failed")
+    print("The status code/headers/body above are the actual diagnostic — that's what")
+    print("determines the next fix (missing header, missing cookie, wrong URL shape, etc).")
+    sys.exit(1)
 data = resp.json()
 
 print("=" * 78)
