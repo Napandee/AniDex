@@ -169,11 +169,18 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     # ── AniList status already REPEATING but rewatch not recorded in state ────
     # Handles: user changes status to REPEATING in the app/AniList before sync
     # runs. Set rewatch_active so subsequent syncs advance progress correctly.
+    # anilist_update() must run BEFORE save_cr_state(), not after — if the write
+    # throws (a transient AniList error, e.g. rate-limiting), saving state anyway
+    # would mark this watermark as handled while the real progress update never
+    # landed, and since the sync only re-considers activity newer than the stored
+    # watermark, that miss would never get retried on a later run. Confirmed live
+    # via the identical bug in sync_netflix.py's equivalent branch (issue #48).
     if status == "REPEATING" and not rewatch_active:
-        save_cr_state(conn, anilist_id, title, cr_ep, True)
         if cr_ep > al_ep:
             anilist_update(anilist_id, progress=cr_ep)
+            save_cr_state(conn, anilist_id, title, cr_ep, True)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {cr_ep}"
+        save_cr_state(conn, anilist_id, title, cr_ep, True)
         return "rewatch detected (already REPEATING) — state recorded"
 
     # ── Rewatch: COMPLETED but CR episode dropped below last-seen ────────────
