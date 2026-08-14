@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""
+SUPERSEDED — kept only as historical record, not the live path.
+
+This probes Netflix's Shakti REST endpoint (api/shakti/.../viewingactivity), which
+sync_netflix.py originally assumed (credited to statsoflife/extract-netflix-activity's
+documented shape). Live testing on feature/netflix-sync-48 (2026-08-14) found it
+consistently returns HTTP 421 regardless of network origin or headers sent — it's not
+what the real netflix.com/viewingactivity page actually calls. The real endpoint is
+Netflix's Falcor pathEvaluator API — see probe_netflix_falcor.py, which sync_netflix.py
+now uses, and that script's success confirms this one's approach was simply wrong, not
+fixable by better headers/cookies.
+
+Left in place in case Shakti is useful for something else later, or as a worked example
+of "the API we assumed from a third-party tool's docs turned out not to match the real
+one" — not because anything here should still be trusted.
+
+Dev-only diagnostic (not part of the app). No DB, no AniList calls, no writes anywhere.
+"""
+
+import json
+import os
+import re
+import sys
+
+import httpx
+
+netflix_id = os.environ.get("NETFLIX_ID_COOKIE", "")
+secure_netflix_id = os.environ.get("NETFLIX_SECURE_ID_COOKIE", "")
+
+if not netflix_id or not secure_netflix_id:
+    print("ERROR: set NETFLIX_ID_COOKIE and NETFLIX_SECURE_ID_COOKIE env vars first.", file=sys.stderr)
+    sys.exit(1)
+
+client = httpx.Client(
+    cookies={"NetflixId": netflix_id, "SecureNetflixId": secure_netflix_id},
+    headers={
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.netflix.com/browse",
+        "X-Requested-With": "XMLHttpRequest",
+    },
+    timeout=30,
+    follow_redirects=True,
+)
+
+
+def dump_response(resp: httpx.Response, label: str):
+    print(f"--- {label}: HTTP {resp.status_code} ---")
+    print("Response headers:")
+    for k, v in resp.headers.items():
+        print(f"  {k}: {v}")
+    print("Response body (first 2000 chars):")
+    print(resp.text[:2000])
+    print()
+
+
+print("Resolving build_id from https://www.netflix.com/browse ...")
+resp = client.get("https://www.netflix.com/browse")
+if resp.status_code != 200:
+    dump_response(resp, "browse page fetch failed")
+    sys.exit(1)
+match = re.search(r'"BUILD_IDENTIFIER"\s*:\s*"([^"]+)"', resp.text)
+if not match:
+    print("FAILED to find BUILD_IDENTIFIER in page state.", file=sys.stderr)
+    print("Either the cookies are invalid/expired, or Netflix changed its page structure", file=sys.stderr)
+    print("(the second case means sync_netflix.py's _resolve_build_id() needs updating).", file=sys.stderr)
+    sys.exit(1)
+build_id = match.group(1)
+print(f"build_id = {build_id}\n")
+
+url = f"https://www.netflix.com/api/shakti/{build_id}/viewingactivity"
+print(f"Fetching {url} (page 0, pgSize=5) ...\n")
+resp = client.get(url, params={"pg": 0, "pgSize": 5})
+if resp.status_code != 200:
+    dump_response(resp, "viewingactivity fetch failed")
+    print("The status code/headers/body above are the actual diagnostic — that's what")
+    print("determines the next fix (missing header, missing cookie, wrong URL shape, etc).")
+    sys.exit(1)
+data = resp.json()
+
+print("=" * 78)
+print("RAW RESPONSE (pretty-printed)")
+print("=" * 78)
+print(json.dumps(data, indent=2))
+
+print()
+print("=" * 78)
+print("WHAT sync_netflix.py ASSUMES vs WHAT'S ACTUALLY THERE")
+print("=" * 78)
+items = data.get("viewedItems")
+print(f"data.get('viewedItems')  ->  {'FOUND, ' + str(len(items)) + ' items' if items is not None else 'MISSING — top-level key is probably named something else, check the raw JSON above'}")
+
+if items:
+    first = items[0]
+    print(f"\nFirst item's keys: {sorted(first.keys())}")
+    print(f"  item.get('date')          -> {first.get('date')!r}  (expected: epoch milliseconds)")
+    print(f"  item.get('seriesTitle')   -> {first.get('seriesTitle')!r}  (expected: present for episodes, absent for movies)")
+    print(f"  item.get('title')         -> {first.get('title')!r}")
+    print(f"  item.get('episode')       -> {first.get('episode')!r}  (expected: int episode index, or absent)")
+    print("\nIf any of the above say something other than what's expected, that's exactly")
+    print("what needs fixing in _item_watched_at() / _is_episode() / _item_episode_number()")
+    print("in scripts/sync_netflix.py before running it for real.")
