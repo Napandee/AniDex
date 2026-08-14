@@ -35,5 +35,9 @@ services:
       DATABASE_URL: postgresql://anime_tracker:devpass@anidex-dev-postgres:5432/anime_tracker
       SESSION_SECRET_KEY: dev-only-not-for-real-use
       TZ: UTC
+      # Skips the live AniList push in rating/status/progress — see app/main.py's
+      # ANILIST_MOCK. Lets those endpoints be exercised locally with no real AniList
+      # account/token. Never set this outside this dev-only compose file.
+      ANILIST_MOCK: "1"
     ports:
       - "28888:8888"
