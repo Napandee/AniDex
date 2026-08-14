@@ -1550,8 +1550,8 @@ def settings_save(
     anilist_username: str = Form(""),
     anilist_token: str = Form(""),
     cr_etp_rt: str = Form(""),
-    netflix_id_cookie: str = Form(""),
-    netflix_secure_id_cookie: str = Form(""),
+    netflix_cookie_header: str = Form(""),
+    netflix_profile_guid: str = Form(""),
     sync_daily_time: str = Form("04:30"),
     sync_recommender_day: str = Form("sun"),
     sync_recommender_time: str = Form("05:00"),
@@ -1573,10 +1573,10 @@ def settings_save(
         config.set_value(user["id"], "anilist_token", anilist_token.strip())
     if cr_etp_rt.strip():
         config.set_value(user["id"], "cr_etp_rt", cr_etp_rt.strip())
-    if netflix_id_cookie.strip():
-        config.set_value(user["id"], "netflix_id_cookie", netflix_id_cookie.strip())
-    if netflix_secure_id_cookie.strip():
-        config.set_value(user["id"], "netflix_secure_id_cookie", netflix_secure_id_cookie.strip())
+    if netflix_cookie_header.strip():
+        config.set_value(user["id"], "netflix_cookie_header", netflix_cookie_header.strip())
+    if netflix_profile_guid.strip():
+        config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
     # Sync schedule is instance-wide (one cron trigger regardless of user count), so it
     # goes to instance_config rather than this user's own settings row — admin-only,

@@ -65,25 +65,29 @@
       </div>
 
       <div class="form-field">
-        <label class="form-label" for="netflix_id_cookie">
-          Netflix NetflixId cookie
-          <span class="form-label-hint">— NetflixId cookie value from your browser</span>
+        <label class="form-label" for="netflix_cookie_header">
+          Netflix cookie header
+          <span class="form-label-hint">— full "cookie" request header value from your browser's
+            devtools (Network tab, any netflix.com request, Request Headers → cookie). Needs the
+            whole thing, not just NetflixId/SecureNetflixId — Netflix's viewing-activity API
+            checks several of the other session cookies too.</span>
         </label>
-        <input class="form-input form-input--secret" type="password" id="netflix_id_cookie"
-               name="netflix_id_cookie" placeholder="{% if settings.netflix_id_cookie %}set (leave blank to keep){% else %}not set{% endif %}"
+        <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
+               name="netflix_cookie_header" placeholder="{% if settings.netflix_cookie_header %}set (leave blank to keep){% else %}not set{% endif %}"
                autocomplete="new-password">
-        <button type="button" class="btn-reveal" data-target="netflix_id_cookie">Show</button>
+        <button type="button" class="btn-reveal" data-target="netflix_cookie_header">Show</button>
       </div>
 
       <div class="form-field">
-        <label class="form-label" for="netflix_secure_id_cookie">
-          Netflix SecureNetflixId cookie
-          <span class="form-label-hint">— SecureNetflixId cookie value from your browser</span>
+        <label class="form-label" for="netflix_profile_guid">
+          Netflix profile guid
+          <span class="form-label-hint">— from the same devtools capture: any
+            api/aui/pathEvaluator request's POST body decodes to {"guid": "..."}; that value</span>
         </label>
-        <input class="form-input form-input--secret" type="password" id="netflix_secure_id_cookie"
-               name="netflix_secure_id_cookie" placeholder="{% if settings.netflix_secure_id_cookie %}set (leave blank to keep){% else %}not set{% endif %}"
+        <input class="form-input form-input--secret" type="password" id="netflix_profile_guid"
+               name="netflix_profile_guid" placeholder="{% if settings.netflix_profile_guid %}set (leave blank to keep){% else %}not set{% endif %}"
                autocomplete="new-password">
-        <button type="button" class="btn-reveal" data-target="netflix_secure_id_cookie">Show</button>
+        <button type="button" class="btn-reveal" data-target="netflix_profile_guid">Show</button>
       </div>
     </div>
 

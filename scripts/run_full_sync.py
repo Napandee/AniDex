@@ -92,8 +92,8 @@ def main() -> None:
     anilist_token         = settings.get("anilist_token")         or os.environ.get("ANILIST_TOKEN", "")
     anilist_username      = settings.get("anilist_username")      or os.environ.get("ANILIST_USERNAME", "")
     cr_etp_rt             = settings.get("cr_etp_rt")             or os.environ.get("CRUNCHYROLL_ETP_RT", "")
-    netflix_id_cookie        = settings.get("netflix_id_cookie")        or os.environ.get("NETFLIX_ID_COOKIE", "")
-    netflix_secure_id_cookie = settings.get("netflix_secure_id_cookie") or os.environ.get("NETFLIX_SECURE_ID_COOKIE", "")
+    netflix_cookie_header  = settings.get("netflix_cookie_header")  or os.environ.get("NETFLIX_COOKIE_HEADER", "")
+    netflix_profile_guid   = settings.get("netflix_profile_guid")   or os.environ.get("NETFLIX_PROFILE_GUID", "")
 
     if not anilist_token or not anilist_username:
         msg = "AniList credentials not configured. Set them in Settings."
@@ -140,14 +140,14 @@ def main() -> None:
         log("Step 1-2/4 — No Crunchyroll ETP-RT configured, skipping CR sync")
 
     # ── Step 3: Netflix → AniList sync ────────────────────────────────────────
-    if netflix_id_cookie and netflix_secure_id_cookie:
+    if netflix_cookie_header and netflix_profile_guid:
         log("Step 3/4 — Syncing Netflix → AniList")
         ok = run(
             [sys.executable, str(SCRIPTS_DIR / "sync_netflix.py")],
             extra_env={
                 **credentials_env,
-                "NETFLIX_ID_COOKIE": netflix_id_cookie,
-                "NETFLIX_SECURE_ID_COOKIE": netflix_secure_id_cookie,
+                "NETFLIX_COOKIE_HEADER": netflix_cookie_header,
+                "NETFLIX_PROFILE_GUID": netflix_profile_guid,
             },
         )
         if not ok:
@@ -155,7 +155,7 @@ def main() -> None:
             log("ERROR: Netflix → AniList sync failed")
             sys.exit(1)
     else:
-        log("Step 3/4 — No Netflix cookies configured, skipping Netflix sync")
+        log("Step 3/4 — No Netflix credentials configured, skipping Netflix sync")
 
     # ── Step 4: AniList → Postgres sync ──────────────────────────────────────
     log("Step 4/4 — Syncing AniList → Postgres")

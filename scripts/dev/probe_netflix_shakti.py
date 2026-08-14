@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Dev-only diagnostic (not part of the app). Verifies the raw shape of Netflix's Shakti
-viewingactivity response against what sync_netflix.py assumes (viewedItems / date /
-seriesTitle / title / episode) BEFORE trusting the real sync against real AniList data.
-No DB, no AniList calls, no writes anywhere — just prints Netflix's own JSON back at you.
+SUPERSEDED — kept only as historical record, not the live path.
 
-Meant to run inside scripts/dev/Containerfile's image via scripts/dev/probe-netflix.sh
-rather than directly on a host, so credentials never touch a shell command line — see
-that script for the intended invocation.
+This probes Netflix's Shakti REST endpoint (api/shakti/.../viewingactivity), which
+sync_netflix.py originally assumed (credited to statsoflife/extract-netflix-activity's
+documented shape). Live testing on feature/netflix-sync-48 (2026-08-14) found it
+consistently returns HTTP 421 regardless of network origin or headers sent — it's not
+what the real netflix.com/viewingactivity page actually calls. The real endpoint is
+Netflix's Falcor pathEvaluator API — see probe_netflix_falcor.py, which sync_netflix.py
+now uses, and that script's success confirms this one's approach was simply wrong, not
+fixable by better headers/cookies.
+
+Left in place in case Shakti is useful for something else later, or as a worked example
+of "the API we assumed from a third-party tool's docs turned out not to match the real
+one" — not because anything here should still be trusted.
+
+Dev-only diagnostic (not part of the app). No DB, no AniList calls, no writes anywhere.
 """
 
 import json

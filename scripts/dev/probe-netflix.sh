@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# SUPERSEDED — probes the Shakti endpoint, which turned out not to be what Netflix's
+# real viewing-activity page uses (see probe_netflix_shakti.py's docstring). Use
+# probe-netflix-falcor.sh instead; this is kept only in case Shakti matters for
+# something else later.
+#
 # Run this yourself — it needs your real Netflix session cookies, which should never
 # be typed into a chat/agent session. Set them in your own shell first (or put them in
 # a local .env.netflix.local, gitignored, next to this script's repo root — see
