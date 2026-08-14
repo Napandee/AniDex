@@ -21,6 +21,23 @@
     </div>
   </div>
 
+  {# ── Also watching ────────────────────────────────────────────────── #}
+  {% if also_watching %}
+  <div class="extra-section" style="margin-bottom:1.25rem;">
+    <div>
+      <h2 class="extra-heading">Also in this instance</h2>
+      <div class="also-watching-list">
+        {% for w in also_watching %}
+        <div class="also-watching-row">
+          <span class="also-watching-name">{{ w.name }}</span>
+          <span class="also-watching-status">{{ w.status.title() if w.status else 'In library' }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Trailer + related ────────────────────────────────────────────── #}
   {% set relation_labels = {
     'PREQUEL': 'Prequel', 'SEQUEL': 'Sequel', 'PARENT': 'Parent',

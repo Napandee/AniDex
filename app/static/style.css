@@ -384,6 +384,19 @@ main {
 .extra-empty { font-size: 0.8rem; color: #444; margin: 0; }
 .extra-heading { font-size: 0.9rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
 
+.also-watching-list { display: flex; flex-direction: column; }
+.also-watching-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid #1c1c1c;
+  font-size: 0.85rem;
+}
+.also-watching-row:first-child { border-top: none; }
+.also-watching-name { color: #ccc; }
+.also-watching-status { color: #666; font-size: 0.78rem; margin-left: auto; }
+
 .trailer-link {
   display: inline-block;
   position: relative;

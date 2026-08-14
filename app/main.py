@@ -24,7 +24,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config
+from app import db, config, privacy
 
 def _get_anilist_token(user_id: int) -> str:
     """Return this user's AniList token from settings DB."""
@@ -1206,6 +1206,30 @@ async def dismiss(anime_id: int, request: Request):
     return RedirectResponse(url="/recommendations", status_code=303)
 
 
+def _also_watching(anime_id: int, viewer_user_id: int, genres: list[str] | None) -> list[dict]:
+    """Other same-instance users who have this anime in their library, respecting
+    #26's privacy controls — see app/privacy.py. Static/on-demand only, computed
+    when this page is viewed; never pushed, polled, or notified (#22's scope)."""
+    rows = db.fetchall(
+        """
+        SELECT u.id, u.email, u.display_name, le.status, pn.personal_tags
+        FROM library_entries le
+        JOIN users u ON u.id = le.user_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = le.anime_id AND pn.user_id = le.user_id
+        WHERE le.anime_id = %s AND le.user_id != %s
+        ORDER BY u.email
+        """,
+        (anime_id, viewer_user_id),
+    )
+    result = []
+    for r in rows:
+        hidden_tags = privacy.get_hidden_tags(r["id"])
+        if privacy.entry_hidden(genres, r["personal_tags"], hidden_tags):
+            continue
+        result.append({"name": privacy.display_name(r), "status": r["status"]})
+    return result
+
+
 @app.get("/anime/{anime_id}/notes", response_class=HTMLResponse)
 def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     user, denied = _require_user(request)
@@ -1215,7 +1239,7 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     anime = db.fetchone(
         """
         SELECT a.id, a.title_english, a.title_romaji, a.cover_image_url, le.status,
-               a.trailer_yt_id, a.relations
+               a.trailer_yt_id, a.relations, a.genres
         FROM anime a
         LEFT JOIN library_entries le ON le.anime_id = a.id AND le.user_id = %s
         WHERE a.id = %s
@@ -1226,6 +1250,8 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
         "SELECT * FROM personal_notes WHERE anime_id = %s AND user_id = %s",
         (anime_id, user["id"]),
     )
+
+    also_watching = _also_watching(anime_id, user["id"], anime["genres"] if anime else [])
 
     trailer = None
     if anime and anime["trailer_yt_id"]:
@@ -1254,7 +1280,7 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
         request,
         "notes.html",
         {"anime": anime, "notes": notes, "back": back,
-         "trailer": trailer, "related": related},
+         "trailer": trailer, "related": related, "also_watching": also_watching},
     )
 
 
