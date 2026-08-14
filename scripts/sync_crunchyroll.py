@@ -26,21 +26,18 @@ Exit 0 = success, Exit 1 = fatal error.
 import json
 import os
 import sys
-import time
 
-import httpx
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
+from anilist_sync_common import anilist_update, fetch_user_list, find_anilist_id
+
 load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-ANILIST_TOKEN = os.environ["ANILIST_TOKEN"]
-ANILIST_USERNAME = os.environ["ANILIST_USERNAME"]
 USER_ID = int(os.environ["USER_ID"])
 HISTORY_PATH = os.environ.get("HISTORY_PATH", "/crunchyexporter/data/history.json")
-ANILIST_API = "https://graphql.anilist.co"
 
 
 def log(msg):
@@ -142,136 +139,6 @@ def save_cr_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool
                 last_synced_at      = now()
         """, (USER_ID, anilist_id, title, last_ep, rewatch))
     conn.commit()
-
-
-# ── AniList ───────────────────────────────────────────────────────────────────
-
-def gql(query: str, variables: dict | None = None, token: str | None = None) -> dict:
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    resp = httpx.post(
-        ANILIST_API,
-        json={"query": query, "variables": variables or {}},
-        headers=headers,
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    if "errors" in data:
-        raise RuntimeError(f"AniList error: {data['errors']}")
-    return data["data"]
-
-
-ALL_LISTS_QUERY = """
-query ($userName: String) {
-  MediaListCollection(userName: $userName, type: ANIME) {
-    lists {
-      entries {
-        mediaId
-        progress
-        status
-        repeat
-        media {
-          id
-          episodes
-          title { romaji english }
-        }
-      }
-    }
-  }
-}
-"""
-
-SEARCH_QUERY = """
-query ($search: String) {
-  Media(search: $search, type: ANIME) {
-    id
-    title { romaji english }
-  }
-}
-"""
-
-UPDATE_MUTATION = """
-mutation ($mediaId: Int!, $progress: Int, $status: MediaListStatus, $repeat: Int) {
-  SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat) {
-    id progress status repeat
-  }
-}
-"""
-
-
-def fetch_user_list() -> tuple[dict[int, dict], dict[str, int]]:
-    """Fetch all the user's AniList entries in one call.
-
-    Returns (entries_by_id, title_index) where title_index maps
-    lowercased romaji/english titles → mediaId for fast CR title matching.
-    """
-    data = gql(ALL_LISTS_QUERY, {"userName": ANILIST_USERNAME})
-    entries: dict[int, dict] = {}
-    title_index: dict[str, int] = {}
-
-    for lst in data["MediaListCollection"]["lists"]:
-        for entry in lst["entries"]:
-            mid = entry["mediaId"]
-            media = entry.get("media") or {}
-            title_obj = media.get("title") or {}
-            romaji = (title_obj.get("romaji") or "").strip()
-            english = (title_obj.get("english") or "").strip()
-
-            entries[mid] = {
-                "status": entry["status"],
-                "progress": entry["progress"] or 0,
-                "repeat": entry["repeat"] or 0,
-                "total_episodes": media.get("episodes"),
-                "title": english or romaji or "",
-            }
-
-            for t in (romaji, english):
-                if t:
-                    title_index[t.lower()] = mid
-
-    return entries, title_index
-
-
-_search_cache: dict[str, int | None] = {}
-
-
-def find_anilist_id(title: str, title_index: dict[str, int]) -> int | None:
-    """Return AniList media ID for a CR series title.
-
-    Checks the pre-built title index first (zero API calls for exact matches),
-    then falls back to the search endpoint for unrecognised titles.
-    """
-    normalized = title.lower()
-    if normalized in title_index:
-        return title_index[normalized]
-
-    if title in _search_cache:
-        return _search_cache[title]
-
-    try:
-        data = gql(SEARCH_QUERY, {"search": title})
-        mid = data["Media"]["id"]
-        _search_cache[title] = mid
-        title_index[normalized] = mid  # cache in index for any later duplicates
-        return mid
-    except Exception:
-        _search_cache[title] = None
-        return None
-
-
-def anilist_update(media_id: int, progress: int | None = None,
-                   status: str | None = None, repeat: int | None = None):
-    variables: dict = {"mediaId": media_id}
-    if progress is not None:
-        variables["progress"] = progress
-    if status is not None:
-        variables["status"] = status
-    if repeat is not None:
-        variables["repeat"] = repeat
-    gql(UPDATE_MUTATION, variables, token=ANILIST_TOKEN)
-    time.sleep(0.7)  # stay under AniList's 90 req/min
 
 
 # ── Sync logic ────────────────────────────────────────────────────────────────
