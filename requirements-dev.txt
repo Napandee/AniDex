@@ -1,0 +1,4 @@
+# Test-only dependencies — not installed in the production image (see Dockerfile,
+# which only installs requirements.txt).
+-r requirements.txt
+pytest==9.1.1
