@@ -5,8 +5,9 @@ Tracking issue: #15. This is the research spike that issue's acceptance criteria
 before any implementation work starts on `scripts/sync_netflix.py` / `scripts/sync_primevideo.py`
 (currently `NotImplementedError` stubs, commit `527cbab`).
 
-**Status: Netflix side resolved. Prime Video side still open** — see "What's still unresolved"
-below.
+**Status: Netflix architecture resolved. Prime Video architecture very likely the same shape
+(cookie-replay against a JSON API), pending one live-session confirmation of the exact
+endpoint** — see "What's still unresolved" below.
 
 ## What each service actually exposes
 
@@ -38,16 +39,40 @@ below.
 
 - **No real-time official export.** Amazon's GDPR "Request My Data" is an async, multi-day
   process — not usable for a periodic sync job.
-- **No cookie/internal-API shortcut confirmed in this pass.** Every OSS tool found uses
-  Selenium-driven login automation + screen scraping:
+- **Update (follow-up pass): a cookie-authenticated JSON endpoint almost certainly exists,
+  confirmed by reading the actual source of the exporter tools rather than just their
+  descriptions** — this is a materially better position than the first pass found. Two OSS
+  tools found for Prime Video turn out to represent two different eras/approaches:
   - [`gitzain/prime-video-history-to-csv`](https://github.com/gitzain/prime-video-history-to-csv) —
-    Python + Selenium, logs in with username/password, scrapes the history page.
+    genuinely Selenium: logs in with username/password via XPath-driven form fill, then scrapes
+    rendered DOM nodes. No API involved. Highest-risk tier, as originally assessed.
   - [`twocaretcat/watch-history-exporter-for-amazon-prime-video`](https://github.com/twocaretcat/watch-history-exporter-for-amazon-prime-video) —
-    browser-console script; the user must already be logged in and paste it in manually each
-    time (zero automation risk, but also zero automation — doesn't meet the "no manual work"
-    goal on its own).
-  - This is the highest-risk tier of everything surveyed: Amazon's bot/fraud detection is tied
-    to the same stack protecting its payments surface, and Selenium leaves the largest
+    its own README ("How it Works" section) and source confirm the `primevideo.com/settings/watch-history`
+    page is **not** server-rendered HTML per page load. The first chunk of history ships inline
+    as a JSON blob in a `<script type="text/template">` tag; scrolling further triggers real
+    `fetch()` calls (the script monkey-patches `window.fetch` to intercept them) that return
+    more JSON in the identical shape: a `widgets` array, filtered to `widgetType === "watch-history"`,
+    containing date-sectioned `titles` with a `gti` (Amazon's "Global Title Identifier" — e.g.
+    `amzn1.dv.gti.83c8ce44-b42e-40fd-8546-c36fd2824071`), episode children with their own `gti`,
+    watched timestamps, and title/episode paths. That is structurally the same shape as
+    Netflix's Shakti viewing-activity response — a paginated, cookie-authenticated JSON API
+    backing the account's own history page, not raw HTML scraping.
+  - **What's not yet confirmed**: the literal endpoint URL/query parameters. This script
+    doesn't hardcode them — it passively intercepts whatever `fetch()` calls the page's own JS
+    makes as you scroll, which is why it never needed to know the URL. General web search
+    (multiple queries: endpoint-name guesses, "reverse engineering" + Prime Video, Video
+    Central/Avails API docs — which are for content-provider partners, unrelated to consumer
+    watch history) did not surface anyone's write-up of the actual URL/params. Confirming it
+    requires a live authenticated session: open `primevideo.com/settings/watch-history` in a
+    browser, open devtools' Network tab, scroll, and read off the request the page itself
+    makes — the same way the Shakti endpoint was originally found by others for Netflix.
+  - This meaningfully changes the risk picture from the first pass: Prime Video is likely
+    **not** stuck at "Selenium or nothing" — a cookie-replay approach analogous to the Netflix
+    plan is plausible pending that one confirmation step. Until the URL is confirmed, treat
+    this as "very likely, not yet verified," not as a settled decision.
+  - This is the highest-risk tier of everything surveyed if it does turn out Selenium is the
+    only path: Amazon's bot/fraud detection is tied to the same stack protecting its payments
+    surface, and Selenium leaves the largest
     fingerprint (WebDriver flags, full page render) of any approach considered.
 
 ### Prior art worth knowing about but not adopted
@@ -111,7 +136,12 @@ is exactly the failure mode incremental, low-frequency (e.g. daily) syncing avoi
   requires automating a login flow — the single highest-scrutiny surface on either service —
   while cookie replay never touches it. The CSV export's official/sanctioned status doesn't
   outweigh that automation-surface difference.
-- **Prime Video**: **not yet decided** — see "What's still unresolved."
+- **Prime Video**: **likely the same cookie-replay shape as Netflix, pending one confirmation
+  step.** A follow-up pass reading the actual source of `twocaretcat/watch-history-exporter-for-amazon-prime-video`
+  (not just its description) found strong structural evidence of a cookie-authenticated JSON
+  API behind `primevideo.com/settings/watch-history` — paginated, keyed by Amazon's `gti`
+  identifiers, same shape as Shakti — but the literal endpoint URL/params aren't confirmed from
+  any published source. See "What's still unresolved."
 - **No Trakt intermediary.** Direct integration, matching the existing Crunchyroll precedent
   and issue #15's own stated preference for `scripts/sync_netflix.py` /
   `scripts/sync_primevideo.py` over any new module tree. A Trakt-mediated design was
@@ -144,14 +174,24 @@ is exactly the failure mode incremental, low-frequency (e.g. daily) syncing avoi
 
 ## What's still unresolved
 
-- **Prime Video technical approach.** This pass found no cookie-replay or internal-API
-  shortcut analogous to Netflix's Shakti API — only Selenium-driven login+scrape prior art,
-  which is both the highest-risk-tier approach surveyed and the hardest to make incremental
-  cleanly (though the history page does appear to be most-recent-first, so the watermark
-  pattern should still apply once a fetch mechanism is chosen). Before committing to
-  Selenium, a follow-up spike should specifically hunt for an Amazon-internal API Prime Video's
-  own web client uses (analogous to how Shakti was found for Netflix) — not confirmed to exist
-  or not exist here, just not yet searched for directly.
+- **Prime Video's exact endpoint.** Follow-up research (2026-08-14, second pass) found strong
+  structural evidence — via reading `twocaretcat/watch-history-exporter-for-amazon-prime-video`'s
+  actual source, not just its description — that `primevideo.com/settings/watch-history` is
+  backed by a cookie-authenticated, paginated JSON API (`widgets` → `widgetType: "watch-history"`
+  → date-sectioned `titles` keyed by Amazon's `gti` identifiers), structurally the same shape
+  as Netflix's Shakti viewing-activity response. That script only *intercepts* the browser's own
+  `fetch()` calls rather than hardcoding the URL, so the literal endpoint path/query params are
+  still not confirmed from any published source — general web search across several query
+  angles (endpoint-name guesses, "reverse engineering" + Prime Video, Amazon's Video
+  Central/Avails API docs — which turned out to be for content-provider partners, unrelated to
+  consumer watch history) didn't surface anyone's write-up of the actual request. **Next step**:
+  capture it directly — open `primevideo.com/settings/watch-history` in a real logged-in
+  browser, open devtools' Network tab, scroll to trigger pagination, and read off the request
+  the page itself makes (URL, method, headers, query params). This is a live-session task, not
+  something further desk research can resolve. Once captured, the Netflix cookie-replay
+  approach should translate directly — same shape (paginated, most-recent-first, cookie
+  auth), same case for prioritizing it over Selenium-based scraping for the same
+  login-automation-avoidance reason.
 - Real per-service rate limits / device-lock thresholds aren't documented anywhere found — the
   Netflix device-lock report above is qualitative ("frequent requests"), not a number. Worth
   staying conservative (daily sync cadence, small watermark-bounded requests) rather than
