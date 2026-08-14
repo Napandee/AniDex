@@ -50,6 +50,12 @@ USER_ID = int(os.environ["USER_ID"])
 NETFLIX_ID_COOKIE = os.environ.get("NETFLIX_ID_COOKIE", "")
 NETFLIX_SECURE_ID_COOKIE = os.environ.get("NETFLIX_SECURE_ID_COOKIE", "")
 
+# When set, logs every AniList update / state write this run *would* make instead of
+# making it — the Shakti field-name assumptions below are reverse-engineered and
+# unverified against a live account, so the first real run against real credentials
+# should go through here first rather than risk writing bad progress to AniList.
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes")
+
 PAGE_SIZE = 20
 MAX_PAGES = 500  # safety cap — the fetch loop should always stop at the watermark
                   # well before this; this just prevents a runaway loop if Netflix's
@@ -226,6 +232,23 @@ def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
 
 # ── Sync logic ────────────────────────────────────────────────────────────────
 
+def _update(anilist_id: int, **kwargs):
+    """anilist_update(), routed through DRY_RUN — see its module-level docstring."""
+    if DRY_RUN:
+        log(f"    [dry-run] would call anilist_update({anilist_id}, {kwargs})")
+    else:
+        anilist_update(anilist_id, **kwargs)
+
+
+def _save_state(conn, anilist_id: int, title: str, watched_at: datetime, rewatch: bool):
+    """save_nf_state(), routed through DRY_RUN — see its module-level docstring."""
+    if DRY_RUN:
+        log(f"    [dry-run] would save state: anilist_id={anilist_id} "
+            f"watched_at={watched_at} rewatch={rewatch}")
+    else:
+        save_nf_state(conn, anilist_id, title, watched_at, rewatch)
+
+
 def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn) -> str:
     """
     Apply update logic for one series/movie. Returns a short description of the
@@ -249,27 +272,27 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
     # ── Movies: a single watch event ──────────────────────────────────────────
     if watched["watched_format"] == "MOVIE":
         if status == "COMPLETED" and al_ep >= 1:
-            anilist_update(anilist_id, repeat=repeat + 1)
-            save_nf_state(conn, anilist_id, title, watched_at, False)
+            _update(anilist_id, repeat=repeat + 1)
+            _save_state(conn, anilist_id, title, watched_at, False)
             return f"movie rewatch → repeat #{repeat + 1}"
         if al_ep < 1:
-            anilist_update(anilist_id, progress=1, status="COMPLETED")
-            save_nf_state(conn, anilist_id, title, watched_at, False)
+            _update(anilist_id, progress=1, status="COMPLETED")
+            _save_state(conn, anilist_id, title, watched_at, False)
             return "movie watched → COMPLETED"
-        save_nf_state(conn, anilist_id, title, watched_at, rewatch_active)
+        _save_state(conn, anilist_id, title, watched_at, rewatch_active)
         return "movie — already COMPLETED, no change"
 
     # ── First sighting of a COMPLETED series — can't safely tell rewatch from
     # first sync without a baseline. Record and wait for next sync.
     if nf_state is None and status == "COMPLETED":
-        save_nf_state(conn, anilist_id, title, watched_at, False)
+        _save_state(conn, anilist_id, title, watched_at, False)
         return "first-sync (COMPLETED) — state recorded, no change"
 
     # ── AniList status already REPEATING but rewatch not recorded in state ────
     if status == "REPEATING" and not rewatch_active:
-        save_nf_state(conn, anilist_id, title, watched_at, True)
+        _save_state(conn, anilist_id, title, watched_at, True)
         if watched_ep > al_ep:
-            anilist_update(anilist_id, progress=watched_ep)
+            _update(anilist_id, progress=watched_ep)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {watched_ep}"
         return "rewatch detected (already REPEATING) — state recorded"
 
@@ -277,36 +300,36 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
     # progress (mirrors sync_crunchyroll.py's rewatch-start detection, using al_ep
     # as the baseline instead of a tracked last_seen_episode).
     if status == "COMPLETED" and watched_ep and watched_ep < al_ep and not rewatch_active:
-        anilist_update(anilist_id, progress=watched_ep, status="REPEATING")
-        save_nf_state(conn, anilist_id, title, watched_at, True)
+        _update(anilist_id, progress=watched_ep, status="REPEATING")
+        _save_state(conn, anilist_id, title, watched_at, True)
         return f"rewatch started → REPEATING ep {watched_ep}"
 
     # ── Rewatch completion ─────────────────────────────────────────────────────
     if rewatch_active and total and watched_ep >= total:
-        anilist_update(anilist_id, progress=watched_ep, status="COMPLETED", repeat=repeat + 1)
-        save_nf_state(conn, anilist_id, title, watched_at, False)
+        _update(anilist_id, progress=watched_ep, status="COMPLETED", repeat=repeat + 1)
+        _save_state(conn, anilist_id, title, watched_at, False)
         return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
 
     # ── Progress advance for active rewatch ───────────────────────────────────
     if rewatch_active and watched_ep > al_ep:
-        anilist_update(anilist_id, progress=watched_ep)
-        save_nf_state(conn, anilist_id, title, watched_at, True)
+        _update(anilist_id, progress=watched_ep)
+        _save_state(conn, anilist_id, title, watched_at, True)
         return f"rewatch progress {al_ep} → {watched_ep}"
 
     # ── DROPPED: user picked it back up ──────────────────────────────────────
     if status == "DROPPED" and watched_ep > al_ep:
-        anilist_update(anilist_id, progress=watched_ep, status="CURRENT")
-        save_nf_state(conn, anilist_id, title, watched_at, False)
+        _update(anilist_id, progress=watched_ep, status="CURRENT")
+        _save_state(conn, anilist_id, title, watched_at, False)
         return f"resumed after DROP → CURRENT ep {watched_ep}"
 
     # ── Normal progress advance (CURRENT, PAUSED) ─────────────────────────────
     if watched_ep > al_ep:
-        anilist_update(anilist_id, progress=watched_ep)
-        save_nf_state(conn, anilist_id, title, watched_at, False)
+        _update(anilist_id, progress=watched_ep)
+        _save_state(conn, anilist_id, title, watched_at, False)
         return f"progress {al_ep} → {watched_ep}"
 
     # Nothing to do
-    save_nf_state(conn, anilist_id, title, watched_at, rewatch_active)
+    _save_state(conn, anilist_id, title, watched_at, rewatch_active)
     return f"AniList ({al_ep}) already at or ahead of Netflix ({watched_ep})"
 
 
@@ -319,10 +342,20 @@ def main():
         log("ERROR: Netflix cookies not configured (NETFLIX_ID_COOKIE / NETFLIX_SECURE_ID_COOKIE)")
         sys.exit(1)
 
-    conn = db_connect()
-    ensure_table(conn)
-    nf_state_map = load_nf_state(conn)
-    log(f"Loaded Netflix sync state for {len(nf_state_map)} series")
+    if DRY_RUN:
+        # No DB touched at all in dry-run — not even the CREATE TABLE IF NOT EXISTS
+        # fallback, since that would create netflix_sync_state ahead of the reviewed
+        # migration actually being run. Treated as a from-scratch first sync (no
+        # watermark), which is also the most useful dry-run shape: it exercises the
+        # fetch/parse/match/process path against your full real history.
+        log("[dry-run] skipping database entirely — no reads, no writes")
+        conn = None
+        nf_state_map: dict[int, dict] = {}
+    else:
+        conn = db_connect()
+        ensure_table(conn)
+        nf_state_map = load_nf_state(conn)
+        log(f"Loaded Netflix sync state for {len(nf_state_map)} series")
 
     watermark = compute_fetch_watermark(nf_state_map)
     log(f"Fetching Netflix viewing activity since {watermark or '(no watermark — first sync, full pull)'}")
@@ -332,13 +365,15 @@ def main():
         raw_items = client.fetch_since(watermark)
     except Exception as e:
         log(f"ERROR: Netflix fetch failed: {e}")
-        conn.close()
+        if conn:
+            conn.close()
         sys.exit(1)
     log(f"Fetched {len(raw_items)} new viewing-activity rows")
 
     if not raw_items:
         log("No new activity — nothing to do")
-        conn.close()
+        if conn:
+            conn.close()
         sys.exit(0)
 
     watched_by_series = aggregate_by_series(raw_items)
@@ -391,9 +426,11 @@ def main():
             log(f"  ERROR processing '{title}': {e}")
             skipped += 1
 
-    conn.close()
+    if conn:
+        conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
-        f"({index_hits} index hits, {search_hits} API searches)")
+        f"({index_hits} index hits, {search_hits} API searches)"
+        + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
 
 
 if __name__ == "__main__":
