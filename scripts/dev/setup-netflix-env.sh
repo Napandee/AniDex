@@ -8,8 +8,16 @@
 #
 # Re-running this loads whatever's already in .env.netflix.local as defaults —
 # press enter on any prompt to keep the existing value instead of re-pasting it.
+# Some values here (NETFLIX_COOKIE_HEADER especially) are raw HTTP header strings
+# full of semicolons/ampersands/parentheses — unquoted `KEY=value` breaks `source`
+# on those. Every value this script writes is single-quoted for exactly that
+# reason; shquote() does the quoting (escaping any literal ' in the value).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+
+shquote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
 
 if [ -f .env.netflix.local ]; then
   set -a
@@ -52,13 +60,18 @@ anilist_username=$(prompt_keep_existing "AniList username" "${ANILIST_USERNAME:-
 anilist_token=$(prompt_keep_existing "AniList token" "${ANILIST_TOKEN:-}" 1)
 
 {
-  printf 'NETFLIX_ID_COOKIE=%s\n' "$netflix_id"
-  printf 'NETFLIX_SECURE_ID_COOKIE=%s\n' "$secure_netflix_id"
-  printf 'NETFLIX_COOKIE_HEADER=%s\n' "$cookie_header"
-  printf 'NETFLIX_PROFILE_GUID=%s\n' "$profile_guid"
-  printf 'ANILIST_USERNAME=%s\n' "$anilist_username"
-  printf 'ANILIST_TOKEN=%s\n' "$anilist_token"
+  printf 'NETFLIX_ID_COOKIE=%s\n' "$(shquote "$netflix_id")"
+  printf 'NETFLIX_SECURE_ID_COOKIE=%s\n' "$(shquote "$secure_netflix_id")"
+  printf 'NETFLIX_COOKIE_HEADER=%s\n' "$(shquote "$cookie_header")"
+  printf 'NETFLIX_PROFILE_GUID=%s\n' "$(shquote "$profile_guid")"
+  printf 'ANILIST_USERNAME=%s\n' "$(shquote "$anilist_username")"
+  printf 'ANILIST_TOKEN=%s\n' "$(shquote "$anilist_token")"
 } > .env.netflix.local
 chmod 600 .env.netflix.local
 
 echo "Wrote $(pwd)/.env.netflix.local"
+echo
+echo "If a value ever gets mangled after pasting a very long string (e.g. it lands"
+echo "on the wrong line), it's likely your terminal choking on the paste length —"
+echo "open .env.netflix.local directly in a text editor instead and fix that one"
+echo "line by hand, no need to redo the whole interactive flow."
