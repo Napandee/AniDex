@@ -10,8 +10,17 @@ and a recommendation engine scored against your own taste profile.
 
 - **Library view** — your full AniList list with star ratings, episode progress, streaming
   links, filters by format/score/season, and bulk status updates
+- **Search** — search within your own library; a separate quick-add lets you look up a
+  title on AniList by name and add it straight to your list (not a full catalog browse —
+  link out to AniList for that)
+- **Export** — download your library plus all personal-layer data (notes, tags, drop
+  reasons) as a single file
 - **Personal notes** — drop reasons, custom tags, freeform notes, and queue priority per
   show; none of which AniList has a structured place for
+- **Multi-user** — invite-only accounts on the same instance; an opt-in "also watching"
+  indicator shows who else on the instance has a show in their library, with per-user
+  hidden tags/genres and an anonymize-my-activity option so nothing is surfaced by
+  default
 - **Recommendations** — unwatched/planning anime scored against the genres, tags, and
   studios of your highest-rated completed shows; dismiss with a reason or mark as seen
   (pushes COMPLETED + rating to AniList)
@@ -96,15 +105,21 @@ docker build -t anidex:local .
 docker run -d --name anidex -p 8888:8888 --env-file .env anidex:local
 ```
 
-**5. Run your first sync**
+**5. Register your account**
 
-```bash
-docker exec anidex python scripts/sync_anilist.py
-```
+Visit `http://localhost:8888/auth/register`. The app is multi-user — the first account
+you register on an empty database bootstraps as admin automatically, no invite needed.
+Anyone after that needs an admin-issued invite (`/admin/invites`).
 
-**6. Open the app**
+**6. Add your AniList credentials and sync**
 
-Visit `http://localhost:8888`. Your library should be populated after the sync completes.
+Set `ANILIST_USERNAME` and `ANILIST_TOKEN` on the Settings page (or in `.env` before
+first boot), then click **Sync Now** — this runs the same per-user sync pipeline the
+built-in scheduler uses daily. Your library should be populated once it completes.
+
+Scripts under `scripts/` (`sync_anilist.py`, `run_full_sync.py`, etc.) are single-user
+primitives invoked with a `USER_ID` env var — they're what the app and scheduler call
+internally, not meant to be run manually against a container from the CLI.
 
 ## Local development & pre-merge testing
 
@@ -113,6 +128,9 @@ throwaway stack for clicking through UI/backend changes on localhost before merg
 built from your local `Dockerfile` instead of pulling from GHCR. It needs no AniList
 or Crunchyroll credentials: the app only hard-requires `DATABASE_URL` to boot, and
 local email+password auth means the first account you register bootstraps as admin.
+The stack sets `ANILIST_MOCK=1`, which skips the live `SaveMediaListEntry` push on the
+rating/status/progress endpoints so they can be exercised with no real AniList account —
+never set this outside `compose/dev.yml`.
 
 It runs on ports distinct from the documented live-instance ports (8889/5433) so it
 can coexist with a real deploy on the same machine. Works with `docker compose` or
@@ -236,9 +254,12 @@ for in-app notifications; this one's a GitHub Actions secret for repo maintainer
 | `DATABASE_URL` | Yes | Postgres connection string — `postgresql://user:pass@host:port/db` |
 | `ANILIST_USERNAME` | Yes | Your AniList username (not email) — used to fetch your library |
 | `ANILIST_TOKEN` | For writes | OAuth token — needed for rating, status, and progress updates |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No | Google OAuth login — fallback if not set via `/admin/oauth-settings` in the app |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | No | Discord OAuth login — same fallback pattern as Google above |
 | `CRUNCHYROLL_ETP_RT` | No | Crunchyroll session cookie — enables CR watch history sync |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram bot token — enables notifications |
 | `TELEGRAM_CHAT_ID` | No | Your Telegram chat ID — where notifications are sent |
+| `SESSION_SECRET_KEY` | Recommended | Signs session cookies. If unset, a random key is generated per process start and sessions won't survive a container restart — set this for any real deployment |
 | `GHCR_TOKEN` | CI/CD only | GitHub PAT with `read:packages` scope — used by the deploy job to pull from GHCR |
 | `TZ` | No | Container timezone, e.g. `Europe/London` (default: UTC) |
 

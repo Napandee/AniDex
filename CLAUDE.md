@@ -18,6 +18,12 @@ it all into one self-hosted page.
 - Built-in stats page (watch time, completion rate, score distribution, top genres)
 - Multi-user: local email+password auth by default, Google/Discord OAuth optional
   per-instance, invite-only signup, admin-managed. See Decisions Made.
+- Cross-user "also watching" indicator (opt-in per-user hidden tags/genres and
+  anonymized-activity controls; nothing surfaced by default) — see `app/privacy.py`.
+  Static/on-demand only; issues #22 (rolling banner/notifications) and #27
+  (collaborative-filtering recommendations) build further on this but aren't in scope yet.
+- In-library search, plus a quick-add-by-title lookup against AniList (not a full catalog
+  browse UI — see Out of scope below)
 
 **Out of scope — do not build these:**
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
@@ -48,7 +54,8 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `notified_episodes`) — added for multi-user (Aug 2026). Neither AniList-sourced nor
   personal-layer; sync jobs never touch these either. `library_entries` /
   `personal_notes` / `recommendation_scores` / `cr_sync_state` / `sync_log` /
-  `settings` all carry a `user_id` scoping every row to one account.
+  `settings` / `notified_episodes` all carry a `user_id` scoping every row to one
+  account.
 
 ## Architecture
 
@@ -116,6 +123,15 @@ deliberate, separate step from the code deploy. `schema.sql` is the fresh-instal
 schema; migrations exist only for the upgrade path. Per the guardrail below, always back
 up first and get explicit confirmation before running one against real data.
 
+**002 needs a variable, not a plain stdin pipe.** `002_backfill_and_tighten.sql`
+backfills every pre-multi-user row to the instance owner's new `user_id` via a
+`:owner_id` psql variable used throughout the file — it must be run with
+`-v owner_id=<id>` (e.g. `psql -U ... -d ... -v owner_id=1 -f migrations/002_backfill_and_tighten.sql`),
+not piped through `< migrations/002_*.sql` as the generic command above would do, or
+`:owner_id` is left unresolved. It also has its own prerequisites (001 already applied;
+auth deployed; the owner has logged in once so their real user id is known) — see the
+file's own header comment before running it.
+
 ## Guardrails — Non-Negotiable
 
 - Track bugs, enhancements, and research spikes as GitHub issues (use
@@ -155,9 +171,11 @@ up first and get explicit confirmation before running one against real data.
 - **Multi-user** (pivoted from the original single-user design, Aug 2026): the app now
   has its own auth layer rather than relying solely on the reverse proxy / access
   control tool in front of it. Local email+password is the zero-config default; Google
-  and Discord OAuth are optional, admin-configured per-instance via `/admin/invites`.
-  Signup is invite-only except for the very first account on an empty `users` table,
-  which bootstraps as admin automatically. Every route and sync script (`run_full_sync.py`,
+  and Discord OAuth are optional, admin-configured per-instance via
+  `/admin/oauth-settings`. Signup is invite-only except for the very first account on
+  an empty `users` table, which bootstraps as admin automatically — invites for
+  subsequent accounts are issued via the separate `/admin/invites` endpoint. Every
+  route and sync script (`run_full_sync.py`,
   `sync_anilist.py`, `sync_crunchyroll.py`, `run_recommender.py`) is scoped to the
   logged-in/invoking user; the sync schedule *time* stays instance-wide (one cron
   trigger regardless of user count), gated to admins in Settings. Account linking

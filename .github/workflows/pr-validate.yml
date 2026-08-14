@@ -15,12 +15,94 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: anidex_test
+          POSTGRES_USER: anidex_test
+          POSTGRES_PASSWORD: anidex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anidex_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
 
+      # load: true (not push) makes the image available to `docker run` in this job,
+      # without touching GHCR — this is PR validation, not the deploy path.
       - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: false
+          load: true
+          tags: anidex:pr-test
+
+      - name: Apply schema to test database
+        run: |
+          PGPASSWORD=anidex_test psql -h localhost -U anidex_test -d anidex_test -f schema.sql
+
+      # Boots the real built image against a real Postgres and hits a route that
+      # actually renders via templates.TemplateResponse (GET /auth/login) — a bare
+      # `docker build` success proves dependencies resolve, nothing more. See
+      # CLAUDE.local.md's dependency-review lesson: the 2026-08-13 fastapi/starlette
+      # outage passed CI and a manual smoke test because that manual test hit a route
+      # nobody had confirmed touched Jinja. This step checks both the HTTP status and
+      # the actual rendered body, so a broken TemplateResponse calling convention
+      # fails the check instead of silently passing on a 200 from somewhere else.
+      #
+      # `-L` follows the redirect: on a fresh empty DB (as here), GET /auth/login
+      # 303s to /auth/register since there's no admin yet — both templates share
+      # the `auth-title` class, so the content check holds regardless of which one
+      # the app lands on. Both routes render via templates.TemplateResponse
+      # (app/main.py:688 and :746 respectively) — auth-title only exists in the
+      # Jinja source, never in main.py, so this can't pass on hand-built HTML.
+      - name: Smoke-test the built image
+        run: |
+          docker run -d --name anidex-smoke --network host \
+            -e DATABASE_URL="postgresql://anidex_test:anidex_test@localhost:5432/anidex_test" \
+            -e SESSION_SECRET_KEY="ci-smoke-test-key" \
+            anidex:pr-test
+
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:8888/auth/login; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then
+            echo "App never became reachable on :8888"
+            docker logs anidex-smoke
+            exit 1
+          fi
+
+          status=$(curl -sL -o /tmp/login.html -w '%{http_code}' http://localhost:8888/auth/login)
+          if [ "$status" != "200" ]; then
+            echo "GET /auth/login (following redirects) returned $status, expected 200"
+            docker logs anidex-smoke
+            exit 1
+          fi
+          if ! grep -q 'auth-title' /tmp/login.html; then
+            echo "Response body doesn't match a rendered auth template — Jinja rendering may be broken"
+            cat /tmp/login.html
+            docker logs anidex-smoke
+            exit 1
+          fi
+          echo "Smoke test passed: auth page rendered correctly."
+
+      - name: Container logs
+        if: always()
+        run: docker logs anidex-smoke || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f anidex-smoke || true
