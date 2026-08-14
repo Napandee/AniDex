@@ -191,6 +191,25 @@ CREATE TABLE cr_sync_state (
 );
 
 -- =========================================================================
+-- NETFLIX SYNC STATE (tracks last-known Netflix progress per user, per series)
+-- Owned by sync_netflix.py — never written to by the web app.
+-- Mirrors cr_sync_state's shape, but keyed on a last_seen_watched_at timestamp
+-- watermark instead of last_seen_episode: Netflix's viewing-activity feed is
+-- fetched incrementally (newest-first, stopping at the watermark) rather than as
+-- a full history dump, so the baseline needed to drive that is a timestamp.
+-- =========================================================================
+
+CREATE TABLE netflix_sync_state (
+    user_id                INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anilist_id              INTEGER NOT NULL,
+    series_title            TEXT,                            -- for human readability
+    last_seen_watched_at    TIMESTAMPTZ,
+    rewatch_in_progress     BOOLEAN NOT NULL DEFAULT FALSE,
+    last_synced_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, anilist_id)
+);
+
+-- =========================================================================
 -- PER-USER SETTINGS (timezone, credentials, sync schedule — key/value for extensibility)
 -- =========================================================================
 

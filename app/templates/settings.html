@@ -63,6 +63,28 @@
                autocomplete="new-password">
         <button type="button" class="btn-reveal" data-target="cr_etp_rt">Show</button>
       </div>
+
+      <div class="form-field">
+        <label class="form-label" for="netflix_id_cookie">
+          Netflix NetflixId cookie
+          <span class="form-label-hint">— NetflixId cookie value from your browser</span>
+        </label>
+        <input class="form-input form-input--secret" type="password" id="netflix_id_cookie"
+               name="netflix_id_cookie" placeholder="{% if settings.netflix_id_cookie %}set (leave blank to keep){% else %}not set{% endif %}"
+               autocomplete="new-password">
+        <button type="button" class="btn-reveal" data-target="netflix_id_cookie">Show</button>
+      </div>
+
+      <div class="form-field">
+        <label class="form-label" for="netflix_secure_id_cookie">
+          Netflix SecureNetflixId cookie
+          <span class="form-label-hint">— SecureNetflixId cookie value from your browser</span>
+        </label>
+        <input class="form-input form-input--secret" type="password" id="netflix_secure_id_cookie"
+               name="netflix_secure_id_cookie" placeholder="{% if settings.netflix_secure_id_cookie %}set (leave blank to keep){% else %}not set{% endif %}"
+               autocomplete="new-password">
+        <button type="button" class="btn-reveal" data-target="netflix_secure_id_cookie">Show</button>
+      </div>
     </div>
 
     {# ── Sync schedule ────────────────────────────────────────────────────── #}
