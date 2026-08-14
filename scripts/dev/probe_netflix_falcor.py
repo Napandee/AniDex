@@ -124,3 +124,18 @@ print("=" * 78)
 print("RAW RESPONSE (pretty-printed, first 4000 chars)")
 print("=" * 78)
 print(json.dumps(data, indent=2)[:4000])
+
+items = (
+    data.get("jsonGraph", {}).get("aui", {}).get("viewingActivity", {})
+    .get("value", {}).get("viewedItems", [])
+)
+print()
+print("=" * 78)
+print(f"{len(items)} items on this page — full key set per item, and any that look")
+print("like an episode ORDINAL (as opposed to a title/id):")
+print("=" * 78)
+if items:
+    print(f"Keys present: {sorted(items[0].keys())}")
+    for it in items[:5]:
+        print(f"  seriesTitle={it.get('seriesTitle')!r} seasonDescriptor={it.get('seasonDescriptor')!r} "
+              f"episodeTitle={it.get('episodeTitle')!r} title={it.get('title')!r}")
