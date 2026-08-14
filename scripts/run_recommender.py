@@ -35,6 +35,17 @@ TOP_SHOWS_FOR_RECS = 30   # how many of the user's top completed shows to pull r
 RECS_PER_SHOW_PAGES = 2   # pages of recommendations per show (25 per page = up to 50 recs/show)
 INTER_REQUEST_SLEEP = 0.8  # seconds between API calls
 
+# Collaborative-filtering signal (#27) — how much other same-instance users'
+# ratings move a candidate's score, tunable independently of the taste-profile
+# weights below. A rating counts as "highly rated" above CROSS_USER_MIN_SCORE
+# (library_entries.score is 0-5, half-star precision); CROSS_USER_SATURATION
+# qualifying raters is enough to max out the signal — for a small invite-only
+# instance, 3+ people loving something is already a strong signal, no need to
+# keep scaling past that.
+CROSS_USER_WEIGHT = 0.2
+CROSS_USER_MIN_SCORE = 3.0
+CROSS_USER_SATURATION = 3
+
 # Contribution weight per status when building the taste profile.
 # COMPLETED entries are weighted by their score (score/5); these are the fallbacks.
 COMPLETED_UNSCORED_WEIGHT = 0.5
@@ -286,10 +297,67 @@ def _upsert_anime(cur, media: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cross-user signal (#27) — depends on #26's privacy controls (app/privacy.py).
+# Duplicated here rather than imported: scripts are standalone processes with
+# their own psycopg2 connection and no shared code with the app (see
+# sync_anilist.py's own gql() for the same pattern) — keep in sync with
+# app/privacy.py's get_hidden_tags()/entry_hidden() if that logic ever changes.
+# ---------------------------------------------------------------------------
+
+def _hidden_tags_by_user(conn) -> dict[int, set[str]]:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = 'default_hidden_tags'")
+        row = cur.fetchone()
+        instance_default = json.loads(row["value"]) if row and row["value"] else []
+
+        cur.execute("SELECT id FROM users")
+        all_user_ids = {r["id"] for r in cur.fetchall()}
+
+        cur.execute("SELECT user_id, value FROM settings WHERE key = 'hidden_tags'")
+        per_user = {r["user_id"]: (json.loads(r["value"]) if r["value"] else []) for r in cur.fetchall()}
+
+    return {
+        uid: {t.strip().lower() for t in (instance_default + per_user.get(uid, [])) if t.strip()}
+        for uid in all_user_ids
+    }
+
+
+def fetch_cross_user_signal(conn, candidate_ids: set[int], profile_owner_id: int) -> dict[int, dict]:
+    """For each candidate anime, count OTHER users' ratings above
+    CROSS_USER_MIN_SCORE, excluding any entry its owning rater has hidden via
+    #26's tag-hiding. Returns {anime_id: {"count": int, "min_score": float}}
+    for candidates with at least one qualifying, non-hidden rating."""
+    hidden_by_user = _hidden_tags_by_user(conn)
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT le.anime_id, le.user_id, a.genres, pn.personal_tags
+            FROM library_entries le
+            JOIN anime a ON a.id = le.anime_id
+            LEFT JOIN personal_notes pn ON pn.anime_id = le.anime_id AND pn.user_id = le.user_id
+            WHERE le.anime_id = ANY(%s) AND le.user_id != %s AND le.score > %s
+            """,
+            (list(candidate_ids), profile_owner_id, CROSS_USER_MIN_SCORE),
+        )
+        rows = cur.fetchall()
+
+    counts: dict[int, int] = {}
+    for r in rows:
+        hidden = hidden_by_user.get(r["user_id"], set())
+        entry_tags = {t.strip().lower() for t in (r["genres"] or []) + (r["personal_tags"] or [])}
+        if entry_tags & hidden:
+            continue
+        counts[r["anime_id"]] = counts.get(r["anime_id"], 0) + 1
+
+    return {aid: {"count": c, "min_score": CROSS_USER_MIN_SCORE} for aid, c in counts.items()}
+
+
+# ---------------------------------------------------------------------------
 # Scoring
 # ---------------------------------------------------------------------------
 
-def score_candidate(media: dict, profile: dict) -> tuple[float, dict]:
+def score_candidate(media: dict, profile: dict, cross_user: dict | None = None) -> tuple[float, dict]:
     genres = media.get("genres") or []
     tags = media.get("tags") or []
     studios = media.get("studios") or []
@@ -310,17 +378,34 @@ def score_candidate(media: dict, profile: dict) -> tuple[float, dict]:
     main_studios = [s["name"] for s in studios if s.get("isMain") and s["name"] in profile["studios"]]
     studio_score = max((profile["studios"][s] for s in main_studios), default=0.0)
 
-    raw = genre_score * 0.5 + tag_score * 0.3 + studio_score * 0.2
+    # Collaborative-filtering signal (#27) — other same-instance users' ratings,
+    # already privacy-filtered by fetch_cross_user_signal(). Weighted lower than
+    # the user's own taste profile (genre+tag = 0.65) so it nudges rather than
+    # overrides what someone's own history says they like.
+    cross_user = cross_user or {}
+    cross_user_count = cross_user.get("count", 0)
+    cross_user_score = min(cross_user_count / CROSS_USER_SATURATION, 1.0)
+
+    raw = (
+        genre_score * 0.4
+        + tag_score * 0.25
+        + studio_score * 0.15
+        + cross_user_score * CROSS_USER_WEIGHT
+    )
 
     reason = {
         "matched_genres": [g for g, _ in sorted(genre_hits, key=lambda x: -x[1])[:5]],
         "matched_tags":   [t for t, _ in sorted(tag_hits,   key=lambda x: -x[1])[:5]],
         "matched_studio": main_studios[0] if main_studios else None,
+        "cross_user_count":    cross_user_count or None,
+        "cross_user_min_score": cross_user.get("min_score") if cross_user_count else None,
     }
     return raw, reason
 
 
 def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
+    cross_user_signal = fetch_cross_user_signal(conn, all_candidate_ids, USER_ID)
+
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
             SELECT id, genres, tags, studios
@@ -330,7 +415,7 @@ def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
 
     scored: list[tuple[int, float, dict]] = []
     for anime_id, media in media_rows.items():
-        raw, reason = score_candidate(media, profile)
+        raw, reason = score_candidate(media, profile, cross_user_signal.get(anime_id))
         scored.append((anime_id, raw, reason))
 
     # Normalise so the best candidate always hits 100
