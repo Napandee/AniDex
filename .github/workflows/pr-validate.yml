@@ -61,7 +61,9 @@ jobs:
       # `-L` follows the redirect: on a fresh empty DB (as here), GET /auth/login
       # 303s to /auth/register since there's no admin yet — both templates share
       # the `auth-title` class, so the content check holds regardless of which one
-      # the app lands on.
+      # the app lands on. Both routes render via templates.TemplateResponse
+      # (app/main.py:688 and :746 respectively) — auth-title only exists in the
+      # Jinja source, never in main.py, so this can't pass on hand-built HTML.
       - name: Smoke-test the built image
         run: |
           docker run -d --name anidex-smoke --network host \
