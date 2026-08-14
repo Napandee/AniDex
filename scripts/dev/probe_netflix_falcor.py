@@ -38,20 +38,29 @@ for part in cookie_header.split(";"):
         k, _, v = part.partition("=")
         cookies[k.strip()] = v.strip()
 
-STATIC_HEADERS = {
-    "accept": "*/*",
+# A real browser sends very different headers for a plain page navigation
+# (/browse) than for an XHR/fetch API call — the x-netflix.* and content-type
+# headers below are specific to the pathEvaluator XHR and don't belong on the
+# page load. Keep the client's default headers minimal/navigation-like; apply
+# the API-specific ones only per-request on the actual Falcor POST.
+BROWSER_HEADERS = {
+    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-    "content-type": "application/x-www-form-urlencoded",
     "sec-ch-ua": '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": '"Linux"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-origin",
     "user-agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/151.0.0.0 Safari/537.36"
     ),
+}
+
+API_HEADERS = {
+    "accept": "*/*",
+    "content-type": "application/x-www-form-urlencoded",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
     "x-netflix.browsername": "Chrome",
     "x-netflix.browserversion": "151",
     "x-netflix.clienttype": "akira",
@@ -68,10 +77,13 @@ STATIC_HEADERS = {
     ),
 }
 
-client = httpx.Client(cookies=cookies, headers=STATIC_HEADERS, timeout=30, follow_redirects=True)
+client = httpx.Client(cookies=cookies, headers=BROWSER_HEADERS, timeout=30, follow_redirects=True)
 
 print("Resolving build_id from https://www.netflix.com/browse ...")
 resp = client.get("https://www.netflix.com/browse")
+if resp.status_code != 200:
+    print(f"--- browse fetch failed: HTTP {resp.status_code} ---")
+    print(resp.text[:1000])
 resp.raise_for_status()
 match = re.search(r'"BUILD_IDENTIFIER"\s*:\s*"([^"]+)"', resp.text)
 if not match:
@@ -87,10 +99,16 @@ params = {
     "falcor_server": "0.1.0",
 }
 body = {"param": json.dumps({"guid": profile_guid})}
-extra_headers = {"x-netflix.uiversion": build_id, "x-netflix.request.id": uuid.uuid4().hex}
+post_headers = {
+    **API_HEADERS,
+    "x-netflix.uiversion": build_id,
+    "x-netflix.request.id": uuid.uuid4().hex,
+    "referer": "https://www.netflix.com/viewingactivity",
+    "origin": "https://www.netflix.com",
+}
 
 print(f"POSTing {url} with callPath=[\"aui\",\"viewingActivity\",1,50] ...\n")
-resp = client.post(url, params=params, data=body, headers=extra_headers)
+resp = client.post(url, params=params, data=body, headers=post_headers)
 
 print(f"--- HTTP {resp.status_code} ---")
 if resp.status_code != 200:
