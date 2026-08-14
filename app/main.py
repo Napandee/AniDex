@@ -1011,6 +1011,8 @@ def admin_page(request: Request):
         client_id, client_secret = _oauth_config(provider)
         return {"configured": bool(client_id and client_secret), "client_id": client_id}
 
+    default_hidden_tags = json.loads(_instance_config_get("default_hidden_tags") or "[]")
+
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -1019,6 +1021,7 @@ def admin_page(request: Request):
             "users": users_view,
             "google_status": _provider_status("google"),
             "discord_status": _provider_status("discord"),
+            "default_hidden_tags": ", ".join(default_hidden_tags),
         },
     )
 
@@ -1035,6 +1038,19 @@ def admin_invites_create(request: Request, email: str = Form(...)):
         "INSERT INTO invites (email, invited_by) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING",
         (email, admin_user["id"]),
     )
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/privacy-defaults")
+def admin_privacy_defaults(request: Request, default_hidden_tags: str = Form("")):
+    """Instance-wide default hidden-tags list — see app/privacy.py. Unioned with
+    each user's own hidden tags, never replaces them."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    tags = [t.strip() for t in default_hidden_tags.split(",") if t.strip()]
+    _instance_config_set("default_hidden_tags", json.dumps(tags))
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -1534,6 +1550,10 @@ def settings_page(request: Request, link_error: str = "", password_error: str = 
             "oauth_discord_configured": oauth_configured("discord"),
             "link_error": link_error,
             "password_error": password_error,
+            "privacy": {
+                "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
+                "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
+            },
         },
     )
 
@@ -1553,6 +1573,8 @@ def settings_save(
     sync_daily_time: str = Form("04:30"),
     sync_recommender_day: str = Form("sun"),
     sync_recommender_time: str = Form("05:00"),
+    hidden_tags: str = Form(""),
+    anonymize_activity: str | None = Form(None),
 ):
     user, denied = _require_user(request)
     if denied:
@@ -1571,6 +1593,13 @@ def settings_save(
         config.set_value(user["id"], "anilist_token", anilist_token.strip())
     if cr_etp_rt.strip():
         config.set_value(user["id"], "cr_etp_rt", cr_etp_rt.strip())
+
+    # Privacy — see app/privacy.py. Never shown to other users until #22/#27 exist
+    # and actually call into that module, but the controls themselves need to be
+    # available before either of those ship, not added after the fact.
+    tags = [t.strip() for t in hidden_tags.split(",") if t.strip()]
+    config.set_value(user["id"], "hidden_tags", json.dumps(tags))
+    config.set_value(user["id"], "anonymize_activity", "true" if anonymize_activity else "false")
 
     # Sync schedule is instance-wide (one cron trigger regardless of user count), so it
     # goes to instance_config rather than this user's own settings row — admin-only,

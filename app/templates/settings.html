@@ -104,6 +104,32 @@
       </div>
     </div>
 
+    {# ── Privacy ───────────────────────────────────────────────────────────── #}
+    <div class="settings-section-inner">
+      <h2 class="settings-section-title">Privacy</h2>
+      <p class="settings-section-desc">
+        Controls for any feature that shows your library to other users on this instance
+        (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
+        these are opt-in.
+      </p>
+
+      <div class="form-field">
+        <label class="form-label" for="hidden_tags">
+          Hidden tags/genres
+          <span class="form-label-hint">— entries matching any of these never appear to other users, comma-separated</span>
+        </label>
+        <input class="form-input" type="text" id="hidden_tags" name="hidden_tags"
+               value="{{ privacy.hidden_tags }}" placeholder="e.g. Ecchi, guilty pleasure" autocomplete="off">
+      </div>
+
+      <div class="form-field form-field--checkbox">
+        <label class="form-checkbox-label">
+          <input type="checkbox" name="anonymize_activity" {% if privacy.anonymize_activity %}checked{% endif %}>
+          Show my activity anonymously ("a user") instead of by name to other users
+        </label>
+      </div>
+    </div>
+
     <div class="form-actions">
       <button type="submit" class="btn-save">Save</button>
     </div>
