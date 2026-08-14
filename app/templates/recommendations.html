@@ -61,6 +61,14 @@
           {% if e.similar_to %}<span class="similar-to-title">{{ e.similar_to }}</span>
           {% else %}<span class="match-empty">—</span>{% endif %}
         </div>
+        <div class="match-row">
+          <span class="match-label">Others</span>
+          {% if reason.cross_user_count %}
+          <span class="genre match" title="{{ reason.cross_user_count }} other user{{ 's' if reason.cross_user_count != 1 else '' }} rated this {{ reason.cross_user_min_score }}★+">
+            ★ {{ reason.cross_user_count }} rated {{ reason.cross_user_min_score }}★+
+          </span>
+          {% else %}<span class="match-empty">—</span>{% endif %}
+        </div>
       </div>
 
       <div class="rec-footer">
