@@ -106,6 +106,53 @@ docker exec anidex python scripts/sync_anilist.py
 
 Visit `http://localhost:8888`. Your library should be populated after the sync completes.
 
+## Local development & pre-merge testing
+
+Verifying a change against the real deployment is risky and slow — this is a second,
+throwaway stack for clicking through UI/backend changes on localhost before merging,
+built from your local `Dockerfile` instead of pulling from GHCR. It needs no AniList
+or Crunchyroll credentials: the app only hard-requires `DATABASE_URL` to boot, and
+local email+password auth means the first account you register bootstraps as admin.
+
+It runs on ports distinct from the documented live-instance ports (8889/5433) so it
+can coexist with a real deploy on the same machine. Works with `docker compose` or
+`podman compose` interchangeably — swap the binary name in the commands below.
+
+**1. Bring up the stack** (builds the app image locally, auto-applies `schema.sql` on
+first boot via Postgres's init-script mount):
+
+```bash
+docker compose -f compose/dev.yml up --build
+```
+
+**2. Register the first account** — visit `http://localhost:28888/auth/register`.
+Being the first user, it becomes admin automatically; no invite needed.
+
+**3. Seed some fake library data** so there's something to test against:
+
+```bash
+docker exec -i $(docker compose -f compose/dev.yml ps -q anidex-dev-postgres) \
+  psql -U anime_tracker -d anime_tracker \
+  -v email="'you@example.com'" \
+  -f - < scripts/dev_seed.sql
+```
+
+(Use the same email you registered with.) This inserts a handful of `anime` +
+`library_entries` rows across a few statuses — enough to exercise drop/complete/status
+changes, filters, etc. without touching AniList.
+
+**4. Test in browser** at `http://localhost:28888`.
+
+**5. Tear down** when done — `-v` also drops the throwaway Postgres volume, so nothing
+lingers between test runs:
+
+```bash
+docker compose -f compose/dev.yml down -v
+```
+
+This stack is dev-only — it never touches `compose/anidex.yml` /
+`compose/anidex-postgres.yml` or the real deploy pipeline.
+
 ## Getting your AniList token
 
 The AniList token is needed for write operations — rating anime, updating status, and
