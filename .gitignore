@@ -9,6 +9,7 @@ dist/
 
 # Secrets — never commit
 .env
+.env.*.local
 
 # Local Claude Code context and machine-specific settings
 .claude/settings.local.json

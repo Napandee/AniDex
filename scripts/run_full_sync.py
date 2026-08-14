@@ -8,10 +8,14 @@ once per eligible user; the manual "Sync Now" button does the same for just the
 logged-in user. This script itself has no concept of "all users."
 
 Reads credentials from that user's settings DB row (falling back to env vars only for
-local dev/testing without a real user), then runs the three sync steps in sequence:
+local dev/testing without a real user), then runs the sync steps in sequence:
   1. crunchyexporter-cli fetch  — pull CR watch history to history.json
   2. sync_crunchyroll.py        — CR history → AniList progress updates
-  3. sync_anilist.py            — AniList library → Postgres
+  3. sync_netflix.py            — Netflix viewing activity → AniList progress updates
+  4. sync_anilist.py            — AniList library → Postgres
+
+Each of steps 1-3 is independently guarded on that service's credentials being
+configured — a user syncing only Netflix (no CR account) skips straight to step 3.
 
 Exit 0 = all steps succeeded. Exit 1 = any step failed.
 """
@@ -85,9 +89,11 @@ def main() -> None:
 
     # Resolve credentials: DB settings take priority over env vars (env var fallback
     # only meaningful for local dev/testing without a real settings row)
-    anilist_token    = settings.get("anilist_token")    or os.environ.get("ANILIST_TOKEN", "")
-    anilist_username = settings.get("anilist_username") or os.environ.get("ANILIST_USERNAME", "")
-    cr_etp_rt        = settings.get("cr_etp_rt")        or os.environ.get("CRUNCHYROLL_ETP_RT", "")
+    anilist_token         = settings.get("anilist_token")         or os.environ.get("ANILIST_TOKEN", "")
+    anilist_username      = settings.get("anilist_username")      or os.environ.get("ANILIST_USERNAME", "")
+    cr_etp_rt             = settings.get("cr_etp_rt")             or os.environ.get("CRUNCHYROLL_ETP_RT", "")
+    netflix_cookie_header  = settings.get("netflix_cookie_header")  or os.environ.get("NETFLIX_COOKIE_HEADER", "")
+    netflix_profile_guid   = settings.get("netflix_profile_guid")   or os.environ.get("NETFLIX_PROFILE_GUID", "")
 
     if not anilist_token or not anilist_username:
         msg = "AniList credentials not configured. Set them in Settings."
@@ -104,7 +110,7 @@ def main() -> None:
 
     # ── Step 1: Crunchyroll fetch ─────────────────────────────────────────────
     if cr_etp_rt:
-        log("Step 1/3 — Fetching Crunchyroll watch history")
+        log("Step 1/4 — Fetching Crunchyroll watch history")
         CRUNCHYEXPORTER_DIR.mkdir(parents=True, exist_ok=True)
         (CRUNCHYEXPORTER_DIR / "data").mkdir(exist_ok=True)
 
@@ -121,7 +127,7 @@ def main() -> None:
             sys.exit(1)
 
         # ── Step 2: CR → AniList sync ─────────────────────────────────────────
-        log("Step 2/3 — Syncing Crunchyroll → AniList")
+        log("Step 2/4 — Syncing Crunchyroll → AniList")
         ok = run(
             [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
             extra_env={**credentials_env, "HISTORY_PATH": str(HISTORY_PATH)},
@@ -131,10 +137,28 @@ def main() -> None:
             log("ERROR: Crunchyroll → AniList sync failed")
             sys.exit(1)
     else:
-        log("Step 1-2/3 — No Crunchyroll ETP-RT configured, skipping CR sync")
+        log("Step 1-2/4 — No Crunchyroll ETP-RT configured, skipping CR sync")
 
-    # ── Step 3: AniList → Postgres sync ──────────────────────────────────────
-    log("Step 3/3 — Syncing AniList → Postgres")
+    # ── Step 3: Netflix → AniList sync ────────────────────────────────────────
+    if netflix_cookie_header and netflix_profile_guid:
+        log("Step 3/4 — Syncing Netflix → AniList")
+        ok = run(
+            [sys.executable, str(SCRIPTS_DIR / "sync_netflix.py")],
+            extra_env={
+                **credentials_env,
+                "NETFLIX_COOKIE_HEADER": netflix_cookie_header,
+                "NETFLIX_PROFILE_GUID": netflix_profile_guid,
+            },
+        )
+        if not ok:
+            write_log("error", error_msg="Netflix → AniList sync failed")
+            log("ERROR: Netflix → AniList sync failed")
+            sys.exit(1)
+    else:
+        log("Step 3/4 — No Netflix credentials configured, skipping Netflix sync")
+
+    # ── Step 4: AniList → Postgres sync ──────────────────────────────────────
+    log("Step 4/4 — Syncing AniList → Postgres")
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_anilist.py")],
         extra_env=credentials_env,

@@ -1,0 +1,27 @@
+# Local dev/test image only — not used by the production Dockerfile or deploy
+# pipeline. Bundles requirements-dev.txt (adds pytest on top of requirements.txt)
+# plus the repo's scripts/ and tests/, so it can run the pytest smoke suite, the
+# Netflix/Prime Shakti-style probes, or any sync_*.py script in DRY_RUN mode
+# against a real account, without installing anything on the host.
+#
+# Build (from repo root):   podman build -t anidex-sync-test -f scripts/dev/Containerfile .
+# Rebuild after code changes with the same command — layer caching keeps it fast
+# unless requirements-dev.txt changed.
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+
+COPY scripts/ ./scripts/
+COPY tests/ ./tests/
+
+# Dummy values for the credentials sync_*.py scripts read at import time but that
+# a probe/dry-run doesn't actually need — real per-run values (NETFLIX_ID_COOKIE
+# etc.) are passed via `podman run -e` at invocation, not baked in here.
+ENV DATABASE_URL="postgresql://test:test@localhost/test" \
+    USER_ID="1" \
+    ANILIST_TOKEN="test-token" \
+    ANILIST_USERNAME="test-user"

@@ -20,16 +20,32 @@ ANILIST_USERNAME = os.environ["ANILIST_USERNAME"]
 ANILIST_API = "https://graphql.anilist.co"
 
 
+MAX_RATE_LIMIT_RETRIES = 5
+
+
 def gql(query: str, variables: dict | None = None, token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    resp = httpx.post(
-        ANILIST_API,
-        json={"query": query, "variables": variables or {}},
-        headers=headers,
-        timeout=30,
-    )
+
+    # AniList's rate limit (30 req/min at time of writing) is real to hit in
+    # practice — confirmed live during #48's testing, not just a theoretical edge
+    # case: a single sync with several search-fallback matches plus an update call
+    # can trip it, especially on a large first-time pull. Retry with the delay
+    # AniList itself specifies (Retry-After) rather than failing the whole sync.
+    for attempt in range(MAX_RATE_LIMIT_RETRIES):
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": query, "variables": variables or {}},
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code == 429 and attempt < MAX_RATE_LIMIT_RETRIES - 1:
+            wait = float(resp.headers.get("retry-after", 5))
+            time.sleep(wait)
+            continue
+        break
+
     resp.raise_for_status()
     data = resp.json()
     if "errors" in data:
