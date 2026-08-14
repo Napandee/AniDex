@@ -9,12 +9,12 @@
     <p class="page-sub">Preferences and credentials for this tracker.</p>
   </div>
 
-  <form method="post" action="/settings" class="settings-form">
+  {# ── Display ──────────────────────────────────────────────────────────── #}
+  <div class="settings-section settings-section--first">
+    <h2 class="settings-section-title">Display</h2>
+    {% if saved == 'display' %}<p class="settings-success">Saved.</p>{% endif %}
 
-    {# ── Display ──────────────────────────────────────────────────────────── #}
-    <div class="settings-section-inner">
-      <h2 class="settings-section-title">Display</h2>
-
+    <form method="post" action="/settings/display">
       <div class="form-field">
         <label class="form-label" for="timezone">
           Timezone
@@ -26,119 +26,106 @@
           {% endfor %}
         </select>
       </div>
-    </div>
 
-    {# ── Credentials ──────────────────────────────────────────────────────── #}
-    <div class="settings-section-inner">
-      <h2 class="settings-section-title">Credentials</h2>
-      <p class="settings-section-desc">
-        Used by the sync pipeline. Leave a token field blank to keep the existing value.
-        Stored in Postgres — not in the container env file.
-      </p>
-
-      <div class="form-field">
-        <label class="form-label" for="anilist_username">AniList username</label>
-        <input class="form-input" type="text" id="anilist_username" name="anilist_username"
-               value="{{ settings.anilist_username or '' }}" autocomplete="off" spellcheck="false">
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Save</button>
       </div>
+    </form>
+  </div>
 
-      <div class="form-field">
-        <label class="form-label" for="anilist_token">
-          AniList token
-          <span class="form-label-hint">— OAuth bearer token</span>
-        </label>
-        <input class="form-input form-input--secret" type="password" id="anilist_token"
-               name="anilist_token" placeholder="{% if settings.anilist_token %}set (leave blank to keep){% else %}not set{% endif %}"
-               autocomplete="new-password">
-        <button type="button" class="btn-reveal" data-target="anilist_token">Show</button>
-      </div>
+  {# ── Credentials ──────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Credentials</h2>
+    <p class="settings-section-desc">
+      Used by the sync pipeline. Leave a token field blank to keep the existing value.
+      Stored in Postgres — not in the container env file.
+    </p>
+    {% if saved == 'credentials' %}<p class="settings-success">Credentials saved.</p>{% endif %}
 
-      <div class="form-field">
-        <label class="form-label" for="cr_etp_rt">
-          Crunchyroll ETP-RT token
-          <span class="form-label-hint">— etp_rt cookie value from your browser</span>
-        </label>
-        <input class="form-input form-input--secret" type="password" id="cr_etp_rt"
-               name="cr_etp_rt" placeholder="{% if settings.cr_etp_rt %}set (leave blank to keep){% else %}not set{% endif %}"
-               autocomplete="new-password">
-        <button type="button" class="btn-reveal" data-target="cr_etp_rt">Show</button>
-      </div>
+    <form method="post" action="/settings/credentials">
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">AniList</h3>
 
-      <div class="form-field">
-        <label class="form-label" for="netflix_cookie_header">
-          Netflix cookie header
-          <span class="form-label-hint">— full "cookie" request header value from your browser's
-            devtools (Network tab, any netflix.com request, Request Headers → cookie). Needs the
-            whole thing, not just NetflixId/SecureNetflixId — Netflix's viewing-activity API
-            checks several of the other session cookies too.</span>
-        </label>
-        <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
-               name="netflix_cookie_header" placeholder="{% if settings.netflix_cookie_header %}set (leave blank to keep){% else %}not set{% endif %}"
-               autocomplete="new-password">
-        <button type="button" class="btn-reveal" data-target="netflix_cookie_header">Show</button>
-      </div>
+        <div class="form-field">
+          <label class="form-label" for="anilist_username">AniList username</label>
+          <input class="form-input" type="text" id="anilist_username" name="anilist_username"
+                 value="{{ settings.anilist_username or '' }}" autocomplete="off" spellcheck="false">
+        </div>
 
-      <div class="form-field">
-        <label class="form-label" for="netflix_profile_guid">
-          Netflix profile guid
-          <span class="form-label-hint">— from the same devtools capture: any
-            api/aui/pathEvaluator request's POST body decodes to {"guid": "..."}; that value</span>
-        </label>
-        <input class="form-input form-input--secret" type="password" id="netflix_profile_guid"
-               name="netflix_profile_guid" placeholder="{% if settings.netflix_profile_guid %}set (leave blank to keep){% else %}not set{% endif %}"
-               autocomplete="new-password">
-        <button type="button" class="btn-reveal" data-target="netflix_profile_guid">Show</button>
-      </div>
-    </div>
-
-    {# ── Sync schedule ────────────────────────────────────────────────────── #}
-    <div class="settings-section-inner">
-      <h2 class="settings-section-title">Sync schedule</h2>
-      <p class="settings-section-desc">
-        Times are UTC. The daily sync runs the full pipeline (Crunchyroll fetch → AniList → Postgres).
-        The recommender scores unwatched/planning titles weekly.
-      </p>
-
-      <div class="form-field">
-        <label class="form-label" for="sync_daily_time">
-          Daily sync time (HH:MM UTC)
-          {% if next_daily_sync %}
-          <span class="form-label-hint">— next run <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
-          {% endif %}
-        </label>
-        <input class="form-input form-input--narrow" type="time" id="sync_daily_time"
-               name="sync_daily_time" value="{{ settings.sync_daily_time or '04:30' }}">
-      </div>
-
-      <div class="form-field">
-        <label class="form-label">
-          Weekly recommender
-          {% if next_recommender %}
-          <span class="form-label-hint">— next run <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
-          {% endif %}
-        </label>
-        <div class="schedule-row">
-          <select class="form-input form-input--narrow" name="sync_recommender_day">
-            {% for d in days_of_week %}
-            <option value="{{ d }}" {% if d == settings.sync_recommender_day %}selected{% endif %}>{{ day_labels[d] }}</option>
-            {% endfor %}
-          </select>
-          <span class="schedule-at">at</span>
-          <input class="form-input form-input--narrow" type="time" name="sync_recommender_time"
-                 value="{{ settings.sync_recommender_time or '05:00' }}">
+        <div class="form-field">
+          <label class="form-label" for="anilist_token">
+            AniList token
+            <span class="form-label-hint">— OAuth bearer token</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="anilist_token"
+                 name="anilist_token" placeholder="{% if settings.anilist_token %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="anilist_token">Show</button>
         </div>
       </div>
-    </div>
 
-    {# ── Privacy ───────────────────────────────────────────────────────────── #}
-    <div class="settings-section-inner">
-      <h2 class="settings-section-title">Privacy</h2>
-      <p class="settings-section-desc">
-        Controls for any feature that shows your library to other users on this instance
-        (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
-        these are opt-in.
-      </p>
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">Crunchyroll</h3>
 
+        <div class="form-field">
+          <label class="form-label" for="cr_etp_rt">
+            ETP-RT token
+            <span class="form-label-hint">— etp_rt cookie value from your browser</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="cr_etp_rt"
+                 name="cr_etp_rt" placeholder="{% if settings.cr_etp_rt %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="cr_etp_rt">Show</button>
+        </div>
+      </div>
+
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">Netflix</h3>
+
+        <div class="form-field">
+          <label class="form-label" for="netflix_cookie_header">
+            Cookie header
+            <span class="form-label-hint">— full "cookie" request header value from your browser's
+              devtools (Network tab, any netflix.com request, Request Headers → cookie). Needs the
+              whole thing, not just NetflixId/SecureNetflixId — Netflix's viewing-activity API
+              checks several of the other session cookies too.</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
+                 name="netflix_cookie_header" placeholder="{% if settings.netflix_cookie_header %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="netflix_cookie_header">Show</button>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="netflix_profile_guid">
+            Profile guid
+            <span class="form-label-hint">— from the same devtools capture: any
+              api/aui/pathEvaluator request's POST body decodes to {"guid": "..."}; that value</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="netflix_profile_guid"
+                 name="netflix_profile_guid" placeholder="{% if settings.netflix_profile_guid %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="netflix_profile_guid">Show</button>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Save credentials</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Privacy ───────────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Privacy</h2>
+    <p class="settings-section-desc">
+      Controls for any feature that shows your library to other users on this instance
+      (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
+      these are opt-in.
+    </p>
+    {% if saved == 'privacy' %}<p class="settings-success">Saved.</p>{% endif %}
+
+    <form method="post" action="/settings/privacy">
       <div class="form-field">
         <label class="form-label" for="hidden_tags">
           Hidden tags/genres
@@ -154,12 +141,12 @@
           Show my activity anonymously ("a user") instead of by name to other users
         </label>
       </div>
-    </div>
 
-    <div class="form-actions">
-      <button type="submit" class="btn-save">Save</button>
-    </div>
-  </form>
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Save</button>
+      </div>
+    </form>
+  </div>
 
   {# ── Linked accounts ──────────────────────────────────────────────────── #}
   <div class="settings-section">
@@ -210,6 +197,55 @@
     </div>
   </div>
 
+  {% if account.is_admin %}
+  {# ── Sync schedule ────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Sync schedule</h2>
+    <p class="settings-section-desc">
+      Times are UTC. Applies instance-wide, to every user's sync. The daily sync runs the
+      full pipeline (Crunchyroll/Netflix fetch → AniList → Postgres). The recommender scores
+      unwatched/planning titles weekly.
+    </p>
+    {% if saved == 'schedule' %}<p class="settings-success">Schedule saved.</p>{% endif %}
+
+    <form method="post" action="/settings/schedule">
+      <div class="form-field">
+        <label class="form-label" for="sync_daily_time">
+          Daily sync time (HH:MM UTC)
+          {% if next_daily_sync %}
+          <span class="form-label-hint">— next run <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
+          {% endif %}
+        </label>
+        <input class="form-input form-input--narrow" type="time" id="sync_daily_time"
+               name="sync_daily_time" value="{{ settings.sync_daily_time or '04:30' }}">
+      </div>
+
+      <div class="form-field">
+        <label class="form-label">
+          Weekly recommender
+          {% if next_recommender %}
+          <span class="form-label-hint">— next run <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
+          {% endif %}
+        </label>
+        <div class="schedule-row">
+          <select class="form-input form-input--narrow" name="sync_recommender_day">
+            {% for d in days_of_week %}
+            <option value="{{ d }}" {% if d == settings.sync_recommender_day %}selected{% endif %}>{{ day_labels[d] }}</option>
+            {% endfor %}
+          </select>
+          <span class="schedule-at">at</span>
+          <input class="form-input form-input--narrow" type="time" name="sync_recommender_time"
+                 value="{{ settings.sync_recommender_time or '05:00' }}">
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Save schedule</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
   {# ── Manual sync trigger ──────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Manual sync</h2>
@@ -223,13 +259,6 @@
       </span>
     </div>
     <div id="sync-msg" class="sync-msg" hidden></div>
-  </div>
-
-  {# ── Data export ──────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Data export</h2>
-    <p class="settings-section-desc">Download your full library as JSON — includes AniList data, personal notes, tags, and scores.</p>
-    <a href="/api/export" class="btn-save" download>Download library.json</a>
   </div>
 
   {# ── Sync history ──────────────────────────────────────────────────────── #}
@@ -249,6 +278,13 @@
         <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
       </tbody>
     </table>
+  </div>
+
+  {# ── Data export ──────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Data export</h2>
+    <p class="settings-section-desc">Download your full library as JSON — includes AniList data, personal notes, tags, and scores.</p>
+    <a href="/api/export" class="btn-save" download>Download library.json</a>
   </div>
 
 </div>

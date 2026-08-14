@@ -512,7 +512,7 @@ main {
 
 .settings-section-label { font-size: 0.8rem; color: #444; padding-top: 0.5rem; }
 
-/* Sections inside the form (no border — form boundary is the container) */
+/* Used by admin.html's multi-field forms (invites, privacy defaults, OAuth settings) */
 .settings-form { display: flex; flex-direction: column; gap: 0; }
 .settings-section-inner {
   border-top: 1px solid #2a2a2a;
@@ -523,10 +523,20 @@ main {
 }
 .settings-section-inner:first-child { border-top: none; padding-top: 0; }
 
-/* Manual sync section below the form */
+/* Each settings *page* section is its own independent block — one per concern, whether
+   it holds a form or not — so save/UI state in one never bleeds into another. */
 .settings-section { max-width: 640px; margin: 2rem auto 0; border-top: 1px solid #2a2a2a; padding-top: 1.5rem; }
+.settings-section--first { margin-top: 0; border-top: none; padding-top: 0; }
 .settings-section-title { font-size: 1rem; font-weight: 600; color: #e0e0e0; margin: 0 0 0.4rem; }
 .settings-section-desc { font-size: 0.85rem; color: #666; margin: 0 0 1rem; line-height: 1.5; }
+.settings-section form { display: flex; flex-direction: column; gap: 1.25rem; }
+
+/* Sub-groups within a section, e.g. one per credential provider */
+.settings-subsection { display: flex; flex-direction: column; gap: 1.25rem; }
+.settings-subsection + .settings-subsection { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed #222; }
+.settings-subsection-title { font-size: 0.85rem; font-weight: 600; color: #999; margin: 0; }
+
+.settings-success { font-size: 0.82rem; color: #86efac; margin: 0 0 1rem; }
 
 /* Secret input + reveal button */
 .form-field { position: relative; }
