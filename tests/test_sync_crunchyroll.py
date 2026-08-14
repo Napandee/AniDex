@@ -86,3 +86,23 @@ def test_no_progress_since_last_sync_makes_no_anilist_call(monkeypatch):
     result = cr.process("Attack on Titan", cr_ep=5, entry=entry, cr_state=cr_state, conn=None)
     assert "no change" in result
     assert not any(c[0] == "update" for c in calls)
+
+
+def test_repeating_branch_does_not_save_state_if_update_fails(monkeypatch):
+    # Regression test (issue #52) — the identical bug shape was confirmed live in
+    # sync_netflix.py's equivalent branch (issue #48): a 429 from AniList mid-write
+    # left state saved as if the rewatch was handled while the real progress
+    # update never landed, permanently hiding the miss from future watermark-based
+    # syncs. anilist_update() must run before save_cr_state(), not after.
+    calls = []
+    monkeypatch.setattr(cr, "anilist_update", lambda anilist_id, **kw: (_ for _ in ()).throw(RuntimeError("429")))
+    monkeypatch.setattr(
+        cr, "save_cr_state",
+        lambda conn, anilist_id, title, last_ep, rewatch: calls.append(("save", anilist_id, last_ep, rewatch)),
+    )
+    entry = _entry(status="REPEATING", progress=2, repeat=1, total=24)
+    try:
+        cr.process("Attack on Titan", cr_ep=4, entry=entry, cr_state=None, conn=None)
+    except RuntimeError:
+        pass
+    assert calls == []
