@@ -1332,7 +1332,9 @@ def save_notes(
     )
 
     if drop_reason_val:
-        _apply_status_change(user, anime_id, "DROPPED")
+        error = _apply_status_change(user, anime_id, "DROPPED")
+        if error:
+            log.error("Drop-via-notes-page status update failed for anime %s: %s", anime_id, error)
 
     return RedirectResponse(url=f"/?status={back}", status_code=303)
 
