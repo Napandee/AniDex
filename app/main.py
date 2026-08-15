@@ -1330,6 +1330,10 @@ def save_notes(
         """,
         (user["id"], anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
     )
+
+    if drop_reason_val:
+        _apply_status_change(user, anime_id, "DROPPED")
+
     return RedirectResponse(url=f"/?status={back}", status_code=303)
 
 
@@ -2116,23 +2120,15 @@ async def set_rating(anime_id: int, request: Request):
     return JSONResponse({"ok": True, "score": stars})
 
 
-@app.post("/api/anime/{anime_id}/status")
-async def set_status(anime_id: int, request: Request):
-    user, denied = _require_user_api(request)
-    if denied:
-        return denied
-
-    body = await request.json()
-    status = body.get("status", "").upper()
-    if status not in VALID_STATUSES:
-        return JSONResponse({"error": "invalid status"}, status_code=400)
-
+def _apply_status_change(user, anime_id: int, status: str) -> str | None:
+    """Push status to AniList (unless mocked) and upsert library_entries.
+    Returns an error message on failure, None on success."""
     anilist_status = STATUS_TO_ANILIST.get(status, status)
 
     if not ANILIST_MOCK:
         token = _get_anilist_token(user["id"])
         if not token:
-            return JSONResponse({"error": "AniList token not configured"}, status_code=500)
+            return "AniList token not configured"
 
         try:
             resp = httpx.post(
@@ -2144,9 +2140,9 @@ async def set_status(anime_id: int, request: Request):
             resp.raise_for_status()
             data = resp.json()
             if "errors" in data:
-                return JSONResponse({"error": str(data["errors"])}, status_code=502)
+                return str(data["errors"])
         except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=502)
+            return str(e)
 
     db.execute(
         """
@@ -2156,6 +2152,25 @@ async def set_status(anime_id: int, request: Request):
         """,
         (user["id"], anime_id, status),
     )
+    return None
+
+
+@app.post("/api/anime/{anime_id}/status")
+async def set_status(anime_id: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    status = body.get("status", "").upper()
+    if status not in VALID_STATUSES:
+        return JSONResponse({"error": "invalid status"}, status_code=400)
+
+    error = _apply_status_change(user, anime_id, status)
+    if error:
+        status_code = 500 if error == "AniList token not configured" else 502
+        return JSONResponse({"error": error}, status_code=status_code)
+
     return JSONResponse({"ok": True, "status": status})
 
 
