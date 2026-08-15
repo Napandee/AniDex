@@ -9,13 +9,17 @@ logged-in user. This script itself has no concept of "all users."
 
 Reads credentials from that user's settings DB row (falling back to env vars only for
 local dev/testing without a real user), then runs the sync steps in sequence:
-  1. crunchyexporter-cli fetch  — pull CR watch history to history.json
-  2. sync_crunchyroll.py        — CR history → AniList progress updates
-  3. sync_netflix.py            — Netflix viewing activity → AniList progress updates
-  4. sync_anilist.py            — AniList library → Postgres
+  1. sync_crunchyroll.py  — Crunchyroll watch history → AniList progress updates
+  2. sync_netflix.py      — Netflix viewing activity → AniList progress updates
+  3. sync_anilist.py      — AniList library → Postgres
 
-Each of steps 1-3 is independently guarded on that service's credentials being
-configured — a user syncing only Netflix (no CR account) skips straight to step 3.
+Each of steps 1-2 is independently guarded on that service's credentials being
+configured — a user syncing only Netflix (no CR account) skips straight to step 2.
+
+sync_crunchyroll.py fetches CR watch history directly (issue #45) — there's no
+separate "fetch" sub-step or history.json file anymore; the vendored
+crunchyexporter-cli this used to shell out to has been retired entirely (it was
+used only for that one `fetch` call).
 
 Exit 0 = all steps succeeded. Exit 1 = any step failed.
 """
@@ -34,16 +38,6 @@ load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 SCRIPTS_DIR = Path(__file__).parent
-# Where crunchyexporter-cli itself is vendored (fixed, global — see Dockerfile).
-# Not to be confused with CRUNCHYEXPORTER_DIR below, which is per-user.
-CRUNCHYEXPORTER_INSTALL_DIR = Path(os.environ.get("CRUNCHYEXPORTER_INSTALL_DIR", "/opt/crunchyexporter"))
-# Per-user subdirectory for config.yaml/data — avoids one user's leftover
-# history.json/config.yaml ever being read by another user's sync, even across
-# separate runs. main.py itself always runs from CRUNCHYEXPORTER_INSTALL_DIR (that's
-# the only place it exists); this is just cwd, so its own relative config/data reads
-# land in the right per-user spot.
-CRUNCHYEXPORTER_DIR = Path(os.environ.get("CRUNCHYEXPORTER_DIR", "/opt/crunchyexporter")) / str(USER_ID)
-HISTORY_PATH = CRUNCHYEXPORTER_DIR / "data" / "history.json"
 
 
 def log(msg: str) -> None:
@@ -108,40 +102,23 @@ def main() -> None:
         "USER_ID":          str(USER_ID),
     }
 
-    # ── Step 1: Crunchyroll fetch ─────────────────────────────────────────────
+    # ── Step 1: Crunchyroll → AniList sync ────────────────────────────────────
     if cr_etp_rt:
-        log("Step 1/4 — Fetching Crunchyroll watch history")
-        CRUNCHYEXPORTER_DIR.mkdir(parents=True, exist_ok=True)
-        (CRUNCHYEXPORTER_DIR / "data").mkdir(exist_ok=True)
-
-        config_path = CRUNCHYEXPORTER_DIR / "config.yaml"
-        config_path.write_text(f"crunchyroll:\n  etp_rt: \"{cr_etp_rt}\"\n")
-
-        ok = run(
-            [sys.executable, str(CRUNCHYEXPORTER_INSTALL_DIR / "src" / "main.py"), "fetch"],
-            cwd=CRUNCHYEXPORTER_DIR,
-        )
-        if not ok:
-            write_log("error", error_msg="Crunchyroll fetch failed")
-            log("ERROR: Crunchyroll fetch failed")
-            sys.exit(1)
-
-        # ── Step 2: CR → AniList sync ─────────────────────────────────────────
-        log("Step 2/4 — Syncing Crunchyroll → AniList")
+        log("Step 1/3 — Syncing Crunchyroll → AniList")
         ok = run(
             [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
-            extra_env={**credentials_env, "HISTORY_PATH": str(HISTORY_PATH)},
+            extra_env={**credentials_env, "CRUNCHYROLL_ETP_RT": cr_etp_rt},
         )
         if not ok:
             write_log("error", error_msg="Crunchyroll → AniList sync failed")
             log("ERROR: Crunchyroll → AniList sync failed")
             sys.exit(1)
     else:
-        log("Step 1-2/4 — No Crunchyroll ETP-RT configured, skipping CR sync")
+        log("Step 1/3 — No Crunchyroll ETP-RT configured, skipping CR sync")
 
-    # ── Step 3: Netflix → AniList sync ────────────────────────────────────────
+    # ── Step 2: Netflix → AniList sync ────────────────────────────────────────
     if netflix_cookie_header and netflix_profile_guid:
-        log("Step 3/4 — Syncing Netflix → AniList")
+        log("Step 2/3 — Syncing Netflix → AniList")
         ok = run(
             [sys.executable, str(SCRIPTS_DIR / "sync_netflix.py")],
             extra_env={
@@ -155,10 +132,10 @@ def main() -> None:
             log("ERROR: Netflix → AniList sync failed")
             sys.exit(1)
     else:
-        log("Step 3/4 — No Netflix credentials configured, skipping Netflix sync")
+        log("Step 2/3 — No Netflix credentials configured, skipping Netflix sync")
 
-    # ── Step 4: AniList → Postgres sync ──────────────────────────────────────
-    log("Step 4/4 — Syncing AniList → Postgres")
+    # ── Step 3: AniList → Postgres sync ──────────────────────────────────────
+    log("Step 3/3 — Syncing AniList → Postgres")
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_anilist.py")],
         extra_env=credentials_env,
