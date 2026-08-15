@@ -74,7 +74,8 @@
        data-priority="{{ e.watch_next_priority or '' }}"
        data-card-title="{{ e.title_english or e.title_romaji }}"
        data-season="{{ e.season or '' }}"
-       data-season-year="{{ e.season_year or '' }}">
+       data-season-year="{{ e.season_year or '' }}"
+       data-back="{{ active_status }}">
 
     <input type="checkbox" class="bulk-checkbox" data-anime-id="{{ e.id }}" hidden>
     {% if e.cover_image_url %}
@@ -159,7 +160,6 @@
           {% if e.status == 'WATCHING' %}
           <button class="btn-drop" data-anime-id="{{ e.id }}">Drop</button>
           {% endif %}
-          <a href="/anime/{{ e.id }}/notes?back={{ active_status }}" class="btn-notes-sm" title="Notes, trailer &amp; related">✏</a>
           <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
           <button class="btn-delete-sm" data-anime-id="{{ e.id }}" title="Remove from library and AniList">✗</button>
         </div>
