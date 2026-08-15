@@ -63,12 +63,17 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `USER_ID` env var, either by the manual "Sync Now" trigger (that user only) or the
   built-in scheduler's loop over every user with credentials configured (sequential, one
   user's failure caught and logged without blocking the rest — see `_scheduled_full_sync`
-  in `app/main.py`). Chains three steps: Crunchyroll history fetch via crunchyexporter-cli
-  (skipped if no CR credentials configured for that user) → CR→AniList progress sync
-  (`sync_crunchyroll.py`) → AniList→Postgres sync (`sync_anilist.py`). Upserts into `anime`
-  / `library_entries` / `airing_schedule_cache` / `cr_sync_state`, all scoped to that user
-  except `anime`/`airing_schedule_cache` which stay global. There is no separate sync
-  container — `crunchyexporter-cli` is vendored directly into the main Dockerfile.
+  in `app/main.py`). Chains three steps: CR→AniList progress sync (`sync_crunchyroll.py`,
+  skipped if no CR credentials configured for that user) → Netflix→AniList progress sync
+  (`sync_netflix.py`, skipped if no Netflix credentials configured) → AniList→Postgres
+  sync (`sync_anilist.py`). Both `sync_crunchyroll.py` and `sync_netflix.py` fetch their
+  respective service's watch history directly (cookie-authenticated API clients, no
+  vendored third-party CLI, no intermediate history file) — newest-first, stopping at a
+  Postgres-backed per-user watermark (`cr_sync_state.last_seen_watched_at` /
+  `netflix_sync_state.last_seen_watched_at`) so a routine sync only walks genuinely new
+  activity. Upserts into `anime` / `library_entries` / `airing_schedule_cache` /
+  `cr_sync_state` / `netflix_sync_state`, all scoped to that user except
+  `anime`/`airing_schedule_cache` which stay global. There is no separate sync container.
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.
@@ -79,16 +84,6 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
 - **Built-in scheduler**: APScheduler runs inside the app container. Daily sync and weekly
   recommender fire automatically for every eligible user; schedule *time* is instance-wide
   (one cron trigger regardless of user count), configurable via Settings, admin-only.
-
-**crunchyexporter-cli gotcha worth knowing:** each user's Crunchyroll config/data lives in
-its own subdirectory (`/opt/crunchyexporter/{user_id}/`) so one user's history/cookie can
-never leak into another's sync — but the tool itself (`src/main.py`) is vendored once, at
-the top-level `/opt/crunchyexporter/`, never duplicated per user. `run_full_sync.py` must
-invoke it by absolute path (`CRUNCHYEXPORTER_INSTALL_DIR / "src" / "main.py"`) while still
-running with `cwd` set to the per-user directory (so the tool's own relative config/data
-reads land in the right isolated spot) — using a relative path for the script itself broke
-every sync in production the day multi-user shipped (`FileNotFoundError`, fixed same day).
-Don't reintroduce a relative invocation here.
 
 ## Deploy
 
@@ -191,9 +186,12 @@ file's own header comment before running it.
 - **License**: GPL-3.0. Dependency audit (Aug 2026) confirmed no dependency — including
   `crunchyexporter-cli`, vendored via git rather than pip — imposes a stricter license
   that would have constrained this choice.
-- **One sync path, not two**: `crunchyexporter-cli` is vendored once, in the main
-  Dockerfile only. There used to be a second, standalone `crunchysync` image/container;
-  it was removed (Aug 2026) because it was strictly redundant with the in-app scheduler
-  and manual "Sync Now" trigger, and its existence let the tool's pin drift out of sync
-  between two Dockerfiles. Don't reintroduce a second container for this without a real
-  new reason — isolation/scheduling needs the first one never actually served.
+- **One sync path, not two**: there used to be a second, standalone `crunchysync`
+  image/container; it was removed (Aug 2026) because it was strictly redundant with
+  the in-app scheduler and manual "Sync Now" trigger. Don't reintroduce a second
+  container for this without a real new reason — isolation/scheduling needs the
+  first one never actually served. `crunchyexporter-cli` itself (vendored via git
+  into the main Dockerfile, the thing the "second container" duplicated the pin
+  of) was later retired entirely (issue #45) once `sync_crunchyroll.py` grew its
+  own direct-API fetch matching `sync_netflix.py`'s pattern — nothing in this repo
+  vendors a third-party CR/Netflix client anymore.

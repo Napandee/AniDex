@@ -27,14 +27,14 @@ and a recommendation engine scored against your own taste profile.
 - **Upcoming episodes** — airing schedule for anything in your Watching/Planning list
 - **Queue** — watch-next list ordered by recommendation score and manual priority
 - **Stats** — watch time, completion rate, score distribution, top genres and studios
-- **Crunchyroll sync** — watch history and progress synced from Crunchyroll into AniList
-  via [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli) (optional)
+- **Crunchyroll sync** — watch history and progress synced from Crunchyroll into AniList,
+  fetched directly via a cookie-authenticated client, no third-party tool (optional)
 - **Telegram notifications** — new episode alerts, sync results, weekly digest (optional)
 
 ## Architecture
 
 ```
-Crunchyroll ──► crunchyexporter-cli ──► sync_crunchyroll.py ──► AniList
+Crunchyroll ──────────────────────────► sync_crunchyroll.py ──► AniList
                                                                      │
                                                               AniList GraphQL API
                                                                      │
@@ -188,17 +188,16 @@ If you watch on Crunchyroll, the app can pull your watch history and push progre
 updates to AniList — this runs inside the main app container as part of the same daily
 sync, no separate container needed.
 
-> **Note:** this relies on [crunchyexporter-cli](https://github.com/ruflas/crunchyexporter-cli),
-> an unofficial, community-maintained tool that reads your Crunchyroll session cookie —
-> it isn't affiliated with or supported by Crunchyroll, and could stop working if
-> Crunchyroll changes their site. It's MIT-licensed, so there's no license concern using
-> it here, but using any tool that acts on your behalf with your session credentials is
-> ultimately your own call with respect to Crunchyroll's Terms of Service. This feature
-> is entirely optional — skip it if you'd rather not take that on.
+> **Note:** this reads your Crunchyroll session cookie directly against Crunchyroll's own
+> (unofficial, undocumented) API — it isn't affiliated with or supported by Crunchyroll,
+> and could stop working if Crunchyroll changes their site. Using any tool that acts on
+> your behalf with your session credentials is ultimately your own call with respect to
+> Crunchyroll's Terms of Service. This feature is entirely optional — skip it if you'd
+> rather not take that on.
 
-For how to extract your Crunchyroll session cookie (`etp_rt`) see the
-[crunchyexporter-cli documentation](https://github.com/ruflas/crunchyexporter-cli).
-Once you have the cookie, set `CRUNCHYROLL_ETP_RT` in your `.env` (or in Settings after
+To get your Crunchyroll session cookie: log into crunchyroll.com in a browser, open
+DevTools → Application → Cookies → `https://www.crunchyroll.com`, and copy the value of
+the `etp_rt` cookie. Set it as `CRUNCHYROLL_ETP_RT` in your `.env` (or in Settings after
 first launch).
 
 Once set, it runs automatically as part of the daily sync — or trigger it anytime via

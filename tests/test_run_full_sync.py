@@ -4,10 +4,9 @@ thing being guarded: a failure in one step (crunchyroll/netflix) must not preven
 anilist_postgres step from running — that used to sys.exit(1) on the first failing step,
 silently stopping the app's whole library refresh over an unrelated provider hiccup.
 
-No real DB/network/filesystem/credentials are touched — psycopg2-backed helpers
-(_start_log/_update_log_steps/_finish_log) and load_settings() are monkeypatched, and
-CRUNCHYEXPORTER_DIR is redirected to a pytest tmp_path so the crunchyroll step's
-mkdir/config-write don't hit the real /opt/crunchyexporter path.
+No real DB/network/credentials are touched — psycopg2-backed helpers
+(_start_log/_update_log_steps/_finish_log), load_settings(), and run() (the subprocess
+wrapper each step calls) are all monkeypatched.
 """
 
 import pytest
@@ -60,8 +59,7 @@ def _statuses(steps):
     return {s["service"]: s["status"] for s in steps}
 
 
-def test_all_steps_configured_and_ok(monkeypatch, tmp_path):
-    monkeypatch.setattr(rfs, "CRUNCHYEXPORTER_DIR", tmp_path)
+def test_all_steps_configured_and_ok(monkeypatch):
     calls, finish_calls = _capture(monkeypatch)
 
     with pytest.raises(SystemExit) as exc:
@@ -73,10 +71,9 @@ def test_all_steps_configured_and_ok(monkeypatch, tmp_path):
     assert _statuses(result["steps"]) == {"crunchyroll": "ok", "netflix": "ok", "anilist_postgres": "ok"}
 
 
-def test_netflix_failure_does_not_block_anilist_pull(monkeypatch, tmp_path):
+def test_netflix_failure_does_not_block_anilist_pull(monkeypatch):
     # The core regression test for #62: a Netflix failure must not stop the
     # AniList→Postgres pull from running.
-    monkeypatch.setattr(rfs, "CRUNCHYEXPORTER_DIR", tmp_path)
     calls, finish_calls = _capture(monkeypatch, netflix_ok=False)
 
     with pytest.raises(SystemExit) as exc:
@@ -90,8 +87,7 @@ def test_netflix_failure_does_not_block_anilist_pull(monkeypatch, tmp_path):
     assert statuses["anilist_postgres"] == "ok"
 
 
-def test_no_provider_credentials_skips_but_anilist_still_runs(monkeypatch, tmp_path):
-    monkeypatch.setattr(rfs, "CRUNCHYEXPORTER_DIR", tmp_path)
+def test_no_provider_credentials_skips_but_anilist_still_runs(monkeypatch):
     calls, finish_calls = _capture(monkeypatch, cr_configured=False, netflix_configured=False)
 
     with pytest.raises(SystemExit) as exc:
@@ -105,8 +101,7 @@ def test_no_provider_credentials_skips_but_anilist_still_runs(monkeypatch, tmp_p
     assert all("sync_anilist" in " ".join(str(c) for c in cmd) for cmd in calls)
 
 
-def test_anilist_failure_is_always_error(monkeypatch, tmp_path):
-    monkeypatch.setattr(rfs, "CRUNCHYEXPORTER_DIR", tmp_path)
+def test_anilist_failure_is_always_error(monkeypatch):
     calls, finish_calls = _capture(monkeypatch, anilist_ok=False)
 
     with pytest.raises(SystemExit) as exc:
@@ -118,8 +113,7 @@ def test_anilist_failure_is_always_error(monkeypatch, tmp_path):
     assert result["error_msg"] == "AniList → Postgres sync failed"
 
 
-def test_missing_anilist_credentials_short_circuits(monkeypatch, tmp_path):
-    monkeypatch.setattr(rfs, "CRUNCHYEXPORTER_DIR", tmp_path)
+def test_missing_anilist_credentials_short_circuits(monkeypatch):
     calls, finish_calls = _capture(monkeypatch)
     monkeypatch.setattr(rfs, "load_settings", lambda: {"anilist_token": "", "anilist_username": ""})
     # conftest.py sets ANILIST_TOKEN/ANILIST_USERNAME env defaults so *importing*
@@ -138,8 +132,7 @@ def test_missing_anilist_credentials_short_circuits(monkeypatch, tmp_path):
     assert calls == []  # no step function ever ran
 
 
-def test_unexpected_exception_in_a_step_does_not_crash_pipeline(monkeypatch, tmp_path):
-    monkeypatch.setattr(rfs, "CRUNCHYEXPORTER_DIR", tmp_path)
+def test_unexpected_exception_in_a_step_does_not_crash_pipeline(monkeypatch):
     calls, finish_calls = _capture(monkeypatch)
     monkeypatch.setattr(
         rfs, "_do_crunchyroll",

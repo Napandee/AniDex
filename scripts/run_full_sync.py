@@ -9,7 +9,10 @@ logged-in user. This script itself has no concept of "all users."
 
 Reads credentials from that user's settings DB row (falling back to env vars only for
 local dev/testing without a real user), then runs three independent steps:
-  - crunchyroll        — crunchyexporter-cli fetch, then CR history → AniList progress
+  - crunchyroll        — sync_crunchyroll.py (fetches CR watch history directly, issue
+                          #45 — no separate "fetch" sub-step or history.json anymore;
+                          the vendored crunchyexporter-cli this used to shell out to has
+                          been retired entirely)
   - netflix             — Netflix viewing activity → AniList progress updates
   - anilist_postgres    — AniList library → Postgres (the step that actually refreshes
                            the app's data; never skipped, only ok/error)
@@ -44,16 +47,6 @@ load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 SCRIPTS_DIR = Path(__file__).parent
-# Where crunchyexporter-cli itself is vendored (fixed, global — see Dockerfile).
-# Not to be confused with CRUNCHYEXPORTER_DIR below, which is per-user.
-CRUNCHYEXPORTER_INSTALL_DIR = Path(os.environ.get("CRUNCHYEXPORTER_INSTALL_DIR", "/opt/crunchyexporter"))
-# Per-user subdirectory for config.yaml/data — avoids one user's leftover
-# history.json/config.yaml ever being read by another user's sync, even across
-# separate runs. main.py itself always runs from CRUNCHYEXPORTER_INSTALL_DIR (that's
-# the only place it exists); this is just cwd, so its own relative config/data reads
-# land in the right per-user spot.
-CRUNCHYEXPORTER_DIR = Path(os.environ.get("CRUNCHYEXPORTER_DIR", "/opt/crunchyexporter")) / str(USER_ID)
-HISTORY_PATH = CRUNCHYEXPORTER_DIR / "data" / "history.json"
 
 
 def log(msg: str) -> None:
@@ -150,24 +143,10 @@ def _do_crunchyroll(cr_etp_rt: str, credentials_env: dict) -> tuple[str, int | N
         log("Crunchyroll — no ETP-RT configured, skipping")
         return "skipped", None, None
 
-    log("Crunchyroll — fetching watch history")
-    CRUNCHYEXPORTER_DIR.mkdir(parents=True, exist_ok=True)
-    (CRUNCHYEXPORTER_DIR / "data").mkdir(exist_ok=True)
-
-    config_path = CRUNCHYEXPORTER_DIR / "config.yaml"
-    config_path.write_text(f"crunchyroll:\n  etp_rt: \"{cr_etp_rt}\"\n")
-
-    ok = run(
-        [sys.executable, str(CRUNCHYEXPORTER_INSTALL_DIR / "src" / "main.py"), "fetch"],
-        cwd=CRUNCHYEXPORTER_DIR,
-    )
-    if not ok:
-        return "error", None, "Crunchyroll fetch failed"
-
     log("Crunchyroll — syncing → AniList")
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
-        extra_env={**credentials_env, "HISTORY_PATH": str(HISTORY_PATH)},
+        extra_env={**credentials_env, "CRUNCHYROLL_ETP_RT": cr_etp_rt},
     )
     if not ok:
         return "error", None, "Crunchyroll → AniList sync failed"
