@@ -42,7 +42,12 @@ _RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
 _AIRING_SCHEDULE_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_airing_schedule.py")
 
 _sync_lock = threading.Lock()
-_sync_state: dict[int, dict] = {}  # user_id -> {"running": bool, "last_result": str|None}
+# user_id -> {"running": bool, "last_result": str|None}. Only used as the double-click
+# guard on POST /api/sync and to bridge the brief startup race before run_full_sync.py's
+# subprocess manages to INSERT its own 'running' sync_log row — GET /api/sync/status
+# and GET /api/sync/log read display data (status/steps) straight from that row instead,
+# since it's updated live as the pipeline runs (see scripts/run_full_sync.py, issue #62).
+_sync_state: dict[int, dict] = {}
 
 _scheduler = BackgroundScheduler(timezone="UTC")
 
@@ -1743,7 +1748,7 @@ def sync_log(request: Request):
         return denied
 
     rows = db.fetchall(
-        "SELECT run_at, type, status, entries_updated, error_msg "
+        "SELECT run_at, type, status, entries_updated, error_msg, steps "
         "FROM sync_log WHERE user_id = %s ORDER BY run_at DESC LIMIT 20",
         (user["id"],),
     )
@@ -1754,6 +1759,7 @@ def sync_log(request: Request):
             "status": r["status"],
             "entries_updated": r["entries_updated"],
             "error_msg": r["error_msg"],
+            "steps": r["steps"] or [],
         }
         for r in rows
     ])
@@ -1767,12 +1773,26 @@ def sync_status(request: Request):
 
     state = _get_sync_state(user["id"])
     row = db.fetchone(
+        "SELECT status, steps FROM sync_log WHERE user_id = %s AND type = 'full_sync' "
+        "ORDER BY run_at DESC LIMIT 1",
+        (user["id"],),
+    )
+    # OR'd with the in-memory flag to cover the brief startup race between POST
+    # /api/sync setting state["running"]=True and run_full_sync.py's subprocess
+    # actually managing to INSERT its 'running' row — without this, a poll landing in
+    # that window would read the previous, already-settled row.
+    running = bool(state["running"] or (row and row["status"] == "running"))
+    last_result = row["status"] if row and row["status"] != "running" else None
+    steps = (row["steps"] if row else None) or []
+
+    ts_row = db.fetchone(
         "SELECT MAX(synced_at) AS ts FROM library_entries WHERE user_id = %s", (user["id"],)
     )
-    last_synced = row["ts"].isoformat() if row and row["ts"] else None
+    last_synced = ts_row["ts"].isoformat() if ts_row and ts_row["ts"] else None
     return JSONResponse({
-        "running": state["running"],
-        "last_result": state["last_result"],
+        "running": running,
+        "last_result": last_result,
+        "steps": steps,
         "last_synced": last_synced,
     })
 
