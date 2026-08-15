@@ -178,6 +178,11 @@ CREATE TABLE recommendation_scores (
 -- Owned by sync_crunchyroll.py — never written to by the web app.
 -- Keeps the per-series baseline so the sync can detect rewinds (rewatches)
 -- and avoid acting on data that hasn't changed since last run.
+-- last_seen_watched_at (added migration 004, issue #45) is a separate concern
+-- from last_seen_episode: it's the fetch-side watermark that lets the CR API
+-- client page newest-first and stop early, mirroring netflix_sync_state's same
+-- column below — it plays no part in process()'s diff/rewatch logic, which
+-- still runs entirely off last_seen_episode.
 -- =========================================================================
 
 CREATE TABLE cr_sync_state (
@@ -185,6 +190,7 @@ CREATE TABLE cr_sync_state (
     anilist_id            INTEGER NOT NULL,
     series_title          TEXT,                              -- for human readability
     last_seen_episode     INTEGER NOT NULL DEFAULT 0,
+    last_seen_watched_at  TIMESTAMPTZ,
     rewatch_in_progress   BOOLEAN NOT NULL DEFAULT FALSE,
     last_synced_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, anilist_id)
