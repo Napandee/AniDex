@@ -314,6 +314,27 @@ function fmtDate(iso) {
   if (el) el.textContent = fmtDate(el.getAttribute('datetime'));
 });
 
+// ── Per-service status chips (shared by the live banner and the history table) ──
+// Kept in sync manually with scripts/run_full_sync.py's step order — extend when
+// Prime Video (#49) lands.
+const SERVICE_ORDER = ['crunchyroll', 'netflix', 'anilist_postgres'];
+function fmtService(s) {
+  return { crunchyroll: 'Crunchyroll', netflix: 'Netflix', anilist_postgres: 'AniList library refresh', prime_video: 'Prime Video' }[s] || s;
+}
+function renderStepChips(steps) {
+  const bySvc = Object.fromEntries((steps || []).map(s => [s.service, s]));
+  // Known services first (canonical order); any unrecognized ones appended so a
+  // newly-shipped backend service doesn't just disappear before the frontend catches up.
+  const order = [...SERVICE_ORDER, ...Object.keys(bySvc).filter(s => !SERVICE_ORDER.includes(s))];
+  return '<span class="step-chips">' + order.map(svc => {
+    const s = bySvc[svc];
+    const status = s ? s.status : 'pending';
+    const err = s && s.error_msg ? ' — ' + s.error_msg : '';
+    const title = (fmtService(svc) + ': ' + status + err).replace(/"/g, '&quot;');
+    return `<span class="step-chip step-chip--${status}" title="${title}"></span>`;
+  }).join('') + '</span>';
+}
+
 // ── Manual sync ───────────────────────────────────────────────────────────────
 (function () {
   const btn = document.getElementById('sync-btn');
@@ -332,7 +353,9 @@ function fmtDate(iso) {
       .then(r => r.json())
       .then(data => {
         if (data.running) {
-          setMsg('Sync in progress…', 'running');
+          msg.innerHTML = 'Sync in progress… ' + renderStepChips(data.steps);
+          msg.className = 'sync-msg sync-msg--running';
+          msg.hidden = false;
           btn.disabled = true;
           pollTimer = setTimeout(poll, 2000);
         } else {
@@ -341,6 +364,8 @@ function fmtDate(iso) {
             const ts = data.last_synced ? fmtDate(data.last_synced) : '';
             statusEl.innerHTML = ts ? 'Last synced: <time>' + ts + '</time>' : 'Last synced: just now';
             setMsg('Sync completed successfully.', 'ok');
+          } else if (data.last_result === 'partial') {
+            setMsg('Sync completed with some steps skipped or failed — see history for details.', 'partial');
           } else if (data.last_result === 'error') {
             setMsg('Sync failed — check container logs for details.', 'error');
           }
@@ -377,11 +402,13 @@ function fmtDate(iso) {
       return;
     }
     tbody.innerHTML = rows.map(r => {
-      const cls = r.status === 'ok' ? 'log-ok' : 'log-error';
       const ts = r.run_at ? fmtDate(r.run_at) : '—';
       const entries = r.entries_updated != null ? r.entries_updated : '—';
       const err = r.error_msg ? `<span title="${r.error_msg.replace(/"/g,'&quot;')}">${r.error_msg.slice(0,60)}${r.error_msg.length > 60 ? '…' : ''}</span>` : '—';
-      return `<tr><td>${ts}</td><td>${fmtType(r.type)}</td><td class="${cls}">${r.status}</td><td>${entries}</td><td>${err}</td></tr>`;
+      const stepsHtml = r.type === 'full_sync' ? renderStepChips(r.steps) : '';
+      return `<tr><td>${ts}</td><td>${fmtType(r.type)}</td>` +
+             `<td><span class="log-${r.status}">${r.status}</span> ${stepsHtml}</td>` +
+             `<td>${entries}</td><td>${err}</td></tr>`;
     }).join('');
   }
 

@@ -595,6 +595,7 @@ main {
 .password-form { display: flex; gap: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid #222; }
 .password-form .form-input { flex: 1; }
 .sync-msg--error { color: #fca5a5; background: #7f1d1d22; }
+.sync-msg--partial { color: #fbbf24; background: #78350f22; }
 
 .sync-log-table {
   width: 100%;
@@ -619,7 +620,17 @@ main {
 .sync-log-table tr:last-child td { border-bottom: none; }
 .sync-log-table .log-ok { color: #86efac; }
 .sync-log-table .log-error { color: #fca5a5; }
+.sync-log-table .log-running { color: #93c5fd; }
+.sync-log-table .log-partial { color: #fbbf24; }
 .sync-log-empty { color: #444; font-style: italic; }
+
+.step-chips { display: inline-flex; gap: 0.3rem; margin-left: 0.5rem; vertical-align: middle; }
+.step-chip { width: 0.55rem; height: 0.55rem; border-radius: 50%; display: inline-block; }
+.step-chip--pending { background: #333; }
+.step-chip--running { background: #93c5fd; }
+.step-chip--ok      { background: #86efac; }
+.step-chip--error   { background: #fca5a5; }
+.step-chip--skipped { background: #555; }
 
 /* ── Admin page ───────────────────────────────────────────────────────────── */
 .admin-table {
