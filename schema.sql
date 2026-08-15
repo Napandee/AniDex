@@ -234,9 +234,13 @@ CREATE TABLE sync_log (
     user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     run_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     type            TEXT NOT NULL,          -- 'full_sync' | 'recommender'
-    status          TEXT NOT NULL,          -- 'ok' | 'error'
+    status          TEXT NOT NULL,          -- 'running' (transient) | 'ok' | 'partial' | 'error'
     entries_updated INTEGER,
-    error_msg       TEXT
+    error_msg       TEXT,
+    steps           JSONB                   -- full_sync only; see scripts/run_full_sync.py. Shape:
+                                             -- [{"service": "crunchyroll"|"netflix"|"anilist_postgres",
+                                             --   "status": "running"|"ok"|"error"|"skipped",
+                                             --   "entries_updated": int|null, "error_msg": str|null}, ...]
 );
 
 -- =========================================================================
