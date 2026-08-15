@@ -342,7 +342,7 @@ if (notesModal) {
   document.querySelectorAll('.card').forEach(card => {
     card.addEventListener('click', e => {
       if (e.target.closest('button, select, a, input, textarea, .star')) return;
-      openNotesModal(card);
+      window.location.href = `/anime/${card.dataset.animeId}/notes?back=${encodeURIComponent(card.dataset.back || 'WATCHING')}`;
     });
   });
 
