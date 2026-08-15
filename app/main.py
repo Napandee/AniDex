@@ -1532,7 +1532,9 @@ def queue(request: Request, status: str = None):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, link_error: str = "", password_error: str = ""):
+def settings_page(
+    request: Request, link_error: str = "", password_error: str = "", saved: str = ""
+):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -1576,11 +1578,13 @@ def settings_page(request: Request, link_error: str = "", password_error: str = 
                 "has_password": bool(user["password_hash"]),
                 "google_linked": bool(user["google_id"]),
                 "discord_linked": bool(user["discord_id"]),
+                "is_admin": user["is_admin"],
             },
             "oauth_google_configured": oauth_configured("google"),
             "oauth_discord_configured": oauth_configured("discord"),
             "link_error": link_error,
             "password_error": password_error,
+            "saved": saved,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
@@ -1594,21 +1598,8 @@ DAY_LABELS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thu
               "fri": "Friday", "sat": "Saturday", "sun": "Sunday"}
 
 
-@app.post("/settings")
-def settings_save(
-    request: Request,
-    timezone: str = Form(...),
-    anilist_username: str = Form(""),
-    anilist_token: str = Form(""),
-    cr_etp_rt: str = Form(""),
-    netflix_cookie_header: str = Form(""),
-    netflix_profile_guid: str = Form(""),
-    sync_daily_time: str = Form("04:30"),
-    sync_recommender_day: str = Form("sun"),
-    sync_recommender_time: str = Form("05:00"),
-    hidden_tags: str = Form(""),
-    anonymize_activity: str | None = Form(None),
-):
+@app.post("/settings/display")
+def settings_save_display(request: Request, timezone: str = Form(...)):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -1619,6 +1610,22 @@ def settings_save(
         timezone = "Europe/London"
 
     config.set_value(user["id"], "timezone", timezone)
+    return RedirectResponse(url="/settings?saved=display", status_code=303)
+
+
+@app.post("/settings/credentials")
+def settings_save_credentials(
+    request: Request,
+    anilist_username: str = Form(""),
+    anilist_token: str = Form(""),
+    cr_etp_rt: str = Form(""),
+    netflix_cookie_header: str = Form(""),
+    netflix_profile_guid: str = Form(""),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
     config.set_value(user["id"], "anilist_username", anilist_username.strip())
 
     # Only overwrite token if a non-empty value was submitted (empty = leave unchanged)
@@ -1631,6 +1638,57 @@ def settings_save(
     if netflix_profile_guid.strip():
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
+    return RedirectResponse(url="/settings?saved=credentials", status_code=303)
+
+
+@app.post("/settings/schedule")
+def settings_save_schedule(
+    request: Request,
+    sync_daily_time: str = Form("04:30"),
+    sync_recommender_day: str = Form("sun"),
+    sync_recommender_time: str = Form("05:00"),
+):
+    # Sync schedule is instance-wide (one cron trigger regardless of user count), so it
+    # goes to instance_config rather than a per-user settings row — admin-only, since a
+    # non-admin changing it would affect every other user's sync timing too.
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    try:
+        h, m = sync_daily_time.split(":")
+        assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+    except Exception:
+        sync_daily_time = "04:30"
+    _instance_config_set("sync_daily_time", sync_daily_time)
+
+    if sync_recommender_day not in DAYS_OF_WEEK:
+        sync_recommender_day = "sun"
+    _instance_config_set("sync_recommender_day", sync_recommender_day)
+
+    try:
+        h, m = sync_recommender_time.split(":")
+        assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+    except Exception:
+        sync_recommender_time = "05:00"
+    _instance_config_set("sync_recommender_time", sync_recommender_time)
+
+    # Apply new schedule immediately — no restart needed
+    _apply_schedule()
+
+    return RedirectResponse(url="/settings?saved=schedule", status_code=303)
+
+
+@app.post("/settings/privacy")
+def settings_save_privacy(
+    request: Request,
+    hidden_tags: str = Form(""),
+    anonymize_activity: str | None = Form(None),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
     # Privacy — see app/privacy.py. Never shown to other users until #22/#27 exist
     # and actually call into that module, but the controls themselves need to be
     # available before either of those ship, not added after the fact.
@@ -1638,32 +1696,7 @@ def settings_save(
     config.set_value(user["id"], "hidden_tags", json.dumps(tags))
     config.set_value(user["id"], "anonymize_activity", "true" if anonymize_activity else "false")
 
-    # Sync schedule is instance-wide (one cron trigger regardless of user count), so it
-    # goes to instance_config rather than this user's own settings row — admin-only,
-    # since a non-admin changing it would affect every other user's sync timing too.
-    if user["is_admin"]:
-        try:
-            h, m = sync_daily_time.split(":")
-            assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
-        except Exception:
-            sync_daily_time = "04:30"
-        _instance_config_set("sync_daily_time", sync_daily_time)
-
-        if sync_recommender_day not in DAYS_OF_WEEK:
-            sync_recommender_day = "sun"
-        _instance_config_set("sync_recommender_day", sync_recommender_day)
-
-        try:
-            h, m = sync_recommender_time.split(":")
-            assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
-        except Exception:
-            sync_recommender_time = "05:00"
-        _instance_config_set("sync_recommender_time", sync_recommender_time)
-
-        # Apply new schedule immediately — no restart needed
-        _apply_schedule()
-
-    return RedirectResponse(url="/settings", status_code=303)
+    return RedirectResponse(url="/settings?saved=privacy", status_code=303)
 
 
 @app.post("/settings/password")
