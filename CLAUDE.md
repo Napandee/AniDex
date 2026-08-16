@@ -20,8 +20,12 @@ it all into one self-hosted page.
   per-instance, invite-only signup, admin-managed. See Decisions Made.
 - Cross-user "also watching" indicator (opt-in per-user hidden tags/genres and
   anonymized-activity controls; nothing surfaced by default) — see `app/privacy.py`.
-  Static/on-demand only; issues #22 (rolling banner/notifications) and #27
-  (collaborative-filtering recommendations) build further on this but aren't in scope yet.
+  Static/on-demand only; shipped as issue #22. Collaborative-filtering
+  recommendations (weighting candidates by other users' ratings) shipped as
+  issue #27 — see `run_recommender.py`'s `fetch_cross_user_signal`/
+  `CROSS_USER_WEIGHT`. Issue #28 (rolling activity-feed banner, cross-user
+  episode comments) builds further on this and is still open, gated on an
+  explicit scope decision — not in scope yet.
 - In-library search, plus a quick-add-by-title lookup against AniList (not a full catalog
   browse UI — see Out of scope below)
 
