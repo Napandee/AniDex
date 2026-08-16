@@ -1,4 +1,5 @@
 FROM python:3.12-slim
+# trigger: verify GHCR push after repo recreation
 WORKDIR /app
 
 COPY requirements.txt .
