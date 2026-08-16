@@ -150,6 +150,23 @@ file's own header comment before running it.
   page keeps the original commits browsable regardless — but don't rely on that as the
   plan going forward.)
 - Never commit secrets, tokens, or API keys. Env vars only — never hardcoded, never logged.
+- If a secret, internal IP, or internal filesystem path is ever committed anyway:
+  rotating/invalidating the credential is necessary but not sufficient on its own.
+  Forward-fixing (removing it from the latest commit) leaves the original value fully
+  intact and retrievable in every commit before that fix — treat the repo as still
+  compromised until the plaintext is actually gone from history
+  (`git filter-repo` + force-push), not just from the current tip. This happened for
+  real (2026-08-12 Postgres password, fixed forward only; still sitting in history
+  until a full pre-public-release audit caught it on 2026-08-16).
+- Before this repo is ever made public: a force-push history rewrite is necessary but
+  **not sufficient** if the repo has any PR history. GitHub retains every merged/closed
+  PR's original commits via server-side `refs/pull/N/head` refs — and serves them
+  directly on the PR's own web page — regardless of what happens to the branches
+  afterward; there's no client-side way to remove these. Either get GitHub Support to
+  purge cached PR data first, or recreate the repo from scratch (new empty repo, push
+  only clean history, migrate open issues, retire the old repo as a permanently-private
+  archive). Confirmed the hard way on 2026-08-16 — a branch-only rewrite left the
+  original secrets fully browsable through old PRs even after the "clean" push.
 - The app writes to AniList only via three endpoints: rating (`POST /api/anime/{id}/rating`),
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
   all using `SaveMediaListEntry`. Never add further AniList mutations to the app without
