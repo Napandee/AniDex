@@ -25,7 +25,7 @@ log = logging.getLogger("anime_tracker")
 load_dotenv()
 
 from app import db, config, privacy
-from app.notify import notify
+from app.notify import DISCORD_WEBHOOK_RE, notify
 
 def _get_anilist_token(user_id: int) -> str:
     """Return this user's AniList token from settings DB."""
@@ -1691,6 +1691,8 @@ def settings_save_notifications(
     telegram_enabled: str | None = Form(None),
     telegram_bot_token: str = Form(""),
     telegram_chat_id: str = Form(""),
+    discord_enabled: str | None = Form(None),
+    discord_webhook_url: str = Form(""),
 ):
     user, denied = _require_user(request)
     if denied:
@@ -1702,6 +1704,15 @@ def settings_save_notifications(
     # Only overwrite the bot token if a non-empty value was submitted (empty = leave unchanged)
     if telegram_bot_token.strip():
         config.set_value(user["id"], "telegram_bot_token", telegram_bot_token.strip())
+
+    config.set_value(user["id"], "discord_enabled", "true" if discord_enabled else "false")
+    # Must look like a real Discord webhook URL — the destination host is otherwise
+    # fully user-supplied, which would let a bad value point server-side POSTs at an
+    # arbitrary internal address. An invalid value is silently dropped rather than
+    # saved, matching how an invalid timezone/schedule value is handled elsewhere on
+    # this page.
+    if discord_webhook_url.strip() and DISCORD_WEBHOOK_RE.match(discord_webhook_url.strip()):
+        config.set_value(user["id"], "discord_webhook_url", discord_webhook_url.strip())
 
     return RedirectResponse(url="/settings?saved=notifications", status_code=303)
 

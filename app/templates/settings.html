@@ -157,6 +157,28 @@
         </div>
       </div>
 
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">Discord</h3>
+
+        <div class="form-field form-field--checkbox">
+          <label class="form-checkbox-label">
+            <input type="checkbox" name="discord_enabled" {% if settings.discord_enabled != 'false' %}checked{% endif %}>
+            Enable Discord notifications
+          </label>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="discord_webhook_url">
+            Webhook URL
+            <span class="form-label-hint">— from the target channel's Integrations → Webhooks settings in Discord</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="discord_webhook_url"
+                 name="discord_webhook_url" placeholder="{% if settings.discord_webhook_url %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="discord_webhook_url">Show</button>
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="btn-save">Save notifications</button>
       </div>
