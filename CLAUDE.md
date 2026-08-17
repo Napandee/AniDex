@@ -140,7 +140,12 @@ file's own header comment before running it.
   (`gh issue edit <n> --add-assignee Napandee`) and reference it in the eventual
   commit(s) with a closing keyword (`Fixes #n` / `Closes #n`) so it auto-closes on
   merge — that's the real link between an issue and the code that resolved it, not
-  a manual comment.
+  a manual comment. The `.claude/skills/new-issue` skill automates filing +
+  duplicate-check + roadmap-board sync (reads field IDs from `CLAUDE.local.md`'s
+  roadmap-board section rather than re-deriving them by hand); `.claude/skills/roadmap-audit`
+  does a read-only reconciliation pass, including catching stale cross-issue references
+  left over from renumbering (the kind CLAUDE.local.md flags as a recurring failure mode
+  in this repo).
 - Merge multi-commit feature branches with a real merge commit (`gh pr merge --merge`),
   not squash — pass the flag explicitly rather than relying on whatever the repo's
   default merge method happens to be. Each commit stays individually walkable/revertable
