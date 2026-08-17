@@ -278,19 +278,55 @@
     const checked = getChecked();
     if (!checked.length) return;
     const newStatus = statusSel.value;
-    const n = checked.length;
+    const animeIds = checked.map(cb => parseInt(cb.dataset.animeId, 10));
     applyBtn.disabled = true;
-    applyBtn.textContent = `Applying ${n}…`;
-    countEl.textContent = `Setting ${n} to ${newStatus.toLowerCase()}…`;
-    await Promise.all(checked.map(cb =>
-      fetch(`/api/anime/${cb.dataset.animeId}/status`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({status: newStatus}),
-      })
-    ));
-    location.reload();
+    applyBtn.textContent = `Queuing ${animeIds.length}…`;
+
+    const resp = await fetch('/api/anime/bulk-status', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: newStatus, anime_ids: animeIds}),
+    });
+    if (!resp.ok) {
+      countEl.textContent = 'Failed to queue bulk update.';
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Apply status';
+      return;
+    }
+    pollBulkStatus(animeIds);
   });
+
+  function pollBulkStatus(animeIds) {
+    fetch('/api/anime/bulk-status?anime_ids=' + animeIds.join(','))
+      .then(r => r.json())
+      .then(data => {
+        const items = data.items;
+        const synced = items.filter(i => i.state === 'synced').length;
+        const failed = items.filter(i => i.state === 'failed');
+        const pending = items.length - synced - failed.length;
+
+        countEl.innerHTML = `${synced} synced, ${pending} pending` +
+          (failed.length ? `, <span class="bulk-failed">${failed.length} failed</span>` : '');
+
+        if (pending > 0) {
+          setTimeout(() => pollBulkStatus(animeIds), 1500);
+          return;
+        }
+
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply status';
+        if (failed.length) {
+          countEl.innerHTML += ` <button id="bulk-retry-failed" class="filter-btn">Retry failed</button>`;
+          document.getElementById('bulk-retry-failed').addEventListener('click', () => {
+            Promise.all(failed.map(i =>
+              fetch(`/api/anime/${i.anime_id}/bulk-status/retry`, {method: 'POST'})
+            )).then(() => pollBulkStatus(animeIds));
+          });
+        } else {
+          location.reload();
+        }
+      });
+  }
 }());
 </script>
 

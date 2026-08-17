@@ -24,7 +24,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy
+from app import db, config, privacy, outbox
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -534,11 +534,13 @@ _LOGIN_LOCKOUT_MINUTES = 15
 def startup() -> None:
     _apply_schedule()
     _scheduler.start()
+    outbox.start_worker()
     log.info("APScheduler started")
 
 
 @app.on_event("shutdown")
 def shutdown() -> None:
+    outbox.stop_worker()
     _scheduler.shutdown(wait=False)
     log.info("APScheduler stopped")
 
@@ -2270,11 +2272,20 @@ def _apply_status_change(user, anime_id: int, status: str) -> str | None:
 
     db.execute(
         """
-        INSERT INTO library_entries (user_id, anime_id, status)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (user_id, anime_id) DO UPDATE SET status = EXCLUDED.status
+        INSERT INTO library_entries (user_id, anime_id, status, sync_status)
+        VALUES (%s, %s, %s, 'synced')
+        ON CONFLICT (user_id, anime_id) DO UPDATE SET status = EXCLUDED.status, sync_status = 'synced'
         """,
         (user["id"], anime_id, status),
+    )
+    # This push just succeeded synchronously, so it's authoritative — clear any
+    # outbox row left over from an earlier bulk edit on this anime (e.g. a failed
+    # bulk edit fixed by hand via the single-card UI). Without this, a stale
+    # outbox row could later get replayed via "Retry failed" and silently
+    # overwrite the status just set here.
+    db.execute(
+        "DELETE FROM status_sync_outbox WHERE user_id = %s AND anime_id = %s",
+        (user["id"], anime_id),
     )
     return None
 
@@ -2296,6 +2307,105 @@ async def set_status(anime_id: int, request: Request):
         return JSONResponse({"error": error}, status_code=status_code)
 
     return JSONResponse({"ok": True, "status": status})
+
+
+@app.post("/api/anime/bulk-status")
+async def bulk_set_status(request: Request):
+    """Local-first bulk status edit (issue #18): writes land immediately and AniList
+    sync happens async via the outbox worker, unlike the single-card endpoint above."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    status = body.get("status", "").upper()
+    anime_ids = body.get("anime_ids", [])
+    if status not in VALID_STATUSES:
+        return JSONResponse({"error": "invalid status"}, status_code=400)
+    if not anime_ids or not all(isinstance(i, int) for i in anime_ids):
+        return JSONResponse({"error": "anime_ids required"}, status_code=400)
+
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            for anime_id in anime_ids:
+                cur.execute(
+                    """
+                    INSERT INTO library_entries (user_id, anime_id, status, sync_status)
+                    VALUES (%s, %s, %s, 'pending')
+                    ON CONFLICT (user_id, anime_id) DO UPDATE SET
+                        status = EXCLUDED.status, sync_status = 'pending'
+                    """,
+                    (user["id"], anime_id, status),
+                )
+                # Supersede any not-yet-processed outbox row for this anime so the
+                # worker doesn't redundantly push a now-stale target status.
+                cur.execute(
+                    """
+                    DELETE FROM status_sync_outbox
+                    WHERE user_id = %s AND anime_id = %s AND state IN ('pending', 'failed')
+                    """,
+                    (user["id"], anime_id),
+                )
+                cur.execute(
+                    "INSERT INTO status_sync_outbox (user_id, anime_id, status) VALUES (%s, %s, %s)",
+                    (user["id"], anime_id, status),
+                )
+        conn.commit()
+
+    outbox.wake()
+    return JSONResponse({"ok": True, "count": len(anime_ids)})
+
+
+@app.get("/api/anime/bulk-status")
+def bulk_status(request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    ids_param = request.query_params.get("anime_ids", "")
+    anime_ids = [int(i) for i in ids_param.split(",") if i.strip().isdigit()]
+    if not anime_ids:
+        return JSONResponse({"items": []})
+
+    rows = db.fetchall(
+        """
+        SELECT anime_id, state, last_error FROM status_sync_outbox
+        WHERE user_id = %s AND anime_id = ANY(%s)
+        """,
+        (user["id"], anime_ids),
+    )
+    by_id = {r["anime_id"]: r for r in rows}
+    items = [
+        {
+            "anime_id": aid,
+            # not present in by_id => already synced (row deleted on success) or never queued
+            "state": by_id[aid]["state"] if aid in by_id else "synced",
+            "error": by_id[aid]["last_error"] if aid in by_id else None,
+        }
+        for aid in anime_ids
+    ]
+    return JSONResponse({"items": items})
+
+
+@app.post("/api/anime/{anime_id}/bulk-status/retry")
+async def bulk_status_retry(anime_id: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    row = db.execute_returning(
+        """
+        UPDATE status_sync_outbox SET state = 'pending', attempts = 0, last_error = NULL, updated_at = now()
+        WHERE user_id = %s AND anime_id = %s AND state = 'failed'
+        RETURNING id
+        """,
+        (user["id"], anime_id),
+    )
+    if not row:
+        return JSONResponse({"error": "no failed item for this anime"}, status_code=404)
+
+    outbox.wake()
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/anime/{anime_id}/progress")

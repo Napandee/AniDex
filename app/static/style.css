@@ -789,6 +789,7 @@ body.auth-page main {
   font-size: 0.85rem;
 }
 .bulk-bar select { font-size: 0.82rem; padding: 0.25rem 0.4rem; }
+.bulk-failed { color: #fca5a5; }
 
 /* ── Watch queue ─────────────────────────────────────────────────────────── */
 .queue-list {

@@ -114,9 +114,31 @@ CREATE TABLE library_entries (
     finish_date         DATE,
     anilist_updated_at  TIMESTAMPTZ,                  -- AniList's own last-updated, to detect drift
     synced_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sync_status         TEXT NOT NULL DEFAULT 'synced' -- 'pending' while a bulk-edit outbox item is in flight;
+                                                        -- guards the pull sync from clobbering it, see #18
+                            CHECK (sync_status IN ('synced', 'pending')),
     UNIQUE (user_id, anime_id),
     UNIQUE (user_id, anilist_entry_id)
 );
+
+-- Outbox for local-first bulk status edits (issue #18) — a row here means an edit has
+-- landed in library_entries but not yet been confirmed pushed to AniList. Rows are
+-- deleted on successful push; only in-flight or failed edits ever sit in this table.
+CREATE TABLE status_sync_outbox (
+    id           SERIAL PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anime_id     INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    status       TEXT NOT NULL,
+    state        TEXT NOT NULL DEFAULT 'pending'
+                     CHECK (state IN ('pending', 'in_progress', 'failed')),
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_status_sync_outbox_state ON status_sync_outbox (state);
+CREATE INDEX idx_status_sync_outbox_user_created ON status_sync_outbox (user_id, created_at);
 
 -- Cached upcoming episode airings for anything in ANY user's watching/planning list.
 -- Global like `anime` — an airing time doesn't differ per user. Rebuilt on every sync.

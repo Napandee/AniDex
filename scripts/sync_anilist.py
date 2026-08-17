@@ -294,6 +294,7 @@ def upsert_library_entry(cur, entry: dict) -> None:
             finish_date        = EXCLUDED.finish_date,
             anilist_updated_at = EXCLUDED.anilist_updated_at,
             synced_at          = now()
+        WHERE library_entries.sync_status = 'synced'
         """,
         (
             USER_ID,
