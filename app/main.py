@@ -25,6 +25,7 @@ log = logging.getLogger("anime_tracker")
 load_dotenv()
 
 from app import db, config, privacy
+from app.notify import notify
 
 def _get_anilist_token(user_id: int) -> str:
     """Return this user's AniList token from settings DB."""
@@ -78,23 +79,6 @@ def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_res
         log.error("Sync exception for user %s (%s): %s", user_id, script, e)
     finally:
         state["running"] = False
-
-
-def _tg_send(user_id: int, text: str) -> None:
-    """Fire-and-forget Telegram message for one user. Silently drops if not configured."""
-    token = config.get(user_id, "telegram_bot_token")
-    chat_id = config.get(user_id, "telegram_chat_id")
-    if not token or not chat_id:
-        return
-    try:
-        import httpx as _httpx
-        _httpx.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            timeout=10,
-        )
-    except Exception as e:
-        log.warning("Telegram send failed for user %s: %s", user_id, e)
 
 
 def _users_with_sync_credentials() -> list[dict]:
@@ -162,8 +146,8 @@ def _check_airing_episodes() -> None:
         lines = []
         for r in rows:
             title = r["title_english"] or r["title_romaji"]
-            lines.append(f"▶ <b>{title}</b> — Ep {r['episode']} is now airing")
-        _tg_send(user_id, "\n".join(lines))
+            lines.append(f"▶ {title} — Ep {r['episode']} is now airing")
+        notify(user_id, "New episode(s) airing", "\n".join(lines))
 
         for r in rows:
             db.execute(
@@ -195,12 +179,12 @@ def _weekly_airing_digest() -> None:
         )
         if not rows:
             continue
-        lines = ["<b>Anime this week:</b>"]
+        lines = []
         for r in rows:
             title = r["title_english"] or r["title_romaji"]
             dt = r["airing_at"].strftime("%a %d %b %H:%M UTC") if r["airing_at"] else ""
             lines.append(f"• {title} — Ep {r['episode']} ({dt})")
-        _tg_send(user_id, "\n".join(lines))
+        notify(user_id, "Anime this week", "\n".join(lines))
 
 
 def _scheduled_full_sync() -> None:
@@ -223,9 +207,9 @@ def _scheduled_full_sync() -> None:
             state["last_result"] = "error"
         result = state.get("last_result", "error")
         if result == "ok":
-            _tg_send(user_id, "✅ Anime Tracker — daily sync completed successfully.")
+            notify(user_id, "✅ Daily sync completed", "Anime Tracker — daily sync completed successfully.")
         else:
-            _tg_send(user_id, "❌ Anime Tracker — daily sync <b>failed</b>. Check container logs.")
+            notify(user_id, "❌ Daily sync failed", "Anime Tracker — daily sync failed. Check container logs.")
 
 
 def _scheduled_recommender() -> None:
@@ -1652,6 +1636,27 @@ def settings_save_credentials(
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
     return RedirectResponse(url="/settings?saved=credentials", status_code=303)
+
+
+@app.post("/settings/notifications")
+def settings_save_notifications(
+    request: Request,
+    telegram_enabled: str | None = Form(None),
+    telegram_bot_token: str = Form(""),
+    telegram_chat_id: str = Form(""),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    config.set_value(user["id"], "telegram_enabled", "true" if telegram_enabled else "false")
+    config.set_value(user["id"], "telegram_chat_id", telegram_chat_id.strip())
+
+    # Only overwrite the bot token if a non-empty value was submitted (empty = leave unchanged)
+    if telegram_bot_token.strip():
+        config.set_value(user["id"], "telegram_bot_token", telegram_bot_token.strip())
+
+    return RedirectResponse(url="/settings?saved=notifications", status_code=303)
 
 
 @app.post("/settings/schedule")
