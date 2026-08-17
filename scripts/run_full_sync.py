@@ -48,6 +48,18 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 SCRIPTS_DIR = Path(__file__).parent
 
+# Issue #91 — per-step timeouts, so one slow step can no longer starve the others (a
+# single blunt external timeout used to wrap this whole script as one all-or-nothing
+# unit — see app/main.py's _run_sync_task). A from-scratch or forced-full walk is
+# bounded only by MAX_PAGES in sync_crunchyroll.py/sync_netflix.py (effectively
+# unbounded), so these get a generous budget; anilist_postgres is a bounded Postgres
+# upsert loop over the AniList list, so gets a tighter one. Not conditioned on
+# FORCE_FULL_RESYNC — an ordinary first-ever sync (no stored watermark yet) faces the
+# same unbounded-walk risk as a forced one, so the real risk factor is "no watermark,"
+# not the flag itself.
+PROVIDER_STEP_TIMEOUT = 480  # seconds — crunchyroll / netflix
+ANILIST_STEP_TIMEOUT = 240  # seconds — anilist_postgres
+
 
 def log(msg: str) -> None:
     print(f"[run_full_sync] user={USER_ID} {msg}", flush=True)
@@ -64,11 +76,16 @@ def load_settings() -> dict:
         conn.close()
 
 
-def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None) -> bool:
+def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, timeout: int | None = None) -> bool:
+    """subprocess.TimeoutExpired is deliberately not caught here — it propagates up to
+    _run_step's existing generic exception handler (issue #91), which already turns
+    any unexpected exception in a step into that step's own error status without
+    aborting the rest of the pipeline. str(TimeoutExpired) reads as e.g. "Command
+    [...] timed out after 480 seconds", which is already a clear per-step error."""
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
-    result = subprocess.run(cmd, env=env, cwd=cwd)
+    result = subprocess.run(cmd, env=env, cwd=cwd, timeout=timeout)
     return result.returncode == 0
 
 
@@ -156,6 +173,7 @@ def _do_crunchyroll(
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
         extra_env=extra_env,
+        timeout=PROVIDER_STEP_TIMEOUT,
     )
     if not ok:
         return "error", None, "Crunchyroll → AniList sync failed"
@@ -184,6 +202,7 @@ def _do_netflix(
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_netflix.py")],
         extra_env=extra_env,
+        timeout=PROVIDER_STEP_TIMEOUT,
     )
     if not ok:
         return "error", None, "Netflix → AniList sync failed"
@@ -196,6 +215,7 @@ def _do_anilist_postgres(credentials_env: dict) -> tuple[str, int | None, str | 
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_anilist.py")],
         extra_env=credentials_env,
+        timeout=ANILIST_STEP_TIMEOUT,
     )
     if not ok:
         return "error", None, "AniList → Postgres sync failed"

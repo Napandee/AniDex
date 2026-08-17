@@ -4,10 +4,17 @@ thing being guarded: a failure in one step (crunchyroll/netflix) must not preven
 anilist_postgres step from running — that used to sys.exit(1) on the first failing step,
 silently stopping the app's whole library refresh over an unrelated provider hiccup.
 
+Also covers issue #91: each step's run() call now gets its own subprocess timeout
+instead of relying solely on one blunt external timeout wrapping the whole script (see
+app/main.py's _run_sync_task) — a slow step must time out as its own error, not starve
+later steps or leave the pipeline hanging past any per-step budget.
+
 No real DB/network/credentials are touched — psycopg2-backed helpers
 (_start_log/_update_log_steps/_finish_log), load_settings(), and run() (the subprocess
 wrapper each step calls) are all monkeypatched.
 """
+
+import subprocess
 
 import pytest
 
@@ -15,7 +22,7 @@ import run_full_sync as rfs
 
 
 def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True,
-             cr_configured=True, netflix_configured=True):
+             cr_configured=True, netflix_configured=True, timeout_step=None):
     settings = {
         "anilist_token": "tok",
         "anilist_username": "user",
@@ -24,7 +31,7 @@ def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True,
         "netflix_profile_guid": "guid" if netflix_configured else "",
     }
     monkeypatch.setattr(rfs, "load_settings", lambda: settings)
-    monkeypatch.setattr(rfs, "_start_log", lambda: 1)
+    monkeypatch.setattr(rfs, "_start_log", lambda sync_type: 1)
     monkeypatch.setattr(rfs, "_update_log_steps", lambda log_id, steps: None)
 
     finish_calls = []
@@ -37,9 +44,15 @@ def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True,
 
     calls = []
 
-    def fake_run(cmd, extra_env=None, cwd=None):
-        calls.append(cmd)
+    def fake_run(cmd, extra_env=None, cwd=None, timeout=None):
+        calls.append((cmd, timeout))
         joined = " ".join(str(c) for c in cmd)
+        if "sync_crunchyroll" in joined and timeout_step == "crunchyroll":
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+        if "sync_netflix" in joined and timeout_step == "netflix":
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+        if "sync_anilist" in joined and timeout_step == "anilist_postgres":
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
         if "main.py" in joined and "fetch" in joined:
             return cr_ok
         if "sync_crunchyroll" in joined:
@@ -52,7 +65,7 @@ def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True,
 
     monkeypatch.setattr(rfs, "run", fake_run)
 
-    return calls, finish_calls
+    return calls, finish_calls  # calls: list[(cmd, timeout)]
 
 
 def _statuses(steps):
@@ -98,7 +111,7 @@ def test_no_provider_credentials_skips_but_anilist_still_runs(monkeypatch):
     assert result["status"] == "ok"
     assert _statuses(result["steps"]) == {"crunchyroll": "skipped", "netflix": "skipped", "anilist_postgres": "ok"}
     # skipped steps never call run() at all — only the anilist step should have
-    assert all("sync_anilist" in " ".join(str(c) for c in cmd) for cmd in calls)
+    assert all("sync_anilist" in " ".join(str(c) for c in cmd) for cmd, _timeout in calls)
 
 
 def test_anilist_failure_is_always_error(monkeypatch):
@@ -149,3 +162,46 @@ def test_unexpected_exception_in_a_step_does_not_crash_pipeline(monkeypatch):
     assert statuses["crunchyroll"]["status"] == "error"
     assert "boom" in statuses["crunchyroll"]["error_msg"]
     assert statuses["anilist_postgres"]["status"] == "ok"
+
+
+def test_netflix_timeout_becomes_error_without_blocking_anilist_pull(monkeypatch):
+    # Issue #91's core regression test: a step that hangs past its own timeout must
+    # become that step's error, exactly like any other step failure — not starve
+    # anilist_postgres or leave the pipeline hanging past its per-step budget.
+    calls, finish_calls = _capture(monkeypatch, timeout_step="netflix")
+
+    with pytest.raises(SystemExit) as exc:
+        rfs.main()
+
+    assert exc.value.code == 0  # anilist_postgres still ok -> partial, not error
+    result = finish_calls[0]
+    assert result["status"] == "partial"
+    statuses = {s["service"]: s for s in result["steps"]}
+    assert statuses["netflix"]["status"] == "error"
+    assert "timed out" in statuses["netflix"]["error_msg"]
+    assert statuses["anilist_postgres"]["status"] == "ok"
+
+
+def test_provider_steps_get_generous_timeout_anilist_gets_tighter_one(monkeypatch):
+    # Regression coverage for the actual per-step timeout values wired into run() —
+    # distinct from the previous test, which only checks that a timeout is handled
+    # gracefully, not that each step requests the right budget.
+    calls, finish_calls = _capture(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        rfs.main()
+
+    timeouts_by_service = {}
+    for cmd, timeout in calls:
+        joined = " ".join(str(c) for c in cmd)
+        if "sync_crunchyroll" in joined:
+            timeouts_by_service["crunchyroll"] = timeout
+        elif "sync_netflix" in joined:
+            timeouts_by_service["netflix"] = timeout
+        elif "sync_anilist" in joined:
+            timeouts_by_service["anilist_postgres"] = timeout
+
+    assert timeouts_by_service["crunchyroll"] == rfs.PROVIDER_STEP_TIMEOUT
+    assert timeouts_by_service["netflix"] == rfs.PROVIDER_STEP_TIMEOUT
+    assert timeouts_by_service["anilist_postgres"] == rfs.ANILIST_STEP_TIMEOUT
+    assert rfs.ANILIST_STEP_TIMEOUT < rfs.PROVIDER_STEP_TIMEOUT
