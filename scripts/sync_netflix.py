@@ -25,15 +25,27 @@ IMPORTANT LIMITATION, confirmed live: Netflix's Falcor feed has no absolute
 episode-ordinal field — items carry `seriesTitle`/`seasonDescriptor`/
 `episodeTitle`/`movieID`/`date`, never a numeric "episode 5" position. So
 this can't compute an absolute progress number the way sync_crunchyroll.py
-does from CR's max-aggregated history. Instead: fetch_since() already
-returns only genuinely new items (newer than the stored watermark), so this
-counts DISTINCT new episodes per series (deduped by movieID) and adds that
-count to AniList's own current progress — decided as the "date-order
-heuristic" for issue #48. This is correct for the common case (watching
-forward, in order) but will overcount if episodes are watched out of order
-or a whole season is skipped and picked up later; same failure-mode ceiling
-already accepted elsewhere in this app (a wrong progress number is a
-one-click manual fix, score/notes are never touched).
+does from CR's max-aggregated history. Instead: this counts DISTINCT new
+episodes per series (deduped by movieID) and adds that count to AniList's
+own current progress — decided as the "date-order heuristic" for issue #48.
+This is correct for the common case (watching forward, in order) but will
+overcount if episodes are watched out of order or a whole season is skipped
+and picked up later; same failure-mode ceiling already accepted elsewhere in
+this app (a wrong progress number is a one-click manual fix, score/notes are
+never touched).
+
+"New" for that per-series count is decided per-series, not just by whether
+fetch_since() returned the item at all: each series' items are filtered
+against THAT series' own last_seen_watched_at (stored in netflix_sync_state),
+not only the fetch's single global watermark (the max across all series,
+used purely to know when pagination can stop — see compute_fetch_watermark()).
+Under the normal incremental path the two coincide, so this is a no-op. It
+matters once anything ever bypasses the global watermark (e.g. a future
+Force Full Resync for Netflix) — a full re-fetch returns each series' ENTIRE
+history, and without the per-series filter, "new" would mean the whole
+series instead of the genuine incremental tail, inflating progress by
+roughly the already-watched count on the very next run (#69). See
+`_new_episode_count()`.
 
 Movie items in this feed haven't been directly observed in live testing
 (only TV episodes were in the test account's recent history) — the movie
@@ -229,13 +241,14 @@ def _is_episode(item: dict) -> bool:
 
 
 def aggregate_by_series(items: list[dict]) -> dict[str, dict]:
-    """Returns {title: {watched_at, new_count, watched_format}}.
+    """Returns {title: {items: [(movie_id, watched_at), ...], watched_format}}.
 
-    Netflix's Falcor feed has no absolute episode ordinal (see module
-    docstring) — this counts DISTINCT new episodes per series, deduped by
-    `movieID` (Netflix's stable per-episode content id, so re-pagination or a
-    rewatch-within-this-fetch can't double-count the same episode). main()
-    turns that count into an absolute AniList progress number.
+    Deliberately keeps each item's own (movie_id, watched_at) pair rather than
+    pre-reducing to a single new_count here: matching a Netflix title to a
+    specific AniList entry — and that entry's own stored last_seen_watched_at
+    — only happens in main(), and _new_episode_count() needs per-item
+    timestamps to filter against that series-specific watermark rather than
+    just the fetch's single global one (see module docstring, #69).
     """
     by_series: dict[str, dict] = {}
     for item in items:
@@ -247,25 +260,41 @@ def aggregate_by_series(items: list[dict]) -> dict[str, dict]:
         watched_at = _item_watched_at(item) or datetime.min.replace(tzinfo=timezone.utc)
 
         entry = by_series.setdefault(title, {
-            "watched_at": datetime.min.replace(tzinfo=timezone.utc),
-            "movie_ids": set(),
+            "items": [],
             "watched_format": "TV" if is_ep else "MOVIE",
         })
-        if movie_id is not None:
-            entry["movie_ids"].add(movie_id)
-        if watched_at > entry["watched_at"]:
-            entry["watched_at"] = watched_at
+        entry["items"].append((movie_id, watched_at))
 
-    return {
-        title: {
-            "watched_at": data["watched_at"],
-            "new_count": len(data["movie_ids"]) or 1,  # at least 1 — a title with no
-                                                          # movieID still represents one
-                                                          # watch event
-            "watched_format": data["watched_format"],
-        }
-        for title, data in by_series.items()
-    }
+    return by_series
+
+
+def _new_episode_count(
+    items: list[tuple], watermark: datetime | None
+) -> tuple[int, datetime | None]:
+    """Reduces a series' raw (movie_id, watched_at) pairs to (new_count, watched_at),
+    counting only items genuinely newer than `watermark` — that series' own
+    last_seen_watched_at, not just the fetch's single global watermark. Deduped by
+    movie_id (Netflix's stable per-episode content id, so re-pagination or a
+    rewatch-within-this-fetch can't double-count the same episode), matching the
+    prior behavior for a normal incremental fetch exactly.
+
+    This is what keeps new_count safe under a forced full re-fetch: without this
+    per-series filter, a full re-fetch (global watermark=None) would return each
+    series' entire history, and "new" would silently mean "everything Netflix has
+    ever recorded for this show" instead of the genuine incremental tail.
+
+    Returns (0, None) if nothing survives the filter — the caller must skip the
+    series entirely in that case, not just treat it as zero new episodes. Some of
+    process()'s branches (e.g. rewatch-start) key off "any new activity present"
+    rather than new_count alone, and a series can appear in `items` at all under a
+    full re-fetch purely because of OTHER series' more recent activity, not
+    because anything new happened for this one.
+    """
+    relevant = [(mid, wat) for mid, wat in items if not watermark or wat > watermark]
+    if not relevant:
+        return 0, None
+    movie_ids = {mid for mid, _ in relevant if mid is not None}
+    return len(movie_ids) or 1, max(wat for _, wat in relevant)
 
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
@@ -494,7 +523,7 @@ def main():
 
     updated = skipped = no_change = index_hits = search_hits = 0
 
-    for title, watched in sorted(watched_by_series.items()):
+    for title, agg in sorted(watched_by_series.items()):
         normalized = title.lower()
         in_index_before = normalized in title_index
         media_id = find_anilist_id(title, title_index)
@@ -512,14 +541,30 @@ def main():
             skipped += 1
             continue
 
+        nf_state = nf_state_map.get(media_id)
+        per_series_watermark = nf_state.get("last_seen_watched_at") if nf_state else None
+        new_count, watched_at = _new_episode_count(agg["items"], per_series_watermark)
+        if watched_at is None:
+            # Nothing in this fetch is actually newer than THIS series' own
+            # last-seen point — it only showed up here because some other
+            # series' more recent activity kept fetch_since() going past it
+            # (or, under a future full re-fetch, because the whole history
+            # came back). Not genuine new activity for this series — skip.
+            continue
+
         entry = dict(user_list[media_id])
         entry["anilist_id"] = media_id
 
         # Turn "N new episodes seen" into an absolute AniList progress number —
         # see module docstring / process()'s docstring for why this can't be an
         # absolute position parsed directly from Netflix's data.
-        watched_ep = 1 if watched["watched_format"] == "MOVIE" else entry["progress"] + watched["new_count"]
-        watched = {**watched, "episode": watched_ep}
+        watched_ep = 1 if agg["watched_format"] == "MOVIE" else entry["progress"] + new_count
+        watched = {
+            "watched_format": agg["watched_format"],
+            "watched_at": watched_at,
+            "new_count": new_count,
+            "episode": watched_ep,
+        }
 
         if not is_plausible_match(entry, watched["watched_format"], watched_ep or None):
             log(f"  ✗ Implausible match, skipping: '{title}' "
@@ -527,8 +572,6 @@ def main():
                 f"watched format={watched['watched_format']}, ep={watched_ep})")
             skipped += 1
             continue
-
-        nf_state = nf_state_map.get(media_id)
 
         try:
             result = process(title, watched, entry, nf_state, conn)
