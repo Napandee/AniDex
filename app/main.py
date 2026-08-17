@@ -63,6 +63,7 @@ def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_res
     env["USER_ID"] = str(user_id)
     if force_full_resync:
         env["FORCE_FULL_RESYNC"] = "1"
+    run_started_at = datetime.now(timezone.utc)
     try:
         result = subprocess.run(
             [sys.executable, script],
@@ -79,6 +80,57 @@ def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_res
         log.error("Sync exception for user %s (%s): %s", user_id, script, e)
     finally:
         state["running"] = False
+
+    # Issue #11 — one alert per run, covering both manual (Sync Now / Force Full
+    # Resync) and scheduled triggers since they all funnel through this function.
+    # Wrapped separately so a failure in the alerting path itself (e.g. a transient DB
+    # error on the lookup below) can never look like "no notification was needed."
+    try:
+        _notify_sync_outcome(user_id, force_full_resync, run_started_at)
+    except Exception as e:
+        log.error("Failed to send sync-outcome notification for user %s: %s", user_id, e)
+
+
+def _notify_sync_outcome(user_id: int, force_full_resync: bool, run_started_at: datetime) -> None:
+    """Alert the user on a genuine sync failure — distinct from an expected per-step
+    skip (e.g. no Crunchyroll credentials configured), which run_full_sync.py already
+    tags separately in sync_log.steps rather than as an error.
+
+    Reads the sync_log row this run itself just wrote instead of trusting the
+    subprocess return code: a 'partial' run (one step genuinely failed, but the
+    AniList/Postgres step itself still succeeded) exits 0, so the return code alone
+    would misreport it as a plain success. run_started_at guards against picking up a
+    stale row from a previous run if this run crashed before writing its own (e.g. the
+    subprocess couldn't even connect to Postgres to start logging).
+    """
+    sync_type = "force_full_resync" if force_full_resync else "full_sync"
+    row = db.fetchone(
+        "SELECT status, error_msg, steps, run_at FROM sync_log "
+        "WHERE user_id = %s AND type = %s ORDER BY id DESC LIMIT 1",
+        (user_id, sync_type),
+    )
+    if not row or row["run_at"] < run_started_at:
+        notify(user_id, "❌ Sync failed", "Anime Tracker — sync failed before it could record results. Check container logs.")
+        return
+
+    if row["status"] == "ok":
+        notify(user_id, "✅ Sync completed", "Anime Tracker — sync completed successfully.")
+        return
+
+    failed_steps = [s for s in (row["steps"] or []) if s.get("status") == "error"]
+    steps_text = "\n".join(f"- {s['service']}: {s.get('error_msg') or 'failed'}" for s in failed_steps) or None
+
+    if row["status"] == "partial":
+        # anilist_postgres itself succeeded — library data is current, only a
+        # secondary source (Crunchyroll/Netflix) needs attention. Distinct title from
+        # a total failure so this doesn't read as "your library data is stale."
+        body = (f"One or more sync steps failed, but your library data is up to date:\n{steps_text}"
+                if steps_text else (row["error_msg"] or "Anime Tracker — sync partially failed. Check container logs."))
+        notify(user_id, "⚠️ Sync partially failed", body)
+    else:
+        body = (f"One or more sync steps failed:\n{steps_text}"
+                if steps_text else (row["error_msg"] or "Anime Tracker — sync failed. Check container logs."))
+        notify(user_id, "❌ Sync failed", body)
 
 
 def _users_with_sync_credentials() -> list[dict]:
@@ -205,11 +257,6 @@ def _scheduled_full_sync() -> None:
             log.error("Unhandled error syncing user %s: %s", user_id, e)
             state["running"] = False
             state["last_result"] = "error"
-        result = state.get("last_result", "error")
-        if result == "ok":
-            notify(user_id, "✅ Daily sync completed", "Anime Tracker — daily sync completed successfully.")
-        else:
-            notify(user_id, "❌ Daily sync failed", "Anime Tracker — daily sync failed. Check container logs.")
 
 
 def _scheduled_recommender() -> None:
