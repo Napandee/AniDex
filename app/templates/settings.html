@@ -489,10 +489,10 @@ function renderStepChips(steps) {
   window.triggerSync = function (forceFullResync) {
     if (pollTimer) clearTimeout(pollTimer);
     if (forceFullResync && !confirm(
-      'This re-fetches your entire Crunchyroll history from scratch, ignoring normal ' +
-      'incremental sync. It can take significantly longer than Sync Now and may hit ' +
-      "Crunchyroll's rate limits. Use this only if a normal sync has drifted or stalled. " +
-      'Continue?'
+      'This re-fetches your entire Crunchyroll and Netflix history from scratch, ' +
+      'ignoring normal incremental sync for both. It can take significantly longer ' +
+      "than Sync Now and may hit either service's rate limits. Use this only if a " +
+      'normal sync has drifted or stalled. Continue?'
     )) return;
     btn.disabled = fullBtn.disabled = true;
     msg.hidden = true;
