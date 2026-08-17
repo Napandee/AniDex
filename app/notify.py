@@ -7,6 +7,7 @@ Discord/ntfy plug into the same protocol (see issues #54/#55).
 
 import html
 import logging
+import re
 from typing import Protocol
 
 import httpx
@@ -14,6 +15,15 @@ import httpx
 from app import config
 
 log = logging.getLogger("anime_tracker")
+
+# Discord webhook URLs are always this exact shape — used both to validate what a user
+# saves in Settings and, defensively, before ever sending. The host is otherwise fully
+# user-supplied, which without this check would let a user point the server at an
+# arbitrary internal address (SSRF) via their own notification settings.
+DISCORD_WEBHOOK_RE = re.compile(r"^https://(?:discord|discordapp)\.com/api/webhooks/\d+/[\w.\-]+$")
+
+# Discord's hard cap on a webhook message's `content` field.
+DISCORD_CONTENT_LIMIT = 2000
 
 
 class Channel(Protocol):
@@ -42,10 +52,32 @@ class TelegramChannel:
                 timeout=10,
             )
         except Exception as e:
-            log.warning("Telegram send failed for user %s: %s", user_id, e)
+            # Not str(e): httpx exceptions often embed the request URL, and the bot
+            # token lives in that URL — logging it verbatim would leak a credential.
+            log.warning("Telegram send failed for user %s: %s", user_id, type(e).__name__)
 
 
-CHANNELS: list[Channel] = [TelegramChannel()]
+class DiscordChannel:
+    key = "discord"
+
+    def is_configured(self, user_id: int) -> bool:
+        webhook_url = config.get(user_id, "discord_webhook_url")
+        return bool(webhook_url and DISCORD_WEBHOOK_RE.match(webhook_url))
+
+    def send(self, user_id: int, title: str, body: str) -> None:
+        webhook_url = config.get(user_id, "discord_webhook_url")
+        content = f"**{title}**\n{body}" if title else body
+        if len(content) > DISCORD_CONTENT_LIMIT:
+            content = content[: DISCORD_CONTENT_LIMIT - 1] + "…"
+        try:
+            httpx.post(webhook_url, json={"content": content}, timeout=10)
+        except Exception as e:
+            # Not str(e): the webhook URL itself is a bearer credential and often
+            # appears in httpx's exception message — logging it verbatim would leak it.
+            log.warning("Discord send failed for user %s: %s", user_id, type(e).__name__)
+
+
+CHANNELS: list[Channel] = [TelegramChannel(), DiscordChannel()]
 
 
 def notify(user_id: int, title: str, body: str) -> None:
