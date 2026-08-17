@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Anime Tracker{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=38">
+  <link rel="stylesheet" href="/static/style.css?v=39">
   <script src="/static/script.js?v=17" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
@@ -22,6 +22,11 @@
         <a href="/settings" class="nav-link">Settings</a>
         {% if nav_user and nav_user.is_admin %}
         <a href="/admin" class="nav-link">Admin</a>
+        {% endif %}
+        {% if nav_user %}
+        <form method="post" action="/auth/logout" class="nav-logout-form">
+          <button type="submit" class="nav-link nav-link-btn">Logout</button>
+        </form>
         {% endif %}
       </div>
       <form class="nav-search-form" action="/search" method="get">

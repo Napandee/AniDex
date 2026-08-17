@@ -37,6 +37,15 @@ nav {
 }
 .nav-link:hover { color: #ddd; }
 
+.nav-logout-form { display: contents; }
+.nav-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
 main {
   max-width: 1400px;
   margin: 0 auto;
