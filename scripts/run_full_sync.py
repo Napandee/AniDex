@@ -164,20 +164,26 @@ def _do_crunchyroll(
 
 
 def _do_netflix(
-    netflix_cookie_header: str, netflix_profile_guid: str, credentials_env: dict
+    netflix_cookie_header: str,
+    netflix_profile_guid: str,
+    credentials_env: dict,
+    force_full_resync: bool = False,
 ) -> tuple[str, int | None, str | None]:
     if not (netflix_cookie_header and netflix_profile_guid):
         log("Netflix — no credentials configured, skipping")
         return "skipped", None, None
 
-    log("Netflix — syncing → AniList")
+    log("Netflix — syncing → AniList" + (" (forced full resync)" if force_full_resync else ""))
+    extra_env = {
+        **credentials_env,
+        "NETFLIX_COOKIE_HEADER": netflix_cookie_header,
+        "NETFLIX_PROFILE_GUID": netflix_profile_guid,
+    }
+    if force_full_resync:
+        extra_env["FORCE_FULL_RESYNC"] = "1"
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_netflix.py")],
-        extra_env={
-            **credentials_env,
-            "NETFLIX_COOKIE_HEADER": netflix_cookie_header,
-            "NETFLIX_PROFILE_GUID": netflix_profile_guid,
-        },
+        extra_env=extra_env,
     )
     if not ok:
         return "error", None, "Netflix → AniList sync failed"
@@ -217,8 +223,9 @@ def _compute_overall_status(steps: list[dict]) -> str:
 
 def main() -> None:
     log("Starting full sync pipeline")
-    # Issue #20 — Crunchyroll-only override; see sync_crunchyroll.py's own
-    # FORCE_FULL_RESYNC handling. Netflix and AniList are unaffected.
+    # Issue #20 (Crunchyroll) / #21 (Netflix) — see sync_crunchyroll.py's and
+    # sync_netflix.py's own FORCE_FULL_RESYNC handling. AniList is unaffected — its
+    # step always does a fresh full read of the current AniList list state.
     force_full_resync = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in ("1", "true", "yes")
     sync_type = "force_full_resync" if force_full_resync else "full_sync"
     log_id = _start_log(sync_type)
@@ -247,7 +254,7 @@ def main() -> None:
 
     steps: list[dict] = []
     _run_step(log_id, steps, "crunchyroll", lambda: _do_crunchyroll(cr_etp_rt, credentials_env, force_full_resync))
-    _run_step(log_id, steps, "netflix", lambda: _do_netflix(netflix_cookie_header, netflix_profile_guid, credentials_env))
+    _run_step(log_id, steps, "netflix", lambda: _do_netflix(netflix_cookie_header, netflix_profile_guid, credentials_env, force_full_resync))
     _run_step(log_id, steps, "anilist_postgres", lambda: _do_anilist_postgres(credentials_env))
 
     overall_status = _compute_overall_status(steps)

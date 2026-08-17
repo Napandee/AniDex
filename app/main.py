@@ -1832,9 +1832,10 @@ async def trigger_sync(request: Request, background_tasks: BackgroundTasks):
 
 @app.post("/api/sync/full-resync")
 async def trigger_full_resync(request: Request, background_tasks: BackgroundTasks):
-    """Issue #20 — Crunchyroll-only forced re-walk, ignoring the stored watermark for
-    one run. Same single-flight guard as POST /api/sync since both ultimately touch
-    the same per-user cr_sync_state rows."""
+    """Issue #20 (Crunchyroll) + #21 (Netflix) — forced full re-walk of both providers'
+    watch history for one run, ignoring their stored watermarks. Same single-flight
+    guard as POST /api/sync since both ultimately touch the same per-user
+    cr_sync_state / netflix_sync_state rows."""
     user, denied = _require_user_api(request)
     if denied:
         return denied

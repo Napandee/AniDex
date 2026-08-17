@@ -82,6 +82,14 @@ NETFLIX_PROFILE_GUID = os.environ.get("NETFLIX_PROFILE_GUID", "")
 # as both a functional test and a real write to AniList.
 DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
+# Issue #21 — set by run_full_sync.py's Force Full Resync path to bypass the stored
+# watermark for one run. Mirrors sync_crunchyroll.py's FORCE_FULL_RESYNC handling; safe
+# here because _new_episode_count() still filters against each series' own per-series
+# watermark (nf_state_map[...]["last_seen_watched_at"]), which this flag doesn't touch —
+# only the global fetch watermark passed to fetch_since() is bypassed (issue #19 fixed
+# the progress math so that stays correct even on a full re-fetch).
+FORCE_FULL_RESYNC = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in ("1", "true", "yes")
+
 PAGE_SIZE = 50
 MAX_PAGES = 200  # safety cap — the fetch loop should always stop at the watermark
                   # well before this; this just prevents a runaway loop if Netflix's
@@ -496,6 +504,9 @@ def main():
         log(f"Loaded Netflix sync state for {len(nf_state_map)} series")
 
     watermark = compute_fetch_watermark(nf_state_map)
+    if FORCE_FULL_RESYNC:
+        log("FORCE_FULL_RESYNC set — ignoring stored watermark, re-fetching full history")
+        watermark = None
     log(f"Fetching Netflix viewing activity since {watermark or '(no watermark — first sync, full pull)'}")
 
     client = NetflixHistory(NETFLIX_COOKIE_HEADER, NETFLIX_PROFILE_GUID)
