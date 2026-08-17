@@ -17,3 +17,6 @@ CLAUDE.local.md
 
 # Compose data directories
 compose/postgres-data/
+
+# Per-checkout dev stack project name (scripts/dev/up.sh / down.sh)
+.dev-stack-project
