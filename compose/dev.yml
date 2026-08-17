@@ -1,12 +1,14 @@
 # Local dev/test stack — NOT the deploy mechanism (see anidex.yml/anidex-postgres.yml
 # for that). This builds the app image from the local Dockerfile instead of pulling
-# from GHCR, and uses ports distinct from the documented live-instance ports
-# (8889 / 5433, see CLAUDE.local.md) so it can run alongside a real deploy on the same
-# machine. See README's "Local development & pre-merge testing" section for the full
+# from GHCR. See README's "Local development & pre-merge testing" section for the full
 # workflow: up → register → seed → test in browser → down -v.
 #
-# Works with either `docker compose -f compose/dev.yml up --build` or
-# `podman compose -f compose/dev.yml up --build`.
+# Host ports are auto-assigned (not fixed) and this file is always run with a
+# project name scoped to the current checkout — use scripts/dev/up.sh and
+# scripts/dev/down.sh rather than invoking compose directly. Two worktrees/sessions
+# running this stack at once used to collide on shared fixed container names/ports
+# (compose_anidex-dev-postgres_1 / :28888), silently tearing down each other's
+# containers and wiping the throwaway Postgres volume — this fixes that.
 services:
   anidex-dev-postgres:
     image: postgres:16-alpine
@@ -15,7 +17,7 @@ services:
       POSTGRES_USER: anime_tracker
       POSTGRES_PASSWORD: devpass
     ports:
-      - "25432:5432"
+      - "5432"
     volumes:
       - ../schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z
     healthcheck:
@@ -40,4 +42,4 @@ services:
       # account/token. Never set this outside this dev-only compose file.
       ANILIST_MOCK: "1"
     ports:
-      - "28888:8888"
+      - "8888"

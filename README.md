@@ -129,24 +129,31 @@ The stack sets `ANILIST_MOCK=1`, which skips the live `SaveMediaListEntry` push 
 rating/status/progress endpoints so they can be exercised with no real AniList account —
 never set this outside `compose/dev.yml`.
 
-It runs on ports distinct from the documented live-instance ports (8889/5433) so it
-can coexist with a real deploy on the same machine. Works with `docker compose` or
-`podman compose` interchangeably — swap the binary name in the commands below.
+Host ports are auto-assigned rather than fixed, and `scripts/dev/up.sh` /
+`scripts/dev/down.sh` always run compose with a project name derived from this
+checkout's path — so multiple worktrees/sessions can each bring the stack up at the
+same time without colliding on shared container names or ports. (Fixed names/ports
+used to mean a second `up --build` from another worktree would silently tear down
+and recreate the first one's containers, wiping its throwaway Postgres volume — this
+is why raw `docker compose`/`podman compose` invocations against this file are no
+longer the documented path.) Use `docker compose` instead of `podman compose` by
+setting `COMPOSE_BIN="docker compose"` in the environment before running the scripts.
 
 **1. Bring up the stack** (builds the app image locally, auto-applies `schema.sql` on
-first boot via Postgres's init-script mount):
+first boot via Postgres's init-script mount, prints the assigned app port):
 
 ```bash
-docker compose -f compose/dev.yml up --build
+scripts/dev/up.sh
 ```
 
-**2. Register the first account** — visit `http://localhost:28888/auth/register`.
+**2. Register the first account** — visit `http://localhost:<printed-port>/auth/register`.
 Being the first user, it becomes admin automatically; no invite needed.
 
 **3. Seed some fake library data** so there's something to test against:
 
 ```bash
-docker exec -i $(docker compose -f compose/dev.yml ps -q anidex-dev-postgres) \
+${COMPOSE_BIN:-podman compose} -p "$(cat .dev-stack-project)" -f compose/dev.yml \
+  exec -T anidex-dev-postgres \
   psql -U anime_tracker -d anime_tracker \
   -v email="'you@example.com'" \
   -f - < scripts/dev_seed.sql
@@ -156,13 +163,13 @@ docker exec -i $(docker compose -f compose/dev.yml ps -q anidex-dev-postgres) \
 `library_entries` rows across a few statuses — enough to exercise drop/complete/status
 changes, filters, etc. without touching AniList.
 
-**4. Test in browser** at `http://localhost:28888`.
+**4. Test in browser** at `http://localhost:<printed-port>`.
 
-**5. Tear down** when done — `-v` also drops the throwaway Postgres volume, so nothing
+**5. Tear down** when done — also drops the throwaway Postgres volume, so nothing
 lingers between test runs:
 
 ```bash
-docker compose -f compose/dev.yml down -v
+scripts/dev/down.sh
 ```
 
 This stack is dev-only — it never touches `compose/anidex.yml` /
