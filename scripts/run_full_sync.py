@@ -72,17 +72,21 @@ def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None) 
     return result.returncode == 0
 
 
-def _start_log() -> int:
+def _start_log(sync_type: str) -> int:
     """INSERT the 'running' row for this pipeline run; returns its id. Steps get filled
     in incrementally via _update_log_steps as the run progresses, so a status/log poll
-    mid-run sees live per-step progress rather than nothing until the run finishes."""
+    mid-run sees live per-step progress rather than nothing until the run finishes.
+
+    sync_type is 'full_sync' for a normal run or 'force_full_resync' when
+    FORCE_FULL_RESYNC is set (issue #20) — recorded once here and never overwritten by
+    _finish_log()'s later UPDATE."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO sync_log (user_id, type, status, steps) VALUES (%s, %s, %s, %s) "
                 "RETURNING id",
-                (USER_ID, "full_sync", "running", "[]"),
+                (USER_ID, sync_type, "running", "[]"),
             )
             return cur.fetchone()[0]
     finally:
@@ -138,15 +142,20 @@ def _run_step(log_id: int, steps: list[dict], service: str, fn) -> str:
     return status
 
 
-def _do_crunchyroll(cr_etp_rt: str, credentials_env: dict) -> tuple[str, int | None, str | None]:
+def _do_crunchyroll(
+    cr_etp_rt: str, credentials_env: dict, force_full_resync: bool = False
+) -> tuple[str, int | None, str | None]:
     if not cr_etp_rt:
         log("Crunchyroll — no ETP-RT configured, skipping")
         return "skipped", None, None
 
-    log("Crunchyroll — syncing → AniList")
+    log("Crunchyroll — syncing → AniList" + (" (forced full resync)" if force_full_resync else ""))
+    extra_env = {**credentials_env, "CRUNCHYROLL_ETP_RT": cr_etp_rt}
+    if force_full_resync:
+        extra_env["FORCE_FULL_RESYNC"] = "1"
     ok = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
-        extra_env={**credentials_env, "CRUNCHYROLL_ETP_RT": cr_etp_rt},
+        extra_env=extra_env,
     )
     if not ok:
         return "error", None, "Crunchyroll → AniList sync failed"
@@ -208,7 +217,11 @@ def _compute_overall_status(steps: list[dict]) -> str:
 
 def main() -> None:
     log("Starting full sync pipeline")
-    log_id = _start_log()
+    # Issue #20 — Crunchyroll-only override; see sync_crunchyroll.py's own
+    # FORCE_FULL_RESYNC handling. Netflix and AniList are unaffected.
+    force_full_resync = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in ("1", "true", "yes")
+    sync_type = "force_full_resync" if force_full_resync else "full_sync"
+    log_id = _start_log(sync_type)
     settings = load_settings()
 
     # Resolve credentials: DB settings take priority over env vars (env var fallback
@@ -233,7 +246,7 @@ def main() -> None:
     }
 
     steps: list[dict] = []
-    _run_step(log_id, steps, "crunchyroll", lambda: _do_crunchyroll(cr_etp_rt, credentials_env))
+    _run_step(log_id, steps, "crunchyroll", lambda: _do_crunchyroll(cr_etp_rt, credentials_env, force_full_resync))
     _run_step(log_id, steps, "netflix", lambda: _do_netflix(netflix_cookie_header, netflix_profile_guid, credentials_env))
     _run_step(log_id, steps, "anilist_postgres", lambda: _do_anilist_postgres(credentials_env))
 

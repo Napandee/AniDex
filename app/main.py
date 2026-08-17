@@ -56,10 +56,12 @@ def _get_sync_state(user_id: int) -> dict:
     return _sync_state.setdefault(user_id, {"running": False, "last_result": None})
 
 
-def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT) -> None:
+def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_resync: bool = False) -> None:
     state = _get_sync_state(user_id)
     env = os.environ.copy()
     env["USER_ID"] = str(user_id)
+    if force_full_resync:
+        env["FORCE_FULL_RESYNC"] = "1"
     try:
         result = subprocess.run(
             [sys.executable, script],
@@ -1747,6 +1749,25 @@ async def trigger_sync(request: Request, background_tasks: BackgroundTasks):
     return JSONResponse({"status": "started"})
 
 
+@app.post("/api/sync/full-resync")
+async def trigger_full_resync(request: Request, background_tasks: BackgroundTasks):
+    """Issue #20 — Crunchyroll-only forced re-walk, ignoring the stored watermark for
+    one run. Same single-flight guard as POST /api/sync since both ultimately touch
+    the same per-user cr_sync_state rows."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    state = _get_sync_state(user["id"])
+    with _sync_lock:
+        if state["running"]:
+            return JSONResponse({"status": "already_running"})
+        state["running"] = True
+        state["last_result"] = None
+    background_tasks.add_task(_run_sync_task, user["id"], _FULL_SYNC_SCRIPT, True)
+    return JSONResponse({"status": "started"})
+
+
 @app.get("/api/sync/log")
 def sync_log(request: Request):
     user, denied = _require_user_api(request)
@@ -1779,7 +1800,7 @@ def sync_status(request: Request):
 
     state = _get_sync_state(user["id"])
     row = db.fetchone(
-        "SELECT status, steps FROM sync_log WHERE user_id = %s AND type = 'full_sync' "
+        "SELECT status, steps FROM sync_log WHERE user_id = %s AND type IN ('full_sync', 'force_full_resync') "
         "ORDER BY run_at DESC LIMIT 1",
         (user["id"],),
     )

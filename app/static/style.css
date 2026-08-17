@@ -498,6 +498,15 @@ main {
 }
 .btn-save:hover { background: #1d4ed8; }
 
+/* Secondary/caution action — visually de-emphasized vs .btn-save so it doesn't read
+   as equally routine (e.g. "Force Full Resync" next to "Sync Now", issue #20). */
+.btn-warning {
+  background: transparent;
+  color: #fbbf24;
+  border: 1px solid #fbbf24;
+}
+.btn-warning:hover { background: #78350f22; }
+
 .btn-cancel {
   padding: 0.5rem 1.25rem;
   background: transparent;

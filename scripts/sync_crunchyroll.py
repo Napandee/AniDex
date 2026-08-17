@@ -60,6 +60,9 @@ load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 CRUNCHYROLL_ETP_RT = os.environ.get("CRUNCHYROLL_ETP_RT", "")
+# Issue #20 — set by run_full_sync.py's Force Full Resync path to bypass the stored
+# watermark for one run. Mirrors sync_netflix.py's DRY_RUN env-var pattern.
+FORCE_FULL_RESYNC = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in ("1", "true", "yes")
 
 CR_API_BASE = "https://beta-api.crunchyroll.com"
 # Public web client id, embedded in CR's own web app — documented widely in
@@ -390,6 +393,9 @@ def main():
     log(f"Loaded CR sync state for {len(cr_state_map)} series")
 
     watermark = compute_fetch_watermark(cr_state_map)
+    if FORCE_FULL_RESYNC:
+        log("FORCE_FULL_RESYNC set — ignoring stored watermark, re-fetching full history")
+        watermark = None
     log(f"Fetching Crunchyroll watch history since {watermark or '(no watermark — first sync, full pull)'}")
 
     client = CrunchyrollHistory(CRUNCHYROLL_ETP_RT)
