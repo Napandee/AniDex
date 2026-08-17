@@ -115,6 +115,54 @@
     </form>
   </div>
 
+  {# ── Notifications ────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Notifications</h2>
+    <p class="settings-section-desc">
+      Where sync alerts, new-episode alerts, and the weekly digest get sent. Enable a
+      channel and fill in its details — leave secret fields blank to keep the existing
+      value.
+    </p>
+    {% if saved == 'notifications' %}<p class="settings-success">Notification settings saved.</p>{% endif %}
+
+    <form method="post" action="/settings/notifications">
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">Telegram</h3>
+
+        <div class="form-field form-field--checkbox">
+          <label class="form-checkbox-label">
+            <input type="checkbox" name="telegram_enabled" {% if settings.telegram_enabled != 'false' %}checked{% endif %}>
+            Enable Telegram notifications
+          </label>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="telegram_bot_token">
+            Bot token
+            <span class="form-label-hint">— from @BotFather</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="telegram_bot_token"
+                 name="telegram_bot_token" placeholder="{% if settings.telegram_bot_token %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="telegram_bot_token">Show</button>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="telegram_chat_id">
+            Chat ID
+            <span class="form-label-hint">— your Telegram user or chat ID the bot should message</span>
+          </label>
+          <input class="form-input" type="text" id="telegram_chat_id" name="telegram_chat_id"
+                 value="{{ settings.telegram_chat_id or '' }}" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Save notifications</button>
+      </div>
+    </form>
+  </div>
+
   {# ── Privacy ───────────────────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Privacy</h2>
