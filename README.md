@@ -29,22 +29,16 @@ and a recommendation engine scored against your own taste profile.
 - **Stats** — watch time, completion rate, score distribution, top genres and studios
 - **Crunchyroll sync** — watch history and progress synced from Crunchyroll into AniList,
   fetched directly via a cookie-authenticated client, no third-party tool (optional)
+- **Netflix sync** — watch history synced from Netflix's own viewing-activity API into
+  AniList progress, cookie-authenticated, incremental (optional)
 - **Telegram notifications** — new episode alerts, sync results, weekly digest (optional)
 
 ## Architecture
 
 ```
-Crunchyroll ──────────────────────────► sync_crunchyroll.py ──► AniList
-                                                                     │
-                                                              AniList GraphQL API
-                                                                     │
-                                                            sync_anilist.py
-                                                                     │
-                                                                Postgres
-                                                                     │
-                                                             FastAPI app
-                                                                     │
-                                                          http://localhost:8888
+Crunchyroll ──► sync_crunchyroll.py ──┐
+                                       ├──► AniList ──► sync_anilist.py ──► Postgres ──► FastAPI app ──► http://localhost:8888
+Netflix ──────► sync_netflix.py ──────┘
 ```
 
 The app includes a built-in scheduler (APScheduler) that runs the daily AniList sync and
@@ -55,7 +49,7 @@ weekly recommender automatically. Schedule is configurable via the Settings page
 - Docker and Docker Compose
 - An AniList account
 - A Postgres instance (a compose file is provided)
-- Optional: Crunchyroll account, Telegram bot, GitHub account for CI/CD
+- Optional: Crunchyroll account, Netflix account, Telegram bot, GitHub account for CI/CD
 
 ## Quick start
 
@@ -171,6 +165,19 @@ docker compose -f compose/dev.yml down -v
 This stack is dev-only — it never touches `compose/anidex.yml` /
 `compose/anidex-postgres.yml` or the real deploy pipeline.
 
+**Running the test suite** — unit tests for the sync scripts live under `tests/` and
+don't need Postgres or the dev stack running (`tests/conftest.py` stubs the env vars
+those scripts read at import time):
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Note CI (`pr-validate.yml`) doesn't run this suite — it builds the image and smoke-tests
+one rendered route instead. Run `pytest` locally before opening a PR that touches
+`scripts/*.py`.
+
 ## Getting your AniList token
 
 The AniList token is needed for write operations — rating anime, updating status, and
@@ -199,6 +206,37 @@ To get your Crunchyroll session cookie: log into crunchyroll.com in a browser, o
 DevTools → Application → Cookies → `https://www.crunchyroll.com`, and copy the value of
 the `etp_rt` cookie. Set it as `CRUNCHYROLL_ETP_RT` in your `.env` (or in Settings after
 first launch).
+
+Once set, it runs automatically as part of the daily sync — or trigger it anytime via
+the "Sync Now" button on the Settings page (or `POST /api/sync`).
+
+## Netflix sync (optional)
+
+If you watch on Netflix, the app can pull your viewing activity and push progress
+updates to AniList — same pattern as Crunchyroll sync above, runs inside the main app
+container as part of the same daily sync.
+
+> **Note:** this reads your Netflix session cookies directly against Netflix's own
+> (unofficial, undocumented) "Falcor" API — it isn't affiliated with or supported by
+> Netflix, and could stop working if Netflix changes their site. Same ToS caveat as
+> Crunchyroll sync above: using any tool that acts on your behalf with your session
+> credentials is ultimately your own call. This feature is entirely optional — skip it
+> if you'd rather not take that on.
+>
+> Netflix's viewing-activity feed has no absolute episode-ordinal field, so progress is
+> tracked by counting distinct new episodes since the last sync and adding that to
+> AniList's current progress, rather than setting an absolute number the way Crunchyroll
+> sync does. This is correct for watching in order, but can overcount if you watch out of
+> order or skip around — same as any sync mismatch in this app, it's a one-click manual
+> fix and never touches your score or notes.
+
+To get your Netflix credentials: log into netflix.com in a browser, open DevTools →
+Network, find any request to a `netflix.com` API endpoint, and copy the full `cookie`
+request header value (not just the `NetflixId`/`SecureNetflixId` cookies — the
+viewing-activity API checks several others too) as `NETFLIX_COOKIE_HEADER`. Then find the
+`guid` value in that same request's body/params and set it as `NETFLIX_PROFILE_GUID`.
+Set both in your `.env` (or in Settings after first launch). `scripts/dev/setup-netflix-env.sh`
+is an interactive helper for (re-)populating these when developing locally.
 
 Once set, it runs automatically as part of the daily sync — or trigger it anytime via
 the "Sync Now" button on the Settings page (or `POST /api/sync`).
@@ -256,6 +294,8 @@ for in-app notifications; this one's a GitHub Actions secret for repo maintainer
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No | Google OAuth login — fallback if not set via `/admin/oauth-settings` in the app |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | No | Discord OAuth login — same fallback pattern as Google above |
 | `CRUNCHYROLL_ETP_RT` | No | Crunchyroll session cookie — enables CR watch history sync |
+| `NETFLIX_COOKIE_HEADER` | No | Full Netflix session cookie header — enables Netflix watch history sync |
+| `NETFLIX_PROFILE_GUID` | No | Netflix profile guid — required alongside `NETFLIX_COOKIE_HEADER` |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram bot token — enables notifications |
 | `TELEGRAM_CHAT_ID` | No | Your Telegram chat ID — where notifications are sent |
 | `SESSION_SECRET_KEY` | Recommended | Signs session cookies. If unset, a random key is generated per process start and sessions won't survive a container restart — set this for any real deployment |
