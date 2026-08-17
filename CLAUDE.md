@@ -20,10 +20,10 @@ it all into one self-hosted page.
   per-instance, invite-only signup, admin-managed. See Decisions Made.
 - Cross-user "also watching" indicator (opt-in per-user hidden tags/genres and
   anonymized-activity controls; nothing surfaced by default) — see `app/privacy.py`.
-  Static/on-demand only; shipped as issue #22. Collaborative-filtering
+  Static/on-demand only; shipped as issue #29. Collaborative-filtering
   recommendations (weighting candidates by other users' ratings) shipped as
-  issue #27 — see `run_recommender.py`'s `fetch_cross_user_signal`/
-  `CROSS_USER_WEIGHT`. Issue #28 (rolling activity-feed banner, cross-user
+  issue #31 — see `run_recommender.py`'s `fetch_cross_user_signal`/
+  `CROSS_USER_WEIGHT`. Issue #16 (rolling activity-feed banner, cross-user
   episode comments) builds further on this and is still open, gated on an
   explicit scope decision — not in scope yet.
 - In-library search, plus a quick-add-by-title lookup against AniList (not a full catalog
@@ -213,6 +213,6 @@ file's own header comment before running it.
   container for this without a real new reason — isolation/scheduling needs the
   first one never actually served. `crunchyexporter-cli` itself (vendored via git
   into the main Dockerfile, the thing the "second container" duplicated the pin
-  of) was later retired entirely (issue #45) once `sync_crunchyroll.py` grew its
+  of) was later retired entirely (issue #35) once `sync_crunchyroll.py` grew its
   own direct-API fetch matching `sync_netflix.py`'s pattern — nothing in this repo
   vendors a third-party CR/Netflix client anymore.
