@@ -66,8 +66,14 @@ def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_res
     run_started_at = datetime.now(timezone.utc)
     try:
         result = subprocess.run(
+            # Issue #91 — this is now a last-resort safety net, not the primary timeout
+            # enforcement: run_full_sync.py gives each step (crunchyroll/netflix/
+            # anilist_postgres) its own timeout internally, so a slow step no longer
+            # starves the others. This outer ceiling comfortably covers the sum of all
+            # per-step budgets plus interpreter/DB-connect overhead, and only fires if
+            # something goes more wrong than a single step running long.
             [sys.executable, script],
-            capture_output=True, text=True, timeout=600, env=env,
+            capture_output=True, text=True, timeout=1500, env=env,
         )
         if result.returncode == 0:
             state["last_result"] = "ok"
@@ -78,6 +84,20 @@ def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_res
     except Exception as e:
         state["last_result"] = "error"
         log.error("Sync exception for user %s (%s): %s", user_id, script, e)
+        # Issue #91 — the subprocess was killed (or never started) before it could run
+        # its own _finish_log(), so the sync_log row it INSERTed via _start_log() is
+        # otherwise left orphaned at status='running' forever. Close it out here so the
+        # UI and sync history reflect reality instead of a permanently-stuck row. Scoped
+        # to status='running' so this can never clobber a row the subprocess already
+        # finished correctly.
+        try:
+            db.execute(
+                "UPDATE sync_log SET status = 'error', error_msg = %s "
+                "WHERE user_id = %s AND status = 'running'",
+                (f"Sync did not complete: {e}"[:800], user_id),
+            )
+        except Exception as db_e:
+            log.error("Could not close out orphaned sync_log row for user %s: %s", user_id, db_e)
     finally:
         state["running"] = False
 
