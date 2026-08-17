@@ -44,26 +44,84 @@ def test_is_episode_false_for_movie_item():
     assert nf._is_episode(MOVIE_ITEM) is False
 
 
-def test_aggregate_by_series_counts_distinct_episodes_deduped_by_movie_id():
+def test_aggregate_by_series_groups_raw_items_by_title():
     ep1 = {**EPISODE_ITEM, "movieID": 1, "date": 1000000}
     ep2 = {**EPISODE_ITEM, "movieID": 2, "date": 2000000}
-    dup_of_ep2 = {**EPISODE_ITEM, "movieID": 2, "date": 2000000}  # e.g. pagination overlap
-    result = nf.aggregate_by_series([ep1, ep2, dup_of_ep2])
-    assert result["The Night Agent"]["new_count"] == 2
+    result = nf.aggregate_by_series([ep1, ep2])
     assert result["The Night Agent"]["watched_format"] == "TV"
-
-
-def test_aggregate_by_series_tracks_most_recent_watched_at():
-    older = {**EPISODE_ITEM, "movieID": 1, "date": 1000000}
-    newer = {**EPISODE_ITEM, "movieID": 2, "date": 2000000}
-    result = nf.aggregate_by_series([older, newer])
-    assert result["The Night Agent"]["watched_at"] == nf._item_watched_at(newer)
+    assert result["The Night Agent"]["items"] == [
+        (1, nf._item_watched_at(ep1)),
+        (2, nf._item_watched_at(ep2)),
+    ]
 
 
 def test_aggregate_by_series_tags_movies_correctly():
     result = nf.aggregate_by_series([MOVIE_ITEM])
     assert result["Your Name."]["watched_format"] == "MOVIE"
-    assert result["Your Name."]["new_count"] == 1
+    assert result["Your Name."]["items"] == [
+        (MOVIE_ITEM["movieID"], nf._item_watched_at(MOVIE_ITEM)),
+    ]
+
+
+# ── _new_episode_count() — the #19 fix ────────────────────────────────────────
+# new_count must be computed against THIS series' own last_seen_watched_at, not
+# just whatever the fetch happened to return, so it stays correct even when the
+# fetch itself isn't watermark-bounded (a forced full re-fetch).
+
+def test_new_episode_count_dedupes_by_movie_id():
+    items = [
+        (1, datetime(2026, 1, 1, tzinfo=timezone.utc)),
+        (2, datetime(2026, 1, 2, tzinfo=timezone.utc)),
+        (2, datetime(2026, 1, 2, tzinfo=timezone.utc)),  # e.g. pagination overlap
+    ]
+    count, watched_at = nf._new_episode_count(items, None)
+    assert count == 2
+    assert watched_at == datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+
+def test_new_episode_count_no_watermark_counts_everything():
+    # First-ever sighting of a series (no stored state yet) — nothing to filter
+    # against, so the full batch counts, same as the pre-fix behavior.
+    items = [(i, datetime(2026, 1, i, tzinfo=timezone.utc)) for i in range(1, 13)]
+    count, watched_at = nf._new_episode_count(items, None)
+    assert count == 12
+
+
+def test_new_episode_count_filters_against_per_series_watermark():
+    # Normal incremental sync: watermark = this series' own last_seen_watched_at.
+    watermark = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    items = [(i, datetime(2026, 1, i, tzinfo=timezone.utc)) for i in range(1, 13)]
+    count, watched_at = nf._new_episode_count(items, watermark)
+    assert count == 2  # only ep 11 and 12 are newer than the watermark
+    assert watched_at == datetime(2026, 1, 12, tzinfo=timezone.utc)
+
+
+def test_new_episode_count_forced_full_refetch_matches_incremental_result():
+    # The actual #19 bug: simulating a forced full re-fetch (the whole 12-episode
+    # history reappears, not just the tail) must produce the SAME new_count as a
+    # normal incremental sync would have — not the whole historical count stacked
+    # on top of AniList's already-correct progress.
+    watermark = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    full_history = [(i, datetime(2026, 1, i, tzinfo=timezone.utc)) for i in range(1, 13)]
+    incremental_tail = [(i, datetime(2026, 1, i, tzinfo=timezone.utc)) for i in range(11, 13)]
+
+    full_count, _ = nf._new_episode_count(full_history, watermark)
+    incremental_count, _ = nf._new_episode_count(incremental_tail, watermark)
+    assert full_count == incremental_count == 2
+
+
+def test_new_episode_count_nothing_new_returns_none_watermark():
+    watermark = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    items = [(i, datetime(2026, 1, i, tzinfo=timezone.utc)) for i in range(1, 11)]
+    count, watched_at = nf._new_episode_count(items, watermark)
+    assert count == 0
+    assert watched_at is None
+
+
+def test_new_episode_count_falls_back_to_one_for_items_without_movie_id():
+    items = [(None, datetime(2026, 1, 1, tzinfo=timezone.utc))]
+    count, watched_at = nf._new_episode_count(items, None)
+    assert count == 1
 
 
 # ── process() state machine ──────────────────────────────────────────────────
