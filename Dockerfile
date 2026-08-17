@@ -9,4 +9,4 @@ COPY app/ app/
 COPY scripts/ scripts/
 
 EXPOSE 8888
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8888"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8888", "--proxy-headers", "--forwarded-allow-ips=*"]
