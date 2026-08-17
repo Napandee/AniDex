@@ -203,7 +203,19 @@ file's own header comment before running it.
   side effect of an ordinary login click. Reverse-proxy access control (Cloudflare
   Access, etc.) is still expected as an outer layer, especially while invite-only
   signup keeps this to a small trusted group — the app's own auth doesn't replace it,
-  it adds a second, inner gate.
+  it adds a second, inner gate. OAuth client id/secret are configured once,
+  instance-wide (`instance_config`, not per-user) — an invited user never sees or
+  enters a secret, they just click Connect/Sign-in and authenticate with their own
+  provider account, same as any "Sign in with Google" button anywhere. The one
+  per-user admin step that *does* exist is Google-specific, not something this app's
+  code controls: if the Google OAuth app is left in Google's "Testing" publishing
+  status (the norm here, to skip Google's app-verification review for a small
+  invite-only instance — see #7), Google restricts sign-in to accounts the admin has
+  explicitly added as a test user in the GCP console (OAuth consent screen →
+  Audience → Test users, cap 100), so a newly invited user can't complete Google
+  login until that's done. Discord has no equivalent gate for the `identify`/`email`
+  scopes this app requests — any Discord account can connect immediately. Verified
+  end-to-end for both providers 2026-08-17 (#7 Google, #60 Discord).
 - **License**: GPL-3.0. Dependency audit (Aug 2026) confirmed no dependency — including
   `crunchyexporter-cli`, vendored via git rather than pip — imposes a stricter license
   that would have constrained this choice.
