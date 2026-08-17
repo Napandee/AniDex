@@ -179,6 +179,46 @@
         </div>
       </div>
 
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">ntfy</h3>
+
+        <div class="form-field form-field--checkbox">
+          <label class="form-checkbox-label">
+            <input type="checkbox" name="ntfy_enabled" {% if settings.ntfy_enabled != 'false' %}checked{% endif %}>
+            Enable ntfy notifications
+          </label>
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="ntfy_topic">
+            Topic
+            <span class="form-label-hint">— pick a hard-to-guess name; anyone who knows it can subscribe on the public server</span>
+          </label>
+          <input class="form-input" type="text" id="ntfy_topic" name="ntfy_topic"
+                 value="{{ settings.ntfy_topic or '' }}" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="ntfy_server_url">
+            Server URL
+            <span class="form-label-hint">— defaults to the public ntfy.sh; set your own for a self-hosted server</span>
+          </label>
+          <input class="form-input" type="text" id="ntfy_server_url" name="ntfy_server_url"
+                 value="{{ settings.ntfy_server_url or '' }}" placeholder="https://ntfy.sh" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div class="form-field">
+          <label class="form-label" for="ntfy_auth_token">
+            Access token
+            <span class="form-label-hint">— optional, for a private topic or self-hosted server that requires auth</span>
+          </label>
+          <input class="form-input form-input--secret" type="password" id="ntfy_auth_token"
+                 name="ntfy_auth_token" placeholder="{% if settings.ntfy_auth_token %}set (leave blank to keep){% else %}not set{% endif %}"
+                 autocomplete="new-password">
+          <button type="button" class="btn-reveal" data-target="ntfy_auth_token">Show</button>
+        </div>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="btn-save">Save notifications</button>
       </div>

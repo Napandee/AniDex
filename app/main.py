@@ -25,7 +25,7 @@ log = logging.getLogger("anime_tracker")
 load_dotenv()
 
 from app import db, config, privacy
-from app.notify import DISCORD_WEBHOOK_RE, notify
+from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
     """Return this user's AniList token from settings DB."""
@@ -1693,6 +1693,10 @@ def settings_save_notifications(
     telegram_chat_id: str = Form(""),
     discord_enabled: str | None = Form(None),
     discord_webhook_url: str = Form(""),
+    ntfy_enabled: str | None = Form(None),
+    ntfy_server_url: str = Form(""),
+    ntfy_topic: str = Form(""),
+    ntfy_auth_token: str = Form(""),
 ):
     user, denied = _require_user(request)
     if denied:
@@ -1713,6 +1717,20 @@ def settings_save_notifications(
     # this page.
     if discord_webhook_url.strip() and DISCORD_WEBHOOK_RE.match(discord_webhook_url.strip()):
         config.set_value(user["id"], "discord_webhook_url", discord_webhook_url.strip())
+
+    config.set_value(user["id"], "ntfy_enabled", "true" if ntfy_enabled else "false")
+    config.set_value(user["id"], "ntfy_topic", ntfy_topic.strip())
+    # ntfy_server_url, unlike Discord's webhook host, is meant to be user-configurable
+    # (self-hosting is a supported use case) — only a scheme check plus a link-local
+    # block apply here (see ntfy_host_blocked's docstring for why that's the one range
+    # actually worth blocking, unlike RFC1918/loopback which are legitimate targets).
+    stripped_ntfy_url = ntfy_server_url.strip()
+    if not stripped_ntfy_url or (
+        stripped_ntfy_url.startswith(("http://", "https://")) and not ntfy_host_blocked(stripped_ntfy_url)
+    ):
+        config.set_value(user["id"], "ntfy_server_url", stripped_ntfy_url)
+    if ntfy_auth_token.strip():
+        config.set_value(user["id"], "ntfy_auth_token", ntfy_auth_token.strip())
 
     return RedirectResponse(url="/settings?saved=notifications", status_code=303)
 
