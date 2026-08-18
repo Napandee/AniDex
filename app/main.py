@@ -57,6 +57,27 @@ def _get_sync_state(user_id: int) -> dict:
     return _sync_state.setdefault(user_id, {"running": False, "last_result": None})
 
 
+def _close_out_orphaned_log(user_id: int, log_type: str, message: str) -> None:
+    """The subprocess was killed (or never started) before it could run its own
+    _finish_log(), so the sync_log row it INSERTed via _start_log() would otherwise be
+    left orphaned at status='running' forever (issue #91). Close it out here so the UI
+    and history reflect reality instead of a permanently-stuck row.
+
+    Scoped to this user's row of this specific `log_type` + status='running' — since
+    issue #84, sync_log holds more than one job type per user (full_sync/
+    force_full_resync/recommender), so a type-less filter here would risk closing out
+    the wrong job's concurrently-running row for the same user instead of this one's.
+    """
+    try:
+        db.execute(
+            "UPDATE sync_log SET status = 'error', error_msg = %s "
+            "WHERE user_id = %s AND type = %s AND status = 'running'",
+            (message[:800], user_id, log_type),
+        )
+    except Exception as db_e:
+        log.error("Could not close out orphaned %s sync_log row for user %s: %s", log_type, user_id, db_e)
+
+
 def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_resync: bool = False) -> None:
     state = _get_sync_state(user_id)
     env = os.environ.copy()
@@ -84,20 +105,8 @@ def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_res
     except Exception as e:
         state["last_result"] = "error"
         log.error("Sync exception for user %s (%s): %s", user_id, script, e)
-        # Issue #91 — the subprocess was killed (or never started) before it could run
-        # its own _finish_log(), so the sync_log row it INSERTed via _start_log() is
-        # otherwise left orphaned at status='running' forever. Close it out here so the
-        # UI and sync history reflect reality instead of a permanently-stuck row. Scoped
-        # to status='running' so this can never clobber a row the subprocess already
-        # finished correctly.
-        try:
-            db.execute(
-                "UPDATE sync_log SET status = 'error', error_msg = %s "
-                "WHERE user_id = %s AND status = 'running'",
-                (f"Sync did not complete: {e}"[:800], user_id),
-            )
-        except Exception as db_e:
-            log.error("Could not close out orphaned sync_log row for user %s: %s", user_id, db_e)
+        sync_type = "force_full_resync" if force_full_resync else "full_sync"
+        _close_out_orphaned_log(user_id, sync_type, f"Sync did not complete: {e}")
     finally:
         state["running"] = False
 
@@ -292,18 +301,7 @@ def _run_recommender_task(user_id: int) -> None:
             log.error("Recommender failed for user %s: %s", user_id, result.stderr[-800:])
     except Exception as e:
         log.error("Recommender exception for user %s: %s", user_id, e)
-        # Mirrors issue #91's orphaned-row cleanup for sync: the subprocess was killed
-        # (or never started) before it could run its own _finish_log(), so the
-        # sync_log row it INSERTed via _start_log() would otherwise sit at
-        # status='running' forever.
-        try:
-            db.execute(
-                "UPDATE sync_log SET status = 'error', error_msg = %s "
-                "WHERE user_id = %s AND type = 'recommender' AND status = 'running'",
-                (f"Recommender did not complete: {e}"[:800], user_id),
-            )
-        except Exception as db_e:
-            log.error("Could not close out orphaned recommender sync_log row for user %s: %s", user_id, db_e)
+        _close_out_orphaned_log(user_id, "recommender", f"Recommender did not complete: {e}")
 
     # Issue #84 — one alert per run, parity with #11's sync-failure alerting.
     try:

@@ -467,12 +467,14 @@ def _start_log() -> int:
 def _finish_log(log_id: int, status: str, entries_updated: int | None, error_msg: str | None) -> None:
     try:
         conn = psycopg2.connect(DATABASE_URL)
-        with conn, conn.cursor() as cur:
-            cur.execute(
-                "UPDATE sync_log SET status = %s, entries_updated = %s, error_msg = %s WHERE id = %s",
-                (status, entries_updated, error_msg, log_id),
-            )
-        conn.close()
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sync_log SET status = %s, entries_updated = %s, error_msg = %s WHERE id = %s",
+                    (status, entries_updated, error_msg, log_id),
+                )
+        finally:
+            conn.close()
     except Exception as e:
         print(f"Warning: could not finalize recommender sync log: {e}", file=sys.stderr)
 
