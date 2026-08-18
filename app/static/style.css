@@ -37,18 +37,20 @@ nav {
 }
 .nav-link:hover { color: #ddd; }
 
-.logout-fab-form {
+.account-fabs {
   position: fixed;
   top: 1.1rem;
   right: 1.5rem;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
-.logout-fab {
+
+.icon-fab, .logout-fab {
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: #7f1d1d;
-  color: #e2b8b8;
   border: none;
   cursor: pointer;
   display: flex;
@@ -57,6 +59,11 @@ nav {
   box-shadow: 0 2px 10px rgba(0,0,0,0.45);
   transition: background 0.15s, color 0.15s, transform 0.1s;
 }
+.icon-fab { background: #262626; color: #b3b3b3; text-decoration: none; }
+.icon-fab:hover { background: #333; color: #e0e0e0; transform: scale(1.08); }
+.icon-fab svg { width: 1.05rem; height: 1.05rem; }
+
+.logout-fab { background: #7f1d1d; color: #e2b8b8; }
 .logout-fab:hover { background: #3f1515; color: #fca5a5; transform: scale(1.08); }
 .logout-fab svg { width: 1.05rem; height: 1.05rem; }
 
@@ -1785,14 +1792,15 @@ body.auth-page main {
 
   .site-name { flex: 0 0 auto; white-space: nowrap; }
 
-  .nav-search-form { order: 2; flex: 1; min-width: 0; margin-right: 2.75rem; }
+  .nav-search-form { order: 2; flex: 1; min-width: 0; margin-right: 7rem; }
   .nav-search { width: 100%; }
   .nav-search:focus { width: 100%; }
 
-  /* leaves room for .logout-fab-form, which stays fixed top-right at all widths */
-  .logout-fab-form { top: 0.85rem; right: 1rem; }
-  .logout-fab { width: 1.75rem; height: 1.75rem; }
-  .logout-fab svg { width: 0.95rem; height: 0.95rem; }
+  /* leaves room for .account-fabs (settings/admin/logout), which stays fixed top-right
+     at all widths; margin-right above is sized for the 3-icon admin case */
+  .account-fabs { top: 0.85rem; right: 1rem; gap: 0.35rem; }
+  .icon-fab, .logout-fab { width: 1.75rem; height: 1.75rem; }
+  .icon-fab svg, .logout-fab svg { width: 0.95rem; height: 0.95rem; }
 
   .nav-links {
     order: 3;
