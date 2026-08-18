@@ -2449,6 +2449,37 @@ def stats_data(request: Request):
         """,
         (user["id"],),
     )
+    # Watch-activity heatmap (issue #10) — coarse granularity by design: the only
+    # per-day signal available without new instrumentation is `finish_date`
+    # (one date per completed series). Activity for a given day is approximated as
+    # the total progress (episodes watched) of series that finished that day, over
+    # a rolling 365-day window, zero-filled so the frontend can render a full grid
+    # without guessing which days are missing. See CLAUDE.md Out of scope note on
+    # this issue — no new progress-history table.
+    heatmap_rows = db.fetchall(
+        """
+        WITH date_range AS (
+            SELECT generate_series(
+                (CURRENT_DATE - INTERVAL '364 days')::date,
+                CURRENT_DATE,
+                '1 day'::interval
+            )::date AS day
+        ),
+        activity AS (
+            SELECT finish_date AS day, COALESCE(SUM(progress), 0) AS cnt
+            FROM library_entries
+            WHERE user_id = %s
+              AND finish_date IS NOT NULL
+              AND finish_date >= CURRENT_DATE - INTERVAL '364 days'
+            GROUP BY finish_date
+        )
+        SELECT dr.day, COALESCE(a.cnt, 0) AS cnt
+        FROM date_range dr
+        LEFT JOIN activity a ON a.day = dr.day
+        ORDER BY dr.day
+        """,
+        (user["id"],),
+    )
     completed = int(totals["completed"])
     dropped = int(totals["dropped"])
     completion_rate = round(completed / (completed + dropped) * 100) if (completed + dropped) > 0 else None
@@ -2460,6 +2491,7 @@ def stats_data(request: Request):
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
         "genres": [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows],
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
+        "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),

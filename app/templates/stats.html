@@ -34,6 +34,27 @@
       <h2 class="chart-title">Completed by year</h2>
       <canvas id="chart-year"></canvas>
     </div>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">Watch activity</h2>
+      <div class="heatmap-wrap">
+        <div class="heatmap-months" id="heatmap-months"></div>
+        <div class="heatmap-body">
+          <div class="heatmap-daylabels">
+            <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+          </div>
+          <div class="heatmap-grid" id="heatmap-grid"></div>
+        </div>
+        <div class="heatmap-legend">
+          <span>Less</span>
+          <span class="heatmap-cell" data-level="0"></span>
+          <span class="heatmap-cell" data-level="1"></span>
+          <span class="heatmap-cell" data-level="2"></span>
+          <span class="heatmap-cell" data-level="3"></span>
+          <span class="heatmap-cell" data-level="4"></span>
+          <span>More</span>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -145,6 +166,62 @@
       },
     },
   });
+
+  // Watch-activity heatmap (issue #10) — one cell per day, shaded by episodes
+  // watched that day (approximated via completions' finish_date, see /api/stats).
+  (function renderHeatmap(days) {
+    const grid = document.getElementById('heatmap-grid');
+    const monthsRow = document.getElementById('heatmap-months');
+    if (!days || !days.length) return;
+
+    const maxCount = Math.max(...days.map(d => d.count));
+    function levelFor(count) {
+      if (count <= 0) return 0;
+      if (maxCount <= 0) return 0;
+      const ratio = count / maxCount;
+      if (ratio <= 0.25) return 1;
+      if (ratio <= 0.5) return 2;
+      if (ratio <= 0.75) return 3;
+      return 4;
+    }
+
+    // Pad leading empty cells so the first real day lands on its correct
+    // weekday row (grid flows column-by-column, one column per week).
+    const firstDow = new Date(days[0].date + 'T00:00:00').getDay(); // 0=Sun..6=Sat
+    for (let i = 0; i < firstDow; i++) {
+      const pad = document.createElement('span');
+      pad.className = 'heatmap-cell heatmap-cell--pad';
+      grid.appendChild(pad);
+    }
+
+    let lastMonth = null;
+    days.forEach((d, i) => {
+      const cell = document.createElement('span');
+      const level = levelFor(d.count);
+      cell.className = 'heatmap-cell';
+      cell.dataset.level = String(level);
+      const label = d.count === 1 ? '1 episode' : `${d.count} episodes`;
+      cell.title = `${d.date}: ${label}`;
+      grid.appendChild(cell);
+
+      // Label the month at the start of the week column it first appears in.
+      const dt = new Date(d.date + 'T00:00:00');
+      const month = dt.getMonth();
+      const colIndex = Math.floor((i + firstDow) / 7);
+      if (month !== lastMonth && dt.getDate() <= 7) {
+        lastMonth = month;
+        const lbl = document.createElement('span');
+        lbl.className = 'heatmap-month-label';
+        lbl.style.gridColumnStart = String(colIndex + 1);
+        lbl.textContent = dt.toLocaleString('default', { month: 'short' });
+        monthsRow.appendChild(lbl);
+      }
+    });
+
+    const totalCols = Math.ceil((days.length + firstDow) / 7);
+    grid.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
+    monthsRow.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
+  })(data.heatmap);
 }());
 </script>
 {% endblock %}
