@@ -10,6 +10,10 @@ The `dismissed` flag on existing rows is never touched by this script.
 Single-user, invoked once per user by app/main.py's _scheduled_recommender() (which
 sets USER_ID) or directly for local dev/testing.
 
+Each run writes a `sync_log` row (type='recommender') via _start_log/_finish_log below
+— issue #84, giving this job the same run-history/failure-alerting visibility that
+run_full_sync.py already has for sync (issue #11).
+
 Usage:
     USER_ID=1 python scripts/run_recommender.py
 """
@@ -439,10 +443,48 @@ def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
 
 
 # ---------------------------------------------------------------------------
+# sync_log — issue #84, parity with run_full_sync.py's _start_log/_finish_log so a
+# recommender run is queryable the same way a sync run is (GET /api/sync/log already
+# returns every type for the logged-in user, and the frontend already renders
+# type == 'recommender' rows — see settings.html's fmtType()). No per-step `steps`
+# breakdown here since this script isn't a multi-step pipeline like run_full_sync.py.
+# ---------------------------------------------------------------------------
+
+def _start_log() -> int:
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sync_log (user_id, type, status) VALUES (%s, 'recommender', 'running') "
+                "RETURNING id",
+                (USER_ID,),
+            )
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _finish_log(log_id: int, status: str, entries_updated: int | None, error_msg: str | None) -> None:
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE sync_log SET status = %s, entries_updated = %s, error_msg = %s WHERE id = %s",
+                    (status, entries_updated, error_msg, log_id),
+                )
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"Warning: could not finalize recommender sync log: {e}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    log_id = _start_log()
     conn = psycopg2.connect(DATABASE_URL)
     try:
         print("Step 1/4 — Building taste profile from library...")
@@ -483,9 +525,11 @@ def main() -> None:
         print(f"\nStep 4/4 — Scoring and storing {len(all_candidate_ids)} candidates...")
         n = score_and_store(conn, all_candidate_ids, profile)
         print(f"\nDone — {n} recommendations scored and stored.")
+        _finish_log(log_id, "ok", n, None)
 
     except Exception as e:
         print(f"\nERROR: {e}", file=sys.stderr)
+        _finish_log(log_id, "error", None, str(e)[:800])
         raise
     finally:
         conn.close()

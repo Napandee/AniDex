@@ -22,6 +22,7 @@
           <th>Last login</th>
           <th>Login status</th>
           <th>Last sync</th>
+          <th>Last recommender</th>
           <th></th>
         </tr>
       </thead>
@@ -46,6 +47,17 @@
             {% if u.last_sync.error_msg %}<br><span class="status-error" title="{{ u.last_sync.error_msg }}">{{ u.last_sync.error_msg[:60] }}{% if u.last_sync.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
             {% else %}
             <span class="status-empty">never synced</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.last_recommender %}
+            <span class="{% if u.last_recommender.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
+              {{ u.last_recommender.status }}
+            </span>
+            — {{ u.last_recommender.run_at.strftime('%Y-%m-%d %H:%M') if u.last_recommender.run_at else '' }}
+            {% if u.last_recommender.error_msg %}<br><span class="status-error" title="{{ u.last_recommender.error_msg }}">{{ u.last_recommender.error_msg[:60] }}{% if u.last_recommender.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
+            {% else %}
+            <span class="status-empty">never run</span>
             {% endif %}
           </td>
           <td>
