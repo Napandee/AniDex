@@ -2446,20 +2446,39 @@ def outbox_status(request: Request):
 
 
 @app.get("/api/stats")
-def stats_data(request: Request):
+def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
+    # "Year in anime" wrap-up filter (issue #78) — optional, additive scoping of every
+    # aggregate below to a single release year (and optionally season), using the same
+    # a.season_year / a.season columns the "Completed by year" breakdown already groups
+    # by. Omitted entirely, behavior is identical to the unfiltered stats page.
+    wrap_conditions = []
+    wrap_params: list = []
+    applied_season = None
+    if year is not None:
+        wrap_conditions.append("a.season_year = %s")
+        wrap_params.append(year)
+    if season is not None and season.upper() in {"WINTER", "SPRING", "SUMMER", "FALL"}:
+        applied_season = season.upper()
+        wrap_conditions.append("a.season = %s")
+        wrap_params.append(applied_season)
+    wrap_filter_sql = (" AND " + " AND ".join(wrap_conditions)) if wrap_conditions else ""
+
     status_rows = db.fetchall(
-        "SELECT status, COUNT(*) AS cnt FROM library_entries WHERE user_id = %s "
-        "GROUP BY status ORDER BY cnt DESC",
-        (user["id"],),
+        "SELECT le.status, COUNT(*) AS cnt FROM library_entries le "
+        "JOIN anime a ON a.id = le.anime_id WHERE le.user_id = %s" + wrap_filter_sql + " "
+        "GROUP BY le.status ORDER BY cnt DESC",
+        (user["id"], *wrap_params),
     )
     score_rows = db.fetchall(
-        "SELECT score::int AS score, COUNT(*) AS cnt FROM library_entries "
-        "WHERE score IS NOT NULL AND user_id = %s GROUP BY score ORDER BY score",
-        (user["id"],),
+        "SELECT le.score::int AS score, COUNT(*) AS cnt FROM library_entries le "
+        "JOIN anime a ON a.id = le.anime_id "
+        "WHERE le.score IS NOT NULL AND le.user_id = %s" + wrap_filter_sql + " "
+        "GROUP BY le.score ORDER BY le.score",
+        (user["id"], *wrap_params),
     )
     genre_rows = db.fetchall(
         """
@@ -2467,10 +2486,10 @@ def stats_data(request: Request):
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id,
              jsonb_array_elements_text(a.genres) AS genre
-        WHERE le.status = 'COMPLETED' AND le.user_id = %s
+        WHERE le.status = 'COMPLETED' AND le.user_id = %s""" + wrap_filter_sql + """
         GROUP BY genre ORDER BY cnt DESC LIMIT 12
         """,
-        (user["id"],),
+        (user["id"], *wrap_params),
     )
     year_rows = db.fetchall(
         """
@@ -2493,9 +2512,9 @@ def stats_data(request: Request):
             ROUND(AVG(le.score) FILTER (WHERE le.score IS NOT NULL AND le.score > 0), 1) AS mean_score
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
-        WHERE le.user_id = %s
+        WHERE le.user_id = %s""" + wrap_filter_sql + """
         """,
-        (user["id"],),
+        (user["id"], *wrap_params),
     )
     # Watch-activity heatmap (issue #10) — coarse granularity by design: the only
     # per-day signal available without new instrumentation is `finish_date`
@@ -2534,10 +2553,12 @@ def stats_data(request: Request):
     watch_minutes = int(totals["watch_minutes"])
     watch_hours = watch_minutes // 60
     watch_days = round(watch_minutes / 1440, 1)
+    genres_out = [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows]
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
-        "genres": [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows],
+        "genres": genres_out,
+        "top_genre": genres_out[0]["genre"] if genres_out else None,
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
         "totals": {
@@ -2549,6 +2570,7 @@ def stats_data(request: Request):
             "completion_rate": completion_rate,
             "mean_score": float(totals["mean_score"]) if totals["mean_score"] else None,
         },
+        "wrap_filter": {"year": year, "season": applied_season},
     })
 
 

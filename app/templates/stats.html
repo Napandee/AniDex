@@ -17,6 +17,33 @@
     <div class="stat-headline"><span class="stat-num" id="hl-meanscore">—</span><span class="stat-label">Mean score</span></div>
   </div>
 
+  <!-- "Year in anime" wrap-up (issue #78) — combines existing /api/stats aggregates
+       (watch time, top genre, completion count) into a single filterable summary,
+       rather than a new data pipeline. Self-contained block: its own fetch, its own
+       DOM, no changes to the charts/headlines above. -->
+  <div class="chart-card chart-card--wide wrapup-card" id="wrapup-card">
+    <div class="wrapup-header">
+      <h2 class="chart-title">Year in anime</h2>
+      <div class="wrapup-controls">
+        <select id="wrapup-year" aria-label="Year"></select>
+        <select id="wrapup-season" aria-label="Season (optional)">
+          <option value="">All seasons</option>
+          <option value="WINTER">Winter</option>
+          <option value="SPRING">Spring</option>
+          <option value="SUMMER">Summer</option>
+          <option value="FALL">Fall</option>
+        </select>
+      </div>
+    </div>
+    <div class="wrapup-body" id="wrapup-body">
+      <div class="wrapup-stat"><span class="stat-num" id="wrapup-completed">—</span><span class="stat-label">Completed</span></div>
+      <div class="wrapup-stat"><span class="stat-num" id="wrapup-watchtime">—</span><span class="stat-label">Watch time</span></div>
+      <div class="wrapup-stat"><span class="stat-num" id="wrapup-genre">—</span><span class="stat-label">Top genre</span></div>
+      <div class="wrapup-stat"><span class="stat-num" id="wrapup-rate">—</span><span class="stat-label">Completion rate</span></div>
+    </div>
+    <p class="wrapup-empty" id="wrapup-empty" hidden>Nothing completed for this year yet.</p>
+  </div>
+
   <div class="stats-grid">
     <div class="chart-card">
       <h2 class="chart-title">Library status</h2>
@@ -222,6 +249,53 @@
     grid.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
     monthsRow.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
   })(data.heatmap);
+
+  // "Year in anime" wrap-up (issue #78) — reuses /api/stats via its year/season query
+  // params rather than a new endpoint; every field below already exists in the same
+  // JSON shape the charts above consume.
+  (function initWrapup(years) {
+    const yearSelect = document.getElementById('wrapup-year');
+    const seasonSelect = document.getElementById('wrapup-season');
+    if (!years || !years.length) {
+      document.getElementById('wrapup-card').hidden = true;
+      return;
+    }
+
+    // by_year is ascending; show most recent first, default to the most recent year.
+    const sortedYears = years.map(d => d.year).sort((a, b) => b - a);
+    yearSelect.innerHTML = sortedYears.map(y => `<option value="${y}">${y}</option>`).join('');
+    yearSelect.value = String(sortedYears[0]);
+
+    async function loadWrapup() {
+      const y = yearSelect.value;
+      const s = seasonSelect.value;
+      const params = new URLSearchParams({ year: y });
+      if (s) params.set('season', s);
+      const wrap = await fetch(`/api/stats?${params}`).then(r => r.json());
+
+      const body = document.getElementById('wrapup-body');
+      const empty = document.getElementById('wrapup-empty');
+      if (!wrap.totals.completed) {
+        body.hidden = true;
+        empty.hidden = false;
+        return;
+      }
+      body.hidden = false;
+      empty.hidden = true;
+
+      document.getElementById('wrapup-completed').textContent = wrap.totals.completed;
+      const wh = wrap.totals.watch_hours;
+      document.getElementById('wrapup-watchtime').textContent =
+        wh >= 24 ? `${wrap.totals.watch_days}d` : `${wh}h`;
+      document.getElementById('wrapup-genre').textContent = wrap.top_genre || '—';
+      document.getElementById('wrapup-rate').textContent =
+        wrap.totals.completion_rate != null ? `${wrap.totals.completion_rate}%` : '—';
+    }
+
+    yearSelect.addEventListener('change', loadWrapup);
+    seasonSelect.addEventListener('change', loadWrapup);
+    loadWrapup();
+  })(data.by_year);
 }());
 </script>
 {% endblock %}
