@@ -436,6 +436,20 @@
     <a href="/api/export" class="btn-save" download>Download library.json</a>
   </div>
 
+  {# ── Data import (issue #87) — restores the personal layer from a previously
+     downloaded library.json. Self-contained block: its own markup here, its own
+     <script> at the end of the file, no shared state with any other section on
+     this page. #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Data import</h2>
+    <p class="settings-section-desc">Restore drop reasons, notes, tags, and queue priority from a previously exported library.json. Matched by AniList id — only ever writes to your own account, and existing notes are only overwritten after you confirm.</p>
+    <input type="file" id="import-file-input" accept="application/json,.json" class="form-input" style="max-width: 320px;">
+    <div class="form-actions">
+      <button type="button" id="import-btn" class="btn-save" disabled>Import</button>
+    </div>
+    <div id="import-msg" class="import-msg" hidden></div>
+  </div>
+
 </div>
 
 <script>
@@ -619,6 +633,87 @@ function renderStepChips(steps) {
 
   poll();
   setInterval(poll, 10000);
+}());
+</script>
+
+{# ── Data import script (issue #87) — deliberately its own <script> tag,
+   separate from the block above, so this feature never needs to touch
+   whatever else is going on in that IIFE. #}
+<script>
+(function () {
+  var fileInput = document.getElementById('import-file-input');
+  var btn = document.getElementById('import-btn');
+  var msg = document.getElementById('import-msg');
+
+  function setImportMsg(text, kind) {
+    msg.textContent = text;
+    msg.className = 'import-msg import-msg--' + kind;
+    msg.hidden = false;
+  }
+
+  fileInput.addEventListener('change', function () {
+    btn.disabled = !fileInput.files.length;
+    msg.hidden = true;
+  });
+
+  function doImport(entries, confirmOverwrite) {
+    btn.disabled = true;
+    return fetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries: entries, confirm: confirmOverwrite }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.requires_confirmation) {
+          var count = data.overwrite_count;
+          var proceed = confirm(
+            'This will overwrite ' + count + ' existing note' + (count === 1 ? '' : 's') +
+            '. Continue?'
+          );
+          if (proceed) return doImport(entries, true);
+          setImportMsg('Import cancelled — no changes made.', 'partial');
+          btn.disabled = false;
+          return;
+        }
+        if (data.ok) {
+          var parts = [data.imported + ' imported'];
+          if (data.overwritten) parts.push(data.overwritten + ' overwritten');
+          if (data.unmatched_count) parts.push(data.unmatched_count + ' skipped (not in your library)');
+          setImportMsg('Import complete — ' + parts.join(', ') + '.', 'ok');
+        } else {
+          setImportMsg(data.error || 'Import failed.', 'error');
+        }
+        btn.disabled = false;
+      })
+      .catch(function () {
+        setImportMsg('Could not reach server.', 'error');
+        btn.disabled = false;
+      });
+  }
+
+  btn.addEventListener('click', function () {
+    var file = fileInput.files[0];
+    if (!file) return;
+    msg.hidden = true;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var entries;
+      try {
+        entries = JSON.parse(reader.result);
+      } catch (e) {
+        setImportMsg('That file is not valid JSON.', 'error');
+        return;
+      }
+      if (!Array.isArray(entries)) {
+        setImportMsg('Expected a library.json export (a JSON array).', 'error');
+        return;
+      }
+      doImport(entries, false);
+    };
+    reader.onerror = function () { setImportMsg('Could not read that file.', 'error'); };
+    reader.readAsText(file);
+  });
 }());
 </script>
 {% endblock %}

@@ -2010,3 +2010,11 @@ body.auth-page main {
   /* ── Stats headlines — 2 per row ──────────────────────────────────────── */
   .stats-headlines { display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Data import status message (issue #87 — Settings "Data import") ────────
+   Own class, deliberately not reusing .sync-msg, so this doesn't depend on
+   naming from the sync/outbox-status UI landing in settings.html separately. */
+.import-msg { font-size: 0.82rem; margin-top: 0.6rem; padding: 0.4rem 0.6rem; border-radius: 4px; }
+.import-msg--ok { color: #86efac; background: #14532d22; }
+.import-msg--error { color: #fca5a5; background: #7f1d1d22; }
+.import-msg--partial { color: #fbbf24; background: #78350f22; }
