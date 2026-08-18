@@ -1417,13 +1417,16 @@ def _require_user_api(request: Request):
     return user, None
 
 
-@app.get("/recommendations", response_class=HTMLResponse)
-def recommendations(request: Request):
-    user, denied = _require_user(request)
-    if denied:
-        return denied
+SNOOZE_DAYS = 30  # v1 fixed duration for "not now" (issue #75) — no picker yet;
+                  # revisit only if a fixed 30 days turns out to not be enough.
 
-    rows = db.fetchall(
+
+def _fetch_visible_recommendations(user_id: int) -> list[dict]:
+    """Recommendation rows visible to `user_id`: not permanently dismissed, and not
+    currently snoozed (issue #75). Broken out of recommendations() so the exclusion
+    logic is directly testable against a real Postgres without needing to fake a
+    full Request/session — see tests/test_recommendation_snooze.py."""
+    return db.fetchall(
         """
         SELECT
             a.id,
@@ -1438,12 +1441,23 @@ def recommendations(request: Request):
             rs.reason
         FROM recommendation_scores rs
         JOIN anime a ON a.id = rs.anime_id
-        WHERE rs.dismissed = false AND rs.user_id = %s
+        WHERE rs.dismissed = false
+          AND (rs.snoozed_until IS NULL OR rs.snoozed_until <= now())
+          AND rs.user_id = %s
         ORDER BY rs.score DESC
         LIMIT 100
         """,
-        (user["id"],),
+        (user_id,),
     )
+
+
+@app.get("/recommendations", response_class=HTMLResponse)
+def recommendations(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    rows = _fetch_visible_recommendations(user["id"])
     # Build genre → completed_anime index for "similar to" lookup
     completed = db.fetchall(
         """
@@ -1499,6 +1513,26 @@ async def dismiss(anime_id: int, request: Request):
         (anime_id, user["id"]),
     )
     return RedirectResponse(url="/recommendations", status_code=303)
+
+
+@app.post("/recommendations/{anime_id}/snooze")
+async def snooze(anime_id: int, request: Request):
+    """Time-boxed "not now" (issue #75) — distinct from the permanent dismiss above.
+    Hides the entry from the recommendations view for SNOOZE_DAYS; it resurfaces
+    automatically once snoozed_until passes, and a recommender rebuild in the
+    meantime doesn't reset or shorten it (see run_recommender.py's score_and_store,
+    which never touches snoozed_until, same as it never touches dismissed)."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    db.execute(
+        "UPDATE recommendation_scores "
+        "SET snoozed_until = now() + make_interval(days => %s) "
+        "WHERE anime_id = %s AND user_id = %s",
+        (SNOOZE_DAYS, anime_id, user["id"]),
+    )
+    return JSONResponse({"ok": True})
 
 
 def _also_watching(anime_id: int, viewer_user_id: int, genres: list[str] | None) -> list[dict]:

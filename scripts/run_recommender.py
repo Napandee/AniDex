@@ -5,7 +5,9 @@ Standalone recommender script.
 Builds a taste profile from the user's library (completed/watching/planning),
 fetches candidate anime via AniList's recommendations API, scores them, and
 upserts results into recommendation_scores. Re-runnable and idempotent.
-The `dismissed` flag on existing rows is never touched by this script.
+The `dismissed` flag on existing rows is never touched by this script, and
+neither is `snoozed_until` (issue #75's time-boxed "not now") — both are user
+decisions that must survive a rebuild.
 
 Single-user, invoked once per user by app/main.py's _scheduled_recommender() (which
 sets USER_ID) or directly for local dev/testing.
@@ -436,7 +438,10 @@ def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
                     score       = EXCLUDED.score,
                     reason      = EXCLUDED.reason,
                     computed_at = now()
-                    -- dismissed is intentionally excluded: user decisions survive re-runs
+                    -- dismissed and snoozed_until are intentionally excluded from this
+                    -- SET clause: both are user decisions that must survive re-runs
+                    -- (issue #75 extends the original dismissed-preservation guarantee
+                    -- to cover the new time-boxed "not now" snooze too).
             """, (USER_ID, anime_id, score, json.dumps(reason)))
     conn.commit()
     return len(scored)

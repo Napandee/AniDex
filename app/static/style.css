@@ -1233,6 +1233,9 @@ body.auth-page main {
   white-space: nowrap;
 }
 .dismiss-chip:hover { border-color: #ef4444; color: #ef4444; }
+/* "Not now" (issue #75) is a time-boxed snooze, not a permanent dismiss — amber
+   hover instead of the dismiss chips' red, so the two actions read as distinct. */
+.snooze-chip:hover { border-color: #f59e0b; color: #f59e0b; }
 
 .seen-it-hint { font-size: 0.78rem; color: #666; margin: 0; }
 .seen-it-stars { display: flex; gap: 0.4rem; font-size: 1.6rem; cursor: pointer; }
