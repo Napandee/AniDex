@@ -1,0 +1,48 @@
+{
+  "nav_library": "Library",
+  "nav_upcoming": "Upcoming",
+  "nav_queue": "Queue",
+  "nav_recommended": "Recommended",
+  "nav_stats": "Stats",
+  "nav_search_placeholder": "Search…",
+  "nav_settings_title": "Settings",
+  "nav_admin_title": "Admin",
+  "nav_logout_title": "Log out",
+
+  "title_login": "Log in — Anime Tracker",
+  "title_register": "Create account — Anime Tracker",
+  "title_reset_password": "Reset password — Anime Tracker",
+  "title_settings": "Settings — Anime Tracker",
+
+  "login_title": "Log in",
+  "email_label": "Email",
+  "email_placeholder": "email@example.com",
+  "password_label": "Password",
+  "login_password_placeholder": "password",
+  "login_submit": "Log in",
+  "login_or_divider": "or",
+  "login_with_google": "Log in with Google",
+  "login_with_discord": "Log in with Discord",
+  "need_account": "Need an account?",
+
+  "register_title": "Create account",
+  "password_placeholder_min8": "min 8 characters",
+  "register_submit": "Create account",
+  "already_have_account": "Already have an account?",
+
+  "reset_password_title": "Set a new password",
+  "new_password_label": "New password",
+  "reset_password_submit": "Set password",
+  "reset_invalid_title": "Invalid or expired link",
+  "reset_invalid_body": "This password reset link is invalid, expired, or already used. Ask an admin to generate a new one.",
+
+  "settings_page_title": "Settings",
+  "settings_page_sub": "Preferences and credentials for this tracker.",
+  "settings_section_display": "Display",
+  "settings_saved": "Saved.",
+  "settings_timezone_label": "Timezone",
+  "settings_timezone_hint": "— used for all date and time display",
+  "settings_language_label": "Language",
+  "settings_language_hint": "— UI language for this account",
+  "settings_save_button": "Save"
+}

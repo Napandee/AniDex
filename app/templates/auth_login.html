@@ -1,38 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Log in — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_login') }}{% endblock %}
 {% block bodyclass %}auth-page{% endblock %}
 {% block nav_extra %}{% endblock %}
 
 {% block content %}
 <div class="auth-card">
-  <h1 class="auth-title">Log in</h1>
+  <h1 class="auth-title">{{ t('login_title') }}</h1>
 
   {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
 
   <form method="post" action="/auth/login" class="auth-form">
     <div class="form-field">
-      <label class="form-label" for="email">Email</label>
-      <input class="form-input" type="email" id="email" name="email" placeholder="email@example.com" required autofocus>
+      <label class="form-label" for="email">{{ t('email_label') }}</label>
+      <input class="form-input" type="email" id="email" name="email" placeholder="{{ t('email_placeholder') }}" required autofocus>
     </div>
     <div class="form-field">
-      <label class="form-label" for="password">Password</label>
-      <input class="form-input" type="password" id="password" name="password" placeholder="password" required>
+      <label class="form-label" for="password">{{ t('password_label') }}</label>
+      <input class="form-input" type="password" id="password" name="password" placeholder="{{ t('login_password_placeholder') }}" required>
     </div>
-    <button type="submit" class="btn-save">Log in</button>
+    <button type="submit" class="btn-save">{{ t('login_submit') }}</button>
   </form>
 
   {% if oauth_google_configured or oauth_discord_configured %}
-  <div class="auth-divider">or</div>
+  <div class="auth-divider">{{ t('login_or_divider') }}</div>
   <div class="auth-oauth-links">
     {% if oauth_google_configured %}
-    <a href="/auth/login/google" class="btn-oauth">Log in with Google</a>
+    <a href="/auth/login/google" class="btn-oauth">{{ t('login_with_google') }}</a>
     {% endif %}
     {% if oauth_discord_configured %}
-    <a href="/auth/login/discord" class="btn-oauth">Log in with Discord</a>
+    <a href="/auth/login/discord" class="btn-oauth">{{ t('login_with_discord') }}</a>
     {% endif %}
   </div>
   {% endif %}
 
-  <p class="auth-links"><a href="/auth/register">Need an account?</a></p>
+  <p class="auth-links"><a href="/auth/register">{{ t('need_account') }}</a></p>
 </div>
 {% endblock %}

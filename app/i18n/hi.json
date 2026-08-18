@@ -1,0 +1,48 @@
+{
+  "nav_library": "लाइब्रेरी",
+  "nav_upcoming": "आगामी",
+  "nav_queue": "कतार",
+  "nav_recommended": "अनुशंसित",
+  "nav_stats": "आँकड़े",
+  "nav_search_placeholder": "खोजें…",
+  "nav_settings_title": "सेटिंग्स",
+  "nav_admin_title": "एडमिन",
+  "nav_logout_title": "लॉग आउट",
+
+  "title_login": "लॉग इन करें — Anime Tracker",
+  "title_register": "खाता बनाएँ — Anime Tracker",
+  "title_reset_password": "पासवर्ड रीसेट करें — Anime Tracker",
+  "title_settings": "सेटिंग्स — Anime Tracker",
+
+  "login_title": "लॉग इन करें",
+  "email_label": "ईमेल",
+  "email_placeholder": "email@example.com",
+  "password_label": "पासवर्ड",
+  "login_password_placeholder": "पासवर्ड",
+  "login_submit": "लॉग इन करें",
+  "login_or_divider": "या",
+  "login_with_google": "Google से लॉग इन करें",
+  "login_with_discord": "Discord से लॉग इन करें",
+  "need_account": "खाता नहीं है?",
+
+  "register_title": "खाता बनाएँ",
+  "password_placeholder_min8": "कम से कम 8 अक्षर",
+  "register_submit": "खाता बनाएँ",
+  "already_have_account": "पहले से खाता है?",
+
+  "reset_password_title": "नया पासवर्ड सेट करें",
+  "new_password_label": "नया पासवर्ड",
+  "reset_password_submit": "पासवर्ड सेट करें",
+  "reset_invalid_title": "लिंक अमान्य या समाप्त हो चुका है",
+  "reset_invalid_body": "यह पासवर्ड रीसेट लिंक अमान्य है, समाप्त हो चुका है, या पहले ही उपयोग किया जा चुका है। नया लिंक बनाने के लिए किसी एडमिन से कहें।",
+
+  "settings_page_title": "सेटिंग्स",
+  "settings_page_sub": "इस ट्रैकर के लिए प्राथमिकताएँ और क्रेडेंशियल।",
+  "settings_section_display": "डिस्प्ले",
+  "settings_saved": "सहेजा गया।",
+  "settings_timezone_label": "समय क्षेत्र",
+  "settings_timezone_hint": "— सभी तारीख और समय प्रदर्शित करने के लिए उपयोग होता है",
+  "settings_language_label": "भाषा",
+  "settings_language_hint": "— इस खाते के लिए UI भाषा",
+  "settings_save_button": "सहेजें"
+}

@@ -1,0 +1,48 @@
+{
+  "nav_library": "库",
+  "nav_upcoming": "即将播出",
+  "nav_queue": "队列",
+  "nav_recommended": "推荐",
+  "nav_stats": "统计",
+  "nav_search_placeholder": "搜索…",
+  "nav_settings_title": "设置",
+  "nav_admin_title": "管理",
+  "nav_logout_title": "退出登录",
+
+  "title_login": "登录 — Anime Tracker",
+  "title_register": "创建账户 — Anime Tracker",
+  "title_reset_password": "重置密码 — Anime Tracker",
+  "title_settings": "设置 — Anime Tracker",
+
+  "login_title": "登录",
+  "email_label": "邮箱",
+  "email_placeholder": "email@example.com",
+  "password_label": "密码",
+  "login_password_placeholder": "密码",
+  "login_submit": "登录",
+  "login_or_divider": "或",
+  "login_with_google": "使用 Google 登录",
+  "login_with_discord": "使用 Discord 登录",
+  "need_account": "还没有账户？",
+
+  "register_title": "创建账户",
+  "password_placeholder_min8": "至少8个字符",
+  "register_submit": "创建账户",
+  "already_have_account": "已经有账户了？",
+
+  "reset_password_title": "设置新密码",
+  "new_password_label": "新密码",
+  "reset_password_submit": "设置密码",
+  "reset_invalid_title": "链接无效或已过期",
+  "reset_invalid_body": "此密码重置链接无效、已过期或已被使用。请让管理员生成一个新链接。",
+
+  "settings_page_title": "设置",
+  "settings_page_sub": "此追踪器的偏好设置和凭据。",
+  "settings_section_display": "显示",
+  "settings_saved": "已保存。",
+  "settings_timezone_label": "时区",
+  "settings_timezone_hint": "— 用于所有日期和时间的显示",
+  "settings_language_label": "语言",
+  "settings_language_hint": "— 此账户的界面语言",
+  "settings_save_button": "保存"
+}

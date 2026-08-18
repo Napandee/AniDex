@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Settings — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_settings') }}{% endblock %}
 
 {% block content %}
 <div class="notes-page">
 
   <div class="page-header">
-    <h1 class="page-title">Settings</h1>
-    <p class="page-sub">Preferences and credentials for this tracker.</p>
+    <h1 class="page-title">{{ t('settings_page_title') }}</h1>
+    <p class="page-sub">{{ t('settings_page_sub') }}</p>
   </div>
 
   <div class="settings-tabs" role="tablist">
@@ -79,14 +79,14 @@
 
     {# ── Display ──────────────────────────────────────────────────────── #}
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Display</h2>
-      {% if saved == 'display' %}<p class="settings-success">Saved.</p>{% endif %}
+      <h2 class="settings-section-title">{{ t('settings_section_display') }}</h2>
+      {% if saved == 'display' %}<p class="settings-success">{{ t('settings_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/display">
         <div class="form-field">
           <label class="form-label" for="timezone">
-            Timezone
-            <span class="form-label-hint">— used for all date and time display</span>
+            {{ t('settings_timezone_label') }}
+            <span class="form-label-hint">{{ t('settings_timezone_hint') }}</span>
           </label>
           <select class="form-input" id="timezone" name="timezone">
             {% for tz in timezones %}
@@ -95,8 +95,20 @@
           </select>
         </div>
 
+        <div class="form-field">
+          <label class="form-label" for="language">
+            {{ t('settings_language_label') }}
+            <span class="form-label-hint">{{ t('settings_language_hint') }}</span>
+          </label>
+          <select class="form-input" id="language" name="language">
+            {% for lang in languages %}
+            <option value="{{ lang }}" {% if lang == settings.language %}selected{% endif %}>{{ language_labels[lang] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
         <div class="form-actions">
-          <button type="submit" class="btn-save">Save</button>
+          <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
         </div>
       </form>
     </div>

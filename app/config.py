@@ -4,6 +4,7 @@ from app import db
 
 DEFAULTS = {
     "timezone": "Europe/London",
+    "language": "en",
 }
 
 

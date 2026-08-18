@@ -1,26 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Create account — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_register') }}{% endblock %}
 {% block bodyclass %}auth-page{% endblock %}
 {% block nav_extra %}{% endblock %}
 
 {% block content %}
 <div class="auth-card">
-  <h1 class="auth-title">Create account</h1>
+  <h1 class="auth-title">{{ t('register_title') }}</h1>
 
   {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
 
   <form method="post" action="/auth/register" class="auth-form">
     <div class="form-field">
-      <label class="form-label" for="email">Email</label>
-      <input class="form-input" type="email" id="email" name="email" placeholder="email@example.com" required autofocus>
+      <label class="form-label" for="email">{{ t('email_label') }}</label>
+      <input class="form-input" type="email" id="email" name="email" placeholder="{{ t('email_placeholder') }}" required autofocus>
     </div>
     <div class="form-field">
-      <label class="form-label" for="password">Password</label>
-      <input class="form-input" type="password" id="password" name="password" placeholder="min 8 characters" required minlength="8">
+      <label class="form-label" for="password">{{ t('password_label') }}</label>
+      <input class="form-input" type="password" id="password" name="password" placeholder="{{ t('password_placeholder_min8') }}" required minlength="8">
     </div>
-    <button type="submit" class="btn-save">Create account</button>
+    <button type="submit" class="btn-save">{{ t('register_submit') }}</button>
   </form>
 
-  <p class="auth-links"><a href="/auth/login">Already have an account?</a></p>
+  <p class="auth-links"><a href="/auth/login">{{ t('already_have_account') }}</a></p>
 </div>
 {% endblock %}

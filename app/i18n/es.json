@@ -1,0 +1,48 @@
+{
+  "nav_library": "Biblioteca",
+  "nav_upcoming": "Próximos",
+  "nav_queue": "Cola",
+  "nav_recommended": "Recomendados",
+  "nav_stats": "Estadísticas",
+  "nav_search_placeholder": "Buscar…",
+  "nav_settings_title": "Ajustes",
+  "nav_admin_title": "Administración",
+  "nav_logout_title": "Cerrar sesión",
+
+  "title_login": "Iniciar sesión — Anime Tracker",
+  "title_register": "Crear cuenta — Anime Tracker",
+  "title_reset_password": "Restablecer contraseña — Anime Tracker",
+  "title_settings": "Ajustes — Anime Tracker",
+
+  "login_title": "Iniciar sesión",
+  "email_label": "Correo electrónico",
+  "email_placeholder": "email@example.com",
+  "password_label": "Contraseña",
+  "login_password_placeholder": "contraseña",
+  "login_submit": "Iniciar sesión",
+  "login_or_divider": "o",
+  "login_with_google": "Iniciar sesión con Google",
+  "login_with_discord": "Iniciar sesión con Discord",
+  "need_account": "¿Necesitas una cuenta?",
+
+  "register_title": "Crear cuenta",
+  "password_placeholder_min8": "mínimo 8 caracteres",
+  "register_submit": "Crear cuenta",
+  "already_have_account": "¿Ya tienes una cuenta?",
+
+  "reset_password_title": "Establecer una nueva contraseña",
+  "new_password_label": "Nueva contraseña",
+  "reset_password_submit": "Guardar contraseña",
+  "reset_invalid_title": "Enlace no válido o caducado",
+  "reset_invalid_body": "Este enlace para restablecer la contraseña no es válido, ha caducado o ya se ha usado. Pide a un administrador que genere uno nuevo.",
+
+  "settings_page_title": "Ajustes",
+  "settings_page_sub": "Preferencias y credenciales para este tracker.",
+  "settings_section_display": "Pantalla",
+  "settings_saved": "Guardado.",
+  "settings_timezone_label": "Zona horaria",
+  "settings_timezone_hint": "— usada para mostrar todas las fechas y horas",
+  "settings_language_label": "Idioma",
+  "settings_language_hint": "— idioma de la interfaz para esta cuenta",
+  "settings_save_button": "Guardar"
+}
