@@ -54,15 +54,19 @@
 </div>
 
 <div id="bulk-bar" class="bulk-bar" hidden>
-  <span id="bulk-count">0 selected</span>
-  <select id="bulk-status-select" class="form-input form-input--narrow">
-    {% for s in ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'] %}
-    <option value="{{ s }}">{{ s.title() }}</option>
-    {% endfor %}
-  </select>
-  <button id="bulk-apply" class="btn-save">Apply status</button>
-  <input id="bulk-tags-input" class="form-input" type="text" placeholder="Add tags (comma-separated)">
-  <button id="bulk-apply-tags" class="btn-save">Add tags</button>
+  <span id="bulk-count" class="bulk-count">0 selected</span>
+  <div class="bulk-bar-group">
+    <select id="bulk-status-select" class="form-input form-input--narrow bulk-status-select">
+      {% for s in ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'] %}
+      <option value="{{ s }}">{{ s.title() }}</option>
+      {% endfor %}
+    </select>
+    <button id="bulk-apply" class="btn-save">Apply status</button>
+  </div>
+  <div class="bulk-bar-group">
+    <input id="bulk-tags-input" class="form-input" type="text" placeholder="Add tags (comma-separated)">
+    <button id="bulk-apply-tags" class="btn-save">Add tags</button>
+  </div>
   <button id="bulk-clear" class="filter-btn">Clear</button>
 </div>
 
