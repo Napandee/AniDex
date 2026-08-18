@@ -9,226 +9,190 @@
     <p class="page-sub">Instance-wide configuration and operational visibility.</p>
   </div>
 
-  {# ── Users ────────────────────────────────────────────────────────────── #}
-  <div class="settings-section" style="margin-top:0;border-top:none;padding-top:0;">
-    <h2 class="settings-section-title">Users</h2>
-    <p class="settings-section-desc">Login activity and each user's most recent sync run.</p>
-    <table class="admin-table">
-      <thead>
-        <tr>
-          <th>Email</th>
-          <th>Admin</th>
-          <th>Created</th>
-          <th>Last login</th>
-          <th>Login status</th>
-          <th>Last sync</th>
-          <th>Last recommender</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for u in users %}
-        <tr>
-          <td>{{ u.email }}</td>
-          <td>{% if u.is_admin %}yes{% endif %}</td>
-          <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
-          <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else '—' }}</td>
-          <td>
-            {% if not u.is_active %}<span class="status-error">deactivated</span>
-            {% elif u.locked %}<span class="status-error">locked</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {% if u.last_sync %}
-            <span class="{% if u.last_sync.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
-              {{ u.last_sync.status }}
-            </span>
-            — {{ u.last_sync.run_at.strftime('%Y-%m-%d %H:%M') if u.last_sync.run_at else '' }}
-            {% if u.last_sync.error_msg %}<br><span class="status-error" title="{{ u.last_sync.error_msg }}">{{ u.last_sync.error_msg[:60] }}{% if u.last_sync.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
-            {% else %}
-            <span class="status-empty">never synced</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if u.last_recommender %}
-            <span class="{% if u.last_recommender.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
-              {{ u.last_recommender.status }}
-            </span>
-            — {{ u.last_recommender.run_at.strftime('%Y-%m-%d %H:%M') if u.last_recommender.run_at else '' }}
-            {% if u.last_recommender.error_msg %}<br><span class="status-error" title="{{ u.last_recommender.error_msg }}">{{ u.last_recommender.error_msg[:60] }}{% if u.last_recommender.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
-            {% else %}
-            <span class="status-empty">never run</span>
-            {% endif %}
-          </td>
-          <td>
-            <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
-              <button type="submit" class="btn-save">Reset password</button>
-            </form>
-            {% if u.is_active %}
-            {% if u.id != nav_user.id %}
-            <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('Deactivate {{ u.email }}? They will be logged out immediately and unable to log back in until reactivated.');">
-              <button type="submit" class="btn-save btn-warning">Deactivate</button>
-            </form>
-            {% endif %}
-            {% else %}
-            <form method="post" action="/admin/users/{{ u.id }}/reactivate" class="admin-inline-form">
-              <button type="submit" class="btn-save">Reactivate</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="settings-tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="users" role="tab">Users</button>
+    <button type="button" class="tab" data-tab="invites" role="tab">Invites</button>
+    <button type="button" class="tab" data-tab="instance-config" role="tab">Instance Config</button>
+    <button type="button" class="tab" data-tab="operability" role="tab">Operability</button>
   </div>
 
-  {# ── Instance health ──────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Instance health</h2>
-    <p class="settings-section-desc">
-      Read-only sanity check after a deploy or migration — no restart/migrate
-      controls here, display only.
-    </p>
-    <table class="admin-table">
-      <tbody>
-        <tr>
-          <th>Build version</th>
-          <td>
-            {% if instance_health.build_version %}
-            <code>{{ instance_health.build_version }}</code>
-            {% else %}
-            <span class="status-empty">unknown (not baked into this image)</span>
-            {% endif %}
-          </td>
-        </tr>
-        <tr>
-          <th>Database size</th>
-          <td>{{ instance_health.db_size or '—' }}</td>
-        </tr>
-        <tr>
-          <th><code>library_entries</code> rows</th>
-          <td>{{ instance_health.row_counts.library_entries }}</td>
-        </tr>
-        <tr>
-          <th><code>anime</code> rows</th>
-          <td>{{ instance_health.row_counts.anime }}</td>
-        </tr>
-        <tr>
-          <th><code>users</code> rows</th>
-          <td>{{ instance_health.row_counts.users }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  {# ── Audit log ────────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Audit log</h2>
-    <p class="settings-section-desc">
-      Chronological record of admin actions (invites, OAuth settings, privacy
-      defaults, password resets, user deactivation). Most recent first.
-    </p>
-    <table class="admin-table">
-      <thead>
-        <tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th></tr>
-      </thead>
-      <tbody>
-        {% for a in audit_log %}
-        <tr>
-          <td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
-          <td>{{ a.admin_email or '—' }}</td>
-          <td>{{ a.action.replace('_', ' ') }}</td>
-          <td>{{ a.target_email or '—' }}</td>
-          <td>{{ a.detail or '—' }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5" class="status-empty">No admin actions logged yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  {# ── Backup ───────────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Backup</h2>
-    <p class="settings-section-desc">
-      Export every user's library data (same query as each user's own Settings →
-      Data export) as one zip, one JSON file per user. Manual trigger only — not
-      scheduled.
-    </p>
-    <div class="form-actions">
-      <a href="/admin/export-all" class="btn-save" download>Export all users</a>
+  {# ══════════════════════════════════════════════════════════════════════
+     Users tab
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="users">
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Users</h2>
+      <p class="settings-section-desc">Login activity and each user's most recent sync run.</p>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Admin</th>
+            <th>Created</th>
+            <th>Last login</th>
+            <th>Login status</th>
+            <th>Last sync</th>
+            <th>Last recommender</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.email }}</td>
+            <td>{% if u.is_admin %}yes{% endif %}</td>
+            <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
+            <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else '—' }}</td>
+            <td>
+              {% if not u.is_active %}<span class="status-error">deactivated</span>
+              {% elif u.locked %}<span class="status-error">locked</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if u.last_sync %}
+              <span class="{% if u.last_sync.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
+                {{ u.last_sync.status }}
+              </span>
+              — {{ u.last_sync.run_at.strftime('%Y-%m-%d %H:%M') if u.last_sync.run_at else '' }}
+              {% if u.last_sync.error_msg %}<br><span class="status-error" title="{{ u.last_sync.error_msg }}">{{ u.last_sync.error_msg[:60] }}{% if u.last_sync.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
+              {% else %}
+              <span class="status-empty">never synced</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.last_recommender %}
+              <span class="{% if u.last_recommender.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
+                {{ u.last_recommender.status }}
+              </span>
+              — {{ u.last_recommender.run_at.strftime('%Y-%m-%d %H:%M') if u.last_recommender.run_at else '' }}
+              {% if u.last_recommender.error_msg %}<br><span class="status-error" title="{{ u.last_recommender.error_msg }}">{{ u.last_recommender.error_msg[:60] }}{% if u.last_recommender.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
+              {% else %}
+              <span class="status-empty">never run</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
+                <button type="submit" class="btn-save">Reset password</button>
+              </form>
+              {% if u.is_active %}
+              {% if u.id != nav_user.id %}
+              <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('Deactivate {{ u.email }}? They will be logged out immediately and unable to log back in until reactivated.');">
+                <button type="submit" class="btn-save btn-warning">Deactivate</button>
+              </form>
+              {% endif %}
+              {% else %}
+              <form method="post" action="/admin/users/{{ u.id }}/reactivate" class="admin-inline-form">
+                <button type="submit" class="btn-save">Reactivate</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 
-  {# ── Invites ──────────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Invites</h2>
-    <form method="post" action="/admin/invites" class="settings-form">
-      <div class="form-field" style="max-width:320px;">
-        <input class="form-input" type="email" name="email" placeholder="email@example.com" required>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Invite</button>
-      </div>
-    </form>
-    <table class="admin-table">
-      <thead>
-        <tr><th>Email</th><th>Status</th><th>Created</th></tr>
-      </thead>
-      <tbody>
-        {% for i in invites %}
-        <tr>
-          <td>{{ i.email }}</td>
-          <td>{% if i.accepted_at %}<span class="status-ok">accepted</span>{% else %}pending{% endif %}</td>
-          <td>{{ i.created_at.strftime('%Y-%m-%d') if i.created_at else '—' }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="3" class="status-empty">No invites yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  {# ── OAuth settings ───────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Privacy defaults</h2>
-    <p class="settings-section-desc">
-      Instance-wide hidden tags/genres for cross-user visibility features — unioned with
-      each user's own hidden-tags list from Settings, never replaces it. Opt-in only:
-      leave empty and nothing is hidden by default.
-    </p>
-    <form method="post" action="/admin/privacy-defaults" class="settings-form">
-      <div class="form-field">
-        <label class="form-label" for="default_hidden_tags">Default hidden tags/genres</label>
-        <input class="form-input" type="text" id="default_hidden_tags" name="default_hidden_tags"
-               value="{{ default_hidden_tags }}" placeholder="e.g. Ecchi" autocomplete="off">
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Save</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="settings-section">
-    <h2 class="settings-section-title">OAuth settings</h2>
-    <p class="settings-section-desc">Optional — local email/password login always works regardless of these.</p>
-
-    <div class="settings-section-inner">
-      <h2 class="settings-section-title" style="font-size:0.9rem;">
-        Google —
-        {% if google_status.configured %}<span class="status-ok">configured (client id: {{ google_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
-      </h2>
-      <form method="post" action="/admin/oauth-settings" class="settings-form">
-        <input type="hidden" name="provider" value="google">
-        <div class="form-field">
-          <label class="form-label" for="google_client_id">Client ID</label>
-          <input class="form-input" type="text" id="google_client_id" name="client_id">
+  {# ══════════════════════════════════════════════════════════════════════
+     Invites tab
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="invites" hidden>
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Invites</h2>
+      <form method="post" action="/admin/invites" class="settings-form">
+        <div class="form-field" style="max-width:320px;">
+          <input class="form-input" type="email" name="email" placeholder="email@example.com" required>
         </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Invite</button>
+        </div>
+      </form>
+      <table class="admin-table">
+        <thead>
+          <tr><th>Email</th><th>Status</th><th>Created</th></tr>
+        </thead>
+        <tbody>
+          {% for i in invites %}
+          <tr>
+            <td>{{ i.email }}</td>
+            <td>{% if i.accepted_at %}<span class="status-ok">accepted</span>{% else %}pending{% endif %}</td>
+            <td>{{ i.created_at.strftime('%Y-%m-%d') if i.created_at else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="status-empty">No invites yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     Instance Config tab — privacy defaults, OAuth settings, and Sync
+     Schedule (moved here from Settings, issue #96 — instance-wide, not
+     per-user)
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="instance-config" hidden>
+
+    {# ── Sync schedule ────────────────────────────────────────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Sync schedule</h2>
+      <p class="settings-section-desc">
+        Times are UTC. Applies instance-wide, to every user's sync. The daily sync runs the
+        full pipeline (Crunchyroll/Netflix fetch → AniList → Postgres). The recommender scores
+        unwatched/planning titles weekly.
+      </p>
+      {% if saved == 'schedule' %}<p class="settings-success">Schedule saved.</p>{% endif %}
+
+      <form method="post" action="/settings/schedule">
         <div class="form-field">
-          <label class="form-label" for="google_client_secret">Client Secret</label>
-          <input class="form-input form-input--secret" type="password" id="google_client_secret" name="client_secret" placeholder="leave blank to keep current">
-          <button type="button" class="btn-reveal" data-target="google_client_secret">Show</button>
+          <label class="form-label" for="sync_daily_time">
+            Daily sync time (HH:MM UTC)
+            {% if next_daily_sync %}
+            <span class="form-label-hint">— next run <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
+            {% endif %}
+          </label>
+          <input class="form-input form-input--narrow" type="time" id="sync_daily_time"
+                 name="sync_daily_time" value="{{ schedule.sync_daily_time }}">
+        </div>
+
+        <div class="form-field">
+          <label class="form-label">
+            Weekly recommender
+            {% if next_recommender %}
+            <span class="form-label-hint">— next run <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
+            {% endif %}
+          </label>
+          <div class="schedule-row">
+            <select class="form-input form-input--narrow" name="sync_recommender_day">
+              {% for d in days_of_week %}
+              <option value="{{ d }}" {% if d == schedule.sync_recommender_day %}selected{% endif %}>{{ day_labels[d] }}</option>
+              {% endfor %}
+            </select>
+            <span class="schedule-at">at</span>
+            <input class="form-input form-input--narrow" type="time" name="sync_recommender_time"
+                   value="{{ schedule.sync_recommender_time }}">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save schedule</button>
+        </div>
+      </form>
+    </div>
+
+    {# ── Privacy defaults ─────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Privacy defaults</h2>
+      <p class="settings-section-desc">
+        Instance-wide hidden tags/genres for cross-user visibility features — unioned with
+        each user's own hidden-tags list from Settings, never replaces it. Opt-in only:
+        leave empty and nothing is hidden by default.
+      </p>
+      <form method="post" action="/admin/privacy-defaults" class="settings-form">
+        <div class="form-field">
+          <label class="form-label" for="default_hidden_tags">Default hidden tags/genres</label>
+          <input class="form-input" type="text" id="default_hidden_tags" name="default_hidden_tags"
+                 value="{{ default_hidden_tags }}" placeholder="e.g. Ecchi" autocomplete="off">
         </div>
         <div class="form-actions">
           <button type="submit" class="btn-save">Save</button>
@@ -236,32 +200,156 @@
       </form>
     </div>
 
-    <div class="settings-section-inner">
-      <h2 class="settings-section-title" style="font-size:0.9rem;">
-        Discord —
-        {% if discord_status.configured %}<span class="status-ok">configured (client id: {{ discord_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
-      </h2>
-      <form method="post" action="/admin/oauth-settings" class="settings-form">
-        <input type="hidden" name="provider" value="discord">
-        <div class="form-field">
-          <label class="form-label" for="discord_client_id">Client ID</label>
-          <input class="form-input" type="text" id="discord_client_id" name="client_id">
-        </div>
-        <div class="form-field">
-          <label class="form-label" for="discord_client_secret">Client Secret</label>
-          <input class="form-input form-input--secret" type="password" id="discord_client_secret" name="client_secret" placeholder="leave blank to keep current">
-          <button type="button" class="btn-reveal" data-target="discord_client_secret">Show</button>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-save">Save</button>
-        </div>
-      </form>
+    {# ── OAuth settings ───────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">OAuth settings</h2>
+      <p class="settings-section-desc">Optional — local email/password login always works regardless of these.</p>
+
+      <div class="settings-section-inner">
+        <h2 class="settings-section-title" style="font-size:0.9rem;">
+          Google —
+          {% if google_status.configured %}<span class="status-ok">configured (client id: {{ google_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
+        </h2>
+        <form method="post" action="/admin/oauth-settings" class="settings-form">
+          <input type="hidden" name="provider" value="google">
+          <div class="form-field">
+            <label class="form-label" for="google_client_id">Client ID</label>
+            <input class="form-input" type="text" id="google_client_id" name="client_id">
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="google_client_secret">Client Secret</label>
+            <input class="form-input form-input--secret" type="password" id="google_client_secret" name="client_secret" placeholder="leave blank to keep current">
+            <button type="button" class="btn-reveal" data-target="google_client_secret">Show</button>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-save">Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="settings-section-inner">
+        <h2 class="settings-section-title" style="font-size:0.9rem;">
+          Discord —
+          {% if discord_status.configured %}<span class="status-ok">configured (client id: {{ discord_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
+        </h2>
+        <form method="post" action="/admin/oauth-settings" class="settings-form">
+          <input type="hidden" name="provider" value="discord">
+          <div class="form-field">
+            <label class="form-label" for="discord_client_id">Client ID</label>
+            <input class="form-input" type="text" id="discord_client_id" name="client_id">
+          </div>
+          <div class="form-field">
+            <label class="form-label" for="discord_client_secret">Client Secret</label>
+            <input class="form-input form-input--secret" type="password" id="discord_client_secret" name="client_secret" placeholder="leave blank to keep current">
+            <button type="button" class="btn-reveal" data-target="discord_client_secret">Show</button>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn-save">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     Operability tab — instance health, audit log, backup (issues #86, #89,
+     #90 — all shipped before this tab existed, moved here rather than
+     starting as an empty placeholder)
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="operability" hidden>
+
+    {# ── Instance health ──────────────────────────────────────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Instance health</h2>
+      <p class="settings-section-desc">
+        Read-only sanity check after a deploy or migration — no restart/migrate
+        controls here, display only.
+      </p>
+      <table class="admin-table">
+        <tbody>
+          <tr>
+            <th>Build version</th>
+            <td>
+              {% if instance_health.build_version %}
+              <code>{{ instance_health.build_version }}</code>
+              {% else %}
+              <span class="status-empty">unknown (not baked into this image)</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Database size</th>
+            <td>{{ instance_health.db_size or '—' }}</td>
+          </tr>
+          <tr>
+            <th><code>library_entries</code> rows</th>
+            <td>{{ instance_health.row_counts.library_entries }}</td>
+          </tr>
+          <tr>
+            <th><code>anime</code> rows</th>
+            <td>{{ instance_health.row_counts.anime }}</td>
+          </tr>
+          <tr>
+            <th><code>users</code> rows</th>
+            <td>{{ instance_health.row_counts.users }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Audit log ────────────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Audit log</h2>
+      <p class="settings-section-desc">
+        Chronological record of admin actions (invites, OAuth settings, privacy
+        defaults, password resets, user deactivation). Most recent first.
+      </p>
+      <table class="admin-table">
+        <thead>
+          <tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+        </thead>
+        <tbody>
+          {% for a in audit_log %}
+          <tr>
+            <td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
+            <td>{{ a.admin_email or '—' }}</td>
+            <td>{{ a.action.replace('_', ' ') }}</td>
+            <td>{{ a.target_email or '—' }}</td>
+            <td>{{ a.detail or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="status-empty">No admin actions logged yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Backup ───────────────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Backup</h2>
+      <p class="settings-section-desc">
+        Export every user's library data (same query as each user's own Settings →
+        Data export) as one zip, one JSON file per user. Manual trigger only — not
+        scheduled.
+      </p>
+      <div class="form-actions">
+        <a href="/admin/export-all" class="btn-save" download>Export all users</a>
+      </div>
     </div>
   </div>
 
 </div>
 
 <script>
+// ── Tab switching (shared with settings.html via initSettingsTabs in script.js) ──
+document.addEventListener('DOMContentLoaded', function () {
+  initSettingsTabs(function (params) {
+    if (params.get('saved') === 'schedule') return 'instance-config';
+    return null;
+  });
+  formatTimeElements(['next-daily-ts', 'next-rec-ts']);
+});
+
 document.querySelectorAll('.btn-reveal').forEach(btn => {
   btn.addEventListener('click', () => {
     const input = document.getElementById(btn.dataset.target);
