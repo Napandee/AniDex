@@ -129,8 +129,9 @@
   document.getElementById('hl-meanscore').textContent =
     ms != null ? `${'★'.repeat(Math.round(ms))} ${ms.toFixed(1)}` : '—';
 
-  const GRID_COLOR = '#2a2a2a';
-  const LABEL_COLOR = '#888';
+  const rootStyle = getComputedStyle(document.documentElement);
+  const GRID_COLOR = rootStyle.getPropertyValue('--border').trim();
+  const LABEL_COLOR = rootStyle.getPropertyValue('--t5').trim();
   const baseOpts = {
     plugins: { legend: { labels: { color: LABEL_COLOR, boxWidth: 12 } } },
   };

@@ -107,6 +107,18 @@
           </select>
         </div>
 
+        <div class="form-field">
+          <label class="form-label" for="theme">
+            {{ t('settings_theme_label') }}
+            <span class="form-label-hint">{{ t('settings_theme_hint') }}</span>
+          </label>
+          <select class="form-input" id="theme" name="theme">
+            <option value="system" {% if settings.theme == 'system' %}selected{% endif %}>{{ t('settings_theme_system') }}</option>
+            <option value="light" {% if settings.theme == 'light' %}selected{% endif %}>{{ t('settings_theme_light') }}</option>
+            <option value="dark" {% if settings.theme == 'dark' %}selected{% endif %}>{{ t('settings_theme_dark') }}</option>
+          </select>
+        </div>
+
         <div class="form-actions">
           <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
         </div>
