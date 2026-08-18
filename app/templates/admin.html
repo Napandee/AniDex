@@ -32,7 +32,11 @@
           <td>{% if u.is_admin %}yes{% endif %}</td>
           <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
           <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else '—' }}</td>
-          <td>{% if u.locked %}<span class="status-error">locked</span>{% else %}—{% endif %}</td>
+          <td>
+            {% if not u.is_active %}<span class="status-error">deactivated</span>
+            {% elif u.locked %}<span class="status-error">locked</span>
+            {% else %}—{% endif %}
+          </td>
           <td>
             {% if u.last_sync %}
             <span class="{% if u.last_sync.status == 'ok' %}status-ok{% else %}status-error{% endif %}">
@@ -48,6 +52,17 @@
             <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
               <button type="submit" class="btn-save">Reset password</button>
             </form>
+            {% if u.is_active %}
+            {% if u.id != nav_user.id %}
+            <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('Deactivate {{ u.email }}? They will be logged out immediately and unable to log back in until reactivated.');">
+              <button type="submit" class="btn-save btn-warning">Deactivate</button>
+            </form>
+            {% endif %}
+            {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/reactivate" class="admin-inline-form">
+              <button type="submit" class="btn-save">Reactivate</button>
+            </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

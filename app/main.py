@@ -568,11 +568,21 @@ def shutdown() -> None:
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 def get_current_user(request: Request) -> dict | None:
-    """Return the logged-in user's row, or None if no valid session."""
+    """Return the logged-in user's row, or None if no valid session.
+
+    A deactivated user (#85) is treated as logged out from here on — this is the
+    single choke point _require_user/_require_user_api/_require_admin and the nav
+    context processor all go through, so clearing the session here rejects an
+    already-established session on its very next request, not just at login.
+    """
     user_id = request.session.get("user_id")
     if not user_id:
         return None
-    return db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    if user and not user["is_active"]:
+        request.session.clear()
+        return None
+    return user
 
 
 def _nav_context(request: Request) -> dict:
@@ -682,6 +692,12 @@ def _resolve_or_create_user(
     """
     user = _find_user_by_provider_identity(provider, provider_id)
     if user:
+        if not user["is_active"]:
+            return None, HTMLResponse(
+                "<h1>Account deactivated</h1><p>This account has been deactivated. "
+                "Contact your admin if you think this is a mistake.</p>",
+                status_code=403,
+            )
         db.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
         return user, None
 
@@ -791,6 +807,11 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
                 )
         return RedirectResponse(
             url="/auth/login?error=Invalid+email+or+password", status_code=303
+        )
+
+    if not user["is_active"]:
+        return RedirectResponse(
+            url="/auth/login?error=This+account+has+been+deactivated", status_code=303
         )
 
     db.execute(
@@ -1163,6 +1184,38 @@ def admin_reset_password(request: Request, user_id: int):
         <p><code>{reset_url}</code></p>
         <p><a href="/admin">Back to admin</a></p>
     """)
+
+
+@app.post("/admin/users/{user_id}/deactivate")
+def admin_deactivate_user(request: Request, user_id: int):
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    admin_user = get_current_user(request)
+    if admin_user["id"] == user_id:
+        return HTMLResponse("<h1>Can't deactivate your own account</h1><p><a href=\"/admin\">Back to admin</a></p>", status_code=400)
+
+    target = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    if not target:
+        return HTMLResponse("<h1>User not found</h1>", status_code=404)
+
+    db.execute("UPDATE users SET is_active = false WHERE id = %s", (user_id,))
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/reactivate")
+def admin_reactivate_user(request: Request, user_id: int):
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    target = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    if not target:
+        return HTMLResponse("<h1>User not found</h1>", status_code=404)
+
+    db.execute("UPDATE users SET is_active = true WHERE id = %s", (user_id,))
+    return RedirectResponse(url="/admin", status_code=303)
 
 
 def _require_user(request: Request):
