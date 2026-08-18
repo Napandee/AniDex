@@ -7,6 +7,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import zipfile
 from datetime import datetime, timezone, timedelta
@@ -16,7 +17,7 @@ import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
-from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -44,6 +45,10 @@ _SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts
 _FULL_SYNC_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_full_sync.py")
 _RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
 _AIRING_SCHEDULE_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_airing_schedule.py")
+_NETFLIX_CSV_IMPORT_SCRIPT = os.path.join(_SCRIPTS_DIR, "import_netflix_csv.py")
+_NETFLIX_CSV_IMPORT_TIMEOUT = 480  # seconds — same order as PROVIDER_STEP_TIMEOUT in
+                                    # run_full_sync.py; a full-history CSV runs the same
+                                    # per-title AniList search fallback the live path does
 
 _sync_lock = threading.Lock()
 # user_id -> {"running": bool, "last_result": str|None}. Only used as the double-click
@@ -1786,7 +1791,8 @@ def queue(request: Request, status: str = None):
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
-    request: Request, link_error: str = "", password_error: str = "", saved: str = ""
+    request: Request, link_error: str = "", password_error: str = "", saved: str = "",
+    csv_import_error: str = "",
 ):
     user, denied = _require_user(request)
     if denied:
@@ -1838,6 +1844,7 @@ def settings_page(
             "link_error": link_error,
             "password_error": password_error,
             "saved": saved,
+            "csv_import_error": csv_import_error,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
@@ -1892,6 +1899,98 @@ def settings_save_credentials(
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
     return RedirectResponse(url="/settings?saved=credentials", status_code=303)
+
+
+def _parse_csv_import_summary(stdout: str) -> dict | None:
+    """import_netflix_csv.py prints one final "IMPORT_RESULT: {...}" line on success —
+    same spirit as run_full_sync.py's steps JSONB, just simpler since this is a single
+    one-shot action rather than a multi-step pipeline. Returns None if the line is
+    somehow missing (still exit 0, but nothing to show) rather than raising, since the
+    import itself already succeeded by the time this is called."""
+    for line in reversed(stdout.splitlines()):
+        if line.startswith("IMPORT_RESULT: "):
+            try:
+                return json.loads(line[len("IMPORT_RESULT: "):])
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+@app.post("/settings/netflix-csv-import")
+def settings_netflix_csv_import(request: Request, netflix_csv: UploadFile = File(...)):
+    """Issue #98 — upload Netflix's own "download all" viewing-activity CSV export as a
+    bootstrap alternative to the live paginated walk, for accounts whose full history is
+    too large to reliably complete within Force Full Resync's timeout budget. Runs
+    scripts/import_netflix_csv.py as its own subprocess — same USER_ID/credentials-env
+    contract every other scripts/sync_*.py step uses — rather than importing/running its
+    matching logic in-process, so a bad row or an AniList hiccup can't take the app
+    server down with it, same isolation the rest of the sync pipeline already has.
+
+    Synchronous, not backgrounded like /api/sync — this is a one-shot user action the
+    settings page can just show a result for directly, not an ongoing job needing a
+    poll loop."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    anilist_token = config.get(user["id"], "anilist_token")
+    anilist_username = config.get(user["id"], "anilist_username")
+    if not anilist_token or not anilist_username:
+        return RedirectResponse(
+            url="/settings?csv_import_error=AniList+credentials+must+be+configured+first",
+            status_code=303,
+        )
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+            # UploadFile is capped by Starlette's own spooled-temp-file handling —
+            # .file is a regular file object here, safe to read synchronously.
+            tmp.write(netflix_csv.file.read())
+            tmp_path = tmp.name
+
+        env = os.environ.copy()
+        env["USER_ID"] = str(user["id"])
+        env["ANILIST_TOKEN"] = anilist_token
+        env["ANILIST_USERNAME"] = anilist_username
+
+        log_row = db.execute_returning(
+            "INSERT INTO sync_log (user_id, type, status, steps) VALUES (%s, 'netflix_csv_import', 'running', '[]') "
+            "RETURNING id",
+            (user["id"],),
+        )
+
+        try:
+            result = subprocess.run(
+                [sys.executable, _NETFLIX_CSV_IMPORT_SCRIPT, tmp_path],
+                capture_output=True, text=True, timeout=_NETFLIX_CSV_IMPORT_TIMEOUT, env=env,
+            )
+        except subprocess.TimeoutExpired:
+            db.execute(
+                "UPDATE sync_log SET status = 'error', error_msg = %s WHERE id = %s",
+                (f"Import timed out after {_NETFLIX_CSV_IMPORT_TIMEOUT}s", log_row["id"]),
+            )
+            return RedirectResponse(url="/settings?csv_import_error=Import+timed+out", status_code=303)
+
+        if result.returncode != 0:
+            db.execute(
+                "UPDATE sync_log SET status = 'error', error_msg = %s WHERE id = %s",
+                (result.stderr[-800:] or "Import failed — check container logs", log_row["id"]),
+            )
+            return RedirectResponse(url="/settings?csv_import_error=Import+failed", status_code=303)
+
+        summary = _parse_csv_import_summary(result.stdout)
+        db.execute(
+            "UPDATE sync_log SET status = 'ok', entries_updated = %s WHERE id = %s",
+            (summary.get("updated") if summary else None, log_row["id"]),
+        )
+        return RedirectResponse(url="/settings?saved=netflix_csv_import", status_code=303)
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 @app.post("/settings/notifications")
