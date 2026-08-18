@@ -372,6 +372,31 @@
     <div id="sync-msg" class="sync-msg" hidden></div>
   </div>
 
+  {# ── Netflix CSV import ───────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Netflix CSV import</h2>
+    <p class="settings-section-desc">
+      Bootstrap fallback for a large or first-time Netflix account whose full watch
+      history can't reliably complete within Force Full Resync's timeout budget.
+      Download your own export from Netflix (Account &rarr; Profile &amp; Parental
+      Controls &rarr; Viewing activity &rarr; Download all) and upload the CSV here —
+      it's matched against your AniList library the same way a live sync is, and
+      counts as a complete review of your Netflix history once imported.
+    </p>
+    {% if saved == 'netflix_csv_import' %}<p class="settings-success">Import complete — see Sync history below for details.</p>{% endif %}
+    {% if csv_import_error %}<p class="settings-error">{{ csv_import_error }}</p>{% endif %}
+
+    <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
+      <div class="form-field">
+        <label class="form-label" for="netflix_csv">Netflix viewing activity CSV</label>
+        <input class="form-input" type="file" id="netflix_csv" name="netflix_csv" accept=".csv,text/csv" required>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-save">Import</button>
+      </div>
+    </form>
+  </div>
+
   {# ── Sync history ──────────────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Sync history</h2>
@@ -515,7 +540,8 @@ function renderStepChips(steps) {
   function fmtType(t) {
     return t === 'full_sync' ? 'Full sync'
       : t === 'force_full_resync' ? 'Force full resync'
-      : t === 'recommender' ? 'Recommender' : t;
+      : t === 'recommender' ? 'Recommender'
+      : t === 'netflix_csv_import' ? 'Netflix CSV import' : t;
   }
 
   function renderLog(rows) {

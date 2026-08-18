@@ -268,7 +268,7 @@ CREATE TABLE sync_log (
     id              SERIAL PRIMARY KEY,
     user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     run_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    type            TEXT NOT NULL,          -- 'full_sync' | 'recommender'
+    type            TEXT NOT NULL,          -- 'full_sync' | 'force_full_resync' | 'recommender' | 'netflix_csv_import'
     status          TEXT NOT NULL,          -- 'running' (transient) | 'ok' | 'partial' | 'error'
     entries_updated INTEGER,
     error_msg       TEXT,
