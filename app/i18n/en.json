@@ -44,5 +44,10 @@
   "settings_timezone_hint": "— used for all date and time display",
   "settings_language_label": "Language",
   "settings_language_hint": "— UI language for this account",
+  "settings_theme_label": "Theme",
+  "settings_theme_hint": "— \"System\" follows your device's light/dark setting",
+  "settings_theme_system": "System",
+  "settings_theme_light": "Light",
+  "settings_theme_dark": "Dark",
   "settings_save_button": "Save"
 }

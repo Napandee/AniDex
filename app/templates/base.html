@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="{{ current_language }}">
+<html lang="{{ current_language }}" {% if nav_theme in ('light', 'dark') %}data-theme="{{ nav_theme }}"{% endif %}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Anime Tracker{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=47">
+  <link rel="stylesheet" href="/static/style.css?v=48">
   <script src="/static/script.js?v=20" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">

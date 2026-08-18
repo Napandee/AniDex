@@ -685,19 +685,23 @@ def get_current_user(request: Request) -> dict | None:
 
 
 def _nav_context(request: Request) -> dict:
-    """Context processor: makes the logged-in user (nav_user) and the active-locale
-    translator (t) available to every template without each route needing to pass
-    them explicitly. Combined into one processor so both share the single
-    get_current_user DB lookup rather than each doing its own.
+    """Context processor: makes the logged-in user (nav_user), the active-locale
+    translator (t), and the theme preference (nav_theme) available to every
+    template without each route needing to pass them explicitly. Combined into one
+    processor so all three share the single get_current_user DB lookup rather than
+    each doing its own.
 
     Locale resolution: the user's saved `language` setting wins when logged in;
     logged-out pages (auth_login.html etc, which have no settings row to read yet)
     fall back to the browser's Accept-Language header, then English. See app/i18n.py.
-    """
+    Theme resolution: the user's saved `theme` setting wins when logged in; logged-out
+    pages fall back to "system" (no explicit choice, so base.html sets no data-theme
+    attribute and prefers-color-scheme alone decides light vs dark)."""
     user = get_current_user(request)
     user_language = config.get(user["id"], "language") if user else None
     locale = i18n.resolve_locale(request.headers.get("accept-language"), user_language)
-    return {"nav_user": user, "t": i18n.translator(locale), "current_language": locale}
+    theme = config.get(user["id"], "theme") if user else "system"
+    return {"nav_user": user, "t": i18n.translator(locale), "current_language": locale, "nav_theme": theme}
 
 
 templates.context_processors.append(_nav_context)
@@ -2064,7 +2068,12 @@ DAY_LABELS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thu
 
 
 @app.post("/settings/display")
-def settings_save_display(request: Request, timezone: str = Form(...), language: str = Form("en")):
+def settings_save_display(
+    request: Request,
+    timezone: str = Form(...),
+    language: str = Form("en"),
+    theme: str = Form("system"),
+):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -2077,8 +2086,12 @@ def settings_save_display(request: Request, timezone: str = Form(...), language:
     if language not in i18n.SUPPORTED_LOCALES:
         language = i18n.DEFAULT_LOCALE
 
+    if theme not in ("light", "dark", "system"):
+        theme = "system"
+
     config.set_value(user["id"], "timezone", timezone)
     config.set_value(user["id"], "language", language)
+    config.set_value(user["id"], "theme", theme)
     return RedirectResponse(url="/settings?saved=display", status_code=303)
 
 
