@@ -55,6 +55,50 @@ let activeSeason = '';
   });
 }());
 
+// ── Tag filter ─────────────────────────────────────────────────────────────────
+let activeTag = '';
+
+// Rebuilds the tag dropdown from tags actually in use on the current cards — no
+// manual tag registry to maintain. Dedupes case-insensitively (matches personal_tags
+// dedup in /api/anime/bulk-tags), keeping the first-seen casing for display. Re-run
+// after any in-place tag edit (see notes-modal save handler below) so a newly-added
+// or newly-orphaned tag stays in sync without a full page reload.
+function refreshTagFilterOptions() {
+  const sel = document.getElementById('tag-filter');
+  const grid = document.getElementById('library-grid');
+  if (!sel || !grid) return;
+
+  const seen = new Map();
+  grid.querySelectorAll('.card').forEach(card => {
+    (card.dataset.tags || '').split(',').forEach(t => {
+      const tag = t.trim();
+      if (tag && !seen.has(tag.toLowerCase())) seen.set(tag.toLowerCase(), tag);
+    });
+  });
+
+  const current = sel.value;
+  sel.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
+  [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([key, label]) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  });
+
+  sel.value = seen.has(current) ? current : '';
+  activeTag = sel.value;
+}
+
+(function () {
+  const sel = document.getElementById('tag-filter');
+  if (!sel) return;
+  refreshTagFilterOptions();
+  sel.addEventListener('change', () => {
+    activeTag = sel.value;
+    applyLibraryFilters();
+  });
+}());
+
 // ── Library sort ──────────────────────────────────────────────────────────────
 let activeSort = 'score';
 document.querySelectorAll('.sort-btn').forEach(btn => {
@@ -84,12 +128,14 @@ function applyLibraryFilters() {
       ? `${card.dataset.seasonYear}|${card.dataset.season}` : '';
     const seasonOk  = !activeSeason || seasonKey === activeSeason;
     const scoreOk   = card.dataset.scoreHidden !== 'true';
-    const show    = textOk && fmtOk && seasonOk && scoreOk;
+    const cardTags  = (card.dataset.tags || '').toLowerCase().split(',').map(t => t.trim());
+    const tagOk     = !activeTag || cardTags.includes(activeTag);
+    const show    = textOk && fmtOk && seasonOk && scoreOk && tagOk;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
   const noResults = document.getElementById('no-filter-results');
-  if (noResults) noResults.style.display = ((q || activeFormat || activeSeason) && visible === 0) ? '' : 'none';
+  if (noResults) noResults.style.display = ((q || activeFormat || activeSeason || activeTag) && visible === 0) ? '' : 'none';
 }
 
 function sortLibrary() {
@@ -401,6 +447,9 @@ if (notesModal) {
       const notesEl = activeCardEl.querySelector('.notes-preview');
       if (dropEl) dropEl.textContent = payload.drop_reason ? `↩ ${payload.drop_reason}` : '';
       if (notesEl) notesEl.textContent = payload.notes || '';
+
+      if (typeof refreshTagFilterOptions === 'function') refreshTagFilterOptions();
+      if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
 
       closeNotesModal();
     } catch {

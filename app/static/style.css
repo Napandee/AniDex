@@ -137,6 +137,19 @@ main {
 }
 .season-filter-select:focus { border-color: #2563eb; }
 
+.tag-filter-group { display: flex; align-items: center; }
+.tag-filter-select {
+  padding: 0.3rem 0.6rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  cursor: pointer;
+  outline: none;
+}
+.tag-filter-select:focus { border-color: #2563eb; }
+
 .sort-label {
   font-size: 0.75rem;
   color: #555;
