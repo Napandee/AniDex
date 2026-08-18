@@ -279,15 +279,70 @@ def _scheduled_full_sync() -> None:
             state["last_result"] = "error"
 
 
+def _run_recommender_task(user_id: int) -> None:
+    env = os.environ.copy()
+    env["USER_ID"] = str(user_id)
+    run_started_at = datetime.now(timezone.utc)
+    try:
+        result = subprocess.run(
+            [sys.executable, _RECOMMENDER_SCRIPT],
+            capture_output=True, text=True, timeout=600, env=env,
+        )
+        if result.returncode != 0:
+            log.error("Recommender failed for user %s: %s", user_id, result.stderr[-800:])
+    except Exception as e:
+        log.error("Recommender exception for user %s: %s", user_id, e)
+        # Mirrors issue #91's orphaned-row cleanup for sync: the subprocess was killed
+        # (or never started) before it could run its own _finish_log(), so the
+        # sync_log row it INSERTed via _start_log() would otherwise sit at
+        # status='running' forever.
+        try:
+            db.execute(
+                "UPDATE sync_log SET status = 'error', error_msg = %s "
+                "WHERE user_id = %s AND type = 'recommender' AND status = 'running'",
+                (f"Recommender did not complete: {e}"[:800], user_id),
+            )
+        except Exception as db_e:
+            log.error("Could not close out orphaned recommender sync_log row for user %s: %s", user_id, db_e)
+
+    # Issue #84 — one alert per run, parity with #11's sync-failure alerting.
+    try:
+        _notify_recommender_outcome(user_id, run_started_at)
+    except Exception as e:
+        log.error("Failed to send recommender-outcome notification for user %s: %s", user_id, e)
+
+
+def _notify_recommender_outcome(user_id: int, run_started_at: datetime) -> None:
+    """Alert the user only on a genuine recommender failure (issue #84). Unlike sync,
+    which notifies on every run because it refreshes the whole library daily, the
+    recommender only rebuilds the watch-next queue weekly, so a routine success isn't
+    worth a notification — this only ever sends a failure alert.
+
+    run_started_at guards against picking up a stale row from a previous run if this
+    run crashed before writing its own (e.g. the subprocess couldn't even connect to
+    Postgres to start logging) — same guard as _notify_sync_outcome.
+    """
+    row = db.fetchone(
+        "SELECT status, error_msg, run_at FROM sync_log "
+        "WHERE user_id = %s AND type = 'recommender' ORDER BY id DESC LIMIT 1",
+        (user_id,),
+    )
+    if not row or row["run_at"] < run_started_at:
+        notify(user_id, "❌ Recommender failed", "Anime Tracker — recommender run failed before it could record results. Check container logs.")
+        return
+
+    if row["status"] != "ok":
+        body = row["error_msg"] or "Anime Tracker — recommender run failed. Check container logs."
+        notify(user_id, "❌ Recommender failed", body)
+
+
 def _scheduled_recommender() -> None:
     """Loop every user with sync credentials configured — same error isolation as sync."""
     for user in _users_with_sync_credentials():
         user_id = user["id"]
         log.info("Running scheduled recommender for user %s", user_id)
-        env = os.environ.copy()
-        env["USER_ID"] = str(user_id)
         try:
-            subprocess.run([sys.executable, _RECOMMENDER_SCRIPT], env=env, timeout=600)
+            _run_recommender_task(user_id)
         except Exception as e:
             log.error("Unhandled error running recommender for user %s: %s", user_id, e)
 
@@ -1064,12 +1119,25 @@ def admin_page(request: Request):
     )
     last_sync_by_user = {r["user_id"]: r for r in sync_rows}
 
+    # Issue #84 — same operability visibility for the recommender job that sync
+    # already has above.
+    recommender_rows = db.fetchall(
+        """
+        SELECT DISTINCT ON (user_id) user_id, run_at, status, error_msg
+        FROM sync_log
+        WHERE type = 'recommender'
+        ORDER BY user_id, run_at DESC
+        """
+    )
+    last_recommender_by_user = {r["user_id"]: r for r in recommender_rows}
+
     users_view = []
     for u in users:
         users_view.append({
             **u,
             "locked": bool(u["locked_until"] and u["locked_until"] > now),
             "last_sync": last_sync_by_user.get(u["id"]),
+            "last_recommender": last_recommender_by_user.get(u["id"]),
         })
 
     def _provider_status(provider: str) -> dict:
