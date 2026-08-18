@@ -2,6 +2,67 @@ from datetime import datetime, timezone
 
 import sync_netflix as nf
 
+# ── Walk-completeness tracking (issue #97) ───────────────────────────────────
+# Minimal in-memory stand-in for a psycopg2 connection — just enough to cover
+# load_walk_complete/_set_walk_complete's single-key settings SQL, not a
+# general-purpose DB fake.
+class _FakeWalkConn:
+    def __init__(self, initial_value=None):
+        self.value = initial_value  # None = "no row for this key yet"
+        self.committed = False
+        self._last_select = None
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params):
+        q = query.strip()
+        if q.startswith("SELECT"):
+            self._last_select = self.value
+        elif q.startswith("INSERT"):
+            self.value = params[-1]
+
+    def fetchone(self):
+        return {"value": self._last_select} if self._last_select is not None else None
+
+    def commit(self):
+        self.committed = True
+
+
+def test_load_walk_complete_defaults_to_has_existing_state_when_never_set():
+    assert nf.load_walk_complete(_FakeWalkConn(initial_value=None), has_existing_state=True) is True
+    assert nf.load_walk_complete(_FakeWalkConn(initial_value=None), has_existing_state=False) is False
+
+
+def test_load_walk_complete_reads_explicit_stored_value():
+    assert nf.load_walk_complete(_FakeWalkConn(initial_value="true"), has_existing_state=False) is True
+    assert nf.load_walk_complete(_FakeWalkConn(initial_value="false"), has_existing_state=True) is False
+
+
+def test_load_walk_complete_false_when_conn_is_none():
+    # DRY_RUN mode never touches the DB — matches that mode's existing
+    # "treated as a from-scratch first sync" framing.
+    assert nf.load_walk_complete(None, has_existing_state=True) is False
+
+
+def test_set_walk_complete_persists_and_commits():
+    conn = _FakeWalkConn()
+    nf._set_walk_complete(conn, True)
+    assert conn.value == "true"
+    assert conn.committed is True
+
+
+def test_set_walk_complete_noop_when_conn_is_none():
+    # Must not raise — DRY_RUN passes conn=None through to every state writer.
+    nf._set_walk_complete(None, True)
+
+
 # ── Parsing helpers ──────────────────────────────────────────────────────────
 # Fixture shapes match the real Falcor pathEvaluator response, confirmed live
 # against a real account on feature/netflix-sync-48 (2026-08-14) — see
