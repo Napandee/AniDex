@@ -117,7 +117,7 @@
       {% endfor %}
     </div>
     <div class="modal-actions">
-      <button id="seen-it-confirm" class="btn-save">Mark as seen</button>
+      <button id="seen-it-confirm" class="btn-save">{{ t('js_mark_as_seen') }}</button>
       <button id="seen-it-cancel" class="btn-cancel-modal">{{ t('notes_cancel_btn') }}</button>
     </div>
   </div>
@@ -159,7 +159,7 @@ document.querySelectorAll('.seen-it-chip').forEach(chip => {
     document.querySelectorAll('.seen-it-star').forEach(s => s.classList.remove('filled'));
     const btn = document.getElementById('seen-it-confirm');
     btn.disabled = false;
-    btn.textContent = 'Mark as seen';
+    btn.textContent = t('js_mark_as_seen');
     document.getElementById('seen-it-backdrop').hidden = false;
   });
 });
@@ -186,7 +186,7 @@ document.getElementById('seen-it-cancel').addEventListener('click', () => {
 document.getElementById('seen-it-confirm').addEventListener('click', async () => {
   const btn = document.getElementById('seen-it-confirm');
   btn.disabled = true;
-  btn.textContent = 'Saving…';
+  btn.textContent = t('js_saving');
   const id = _seenItAnimeId;
 
   await fetch(`/api/anime/${id}/status`, {

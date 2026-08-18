@@ -701,7 +701,16 @@ def _nav_context(request: Request) -> dict:
     user_language = config.get(user["id"], "language") if user else None
     locale = i18n.resolve_locale(request.headers.get("accept-language"), user_language)
     theme = config.get(user["id"], "theme") if user else "system"
-    return {"nav_user": user, "t": i18n.translator(locale), "current_language": locale, "nav_theme": theme}
+    # `<` escaped so a translated string can never accidentally close the <script>
+    # tag it's embedded in (see base.html's window.I18N assignment, #147).
+    i18n_json = json.dumps(i18n.all_strings(locale), ensure_ascii=False).replace("<", "\\u003c")
+    return {
+        "nav_user": user,
+        "t": i18n.translator(locale),
+        "current_language": locale,
+        "nav_theme": theme,
+        "i18n_json": i18n_json,
+    }
 
 
 templates.context_processors.append(_nav_context)

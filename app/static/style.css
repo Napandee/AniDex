@@ -1199,6 +1199,7 @@ body.auth-page main {
   max-width: calc(100vw - 2rem);
   box-sizing: border-box;
 }
+.bulk-bar[hidden] { display: none; }
 .bulk-count { flex: 0 0 auto; }
 .bulk-bar-group {
   display: flex;

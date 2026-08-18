@@ -69,3 +69,31 @@ def test_dynamic_status_keys_exist_for_every_anilist_status():
     default_keys = set(_load(DEFAULT_LOCALE).keys())
     for status in ["watching", "completed", "dropped", "planning", "paused", "repeating", "all"]:
         assert f"status_{status}" in default_keys
+
+
+def test_dynamic_season_keys_exist_for_every_anilist_season():
+    # Mirrors the `t('season_' + season.toLowerCase())` pattern in script.js's
+    # library season-filter dropdown (#147's window.I18N mechanism).
+    default_keys = set(_load(DEFAULT_LOCALE).keys())
+    for season in ["winter", "spring", "summer", "fall"]:
+        assert f"season_{season}" in default_keys
+
+
+def test_every_js_t_call_resolves_to_a_real_key():
+    """Covers window.I18N-based t('key', ...) calls added for #147: script.js plus
+    any inline <script> blocks left in the templates (library.html, recommendations.html).
+    Static calls only, same limitation as the Jinja check above — t('status_' + ...)-style
+    dynamic concatenation is covered by the dedicated status/season tests instead."""
+    default_keys = set(_load(DEFAULT_LOCALE).keys())
+    repo_root = Path(__file__).resolve().parent.parent
+    js_files = [repo_root / "app" / "static" / "script.js"] + list(
+        (repo_root / "app" / "templates").glob("*.html")
+    )
+    missing = []
+    for path in js_files:
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"\bt\('([a-zA-Z0-9_]+)'\s*[,)]", text):
+            key = match.group(1)
+            if key not in default_keys:
+                missing.append(f"{path.name}: t('{key}')")
+    assert not missing, "JS references i18n keys that don't exist:\n" + "\n".join(missing)

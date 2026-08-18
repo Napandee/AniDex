@@ -1,3 +1,17 @@
+// ── i18n lookup (#147) ───────────────────────────────────────────────────────
+// window.I18N is set inline in base.html's <head>, before this deferred script
+// runs — the full key->string map for the request's locale, English-fallback
+// already applied server-side (see app/i18n.py's all_strings()), so this never
+// needs its own fallback chain. Mirrors app/i18n.py's translator()'s {kwarg}
+// substitution, just with .split/.join instead of Python's str.format.
+function t(key, vars) {
+  let s = (window.I18N && window.I18N[key]) || key;
+  if (vars) {
+    for (const k in vars) s = s.split('{' + k + '}').join(vars[k]);
+  }
+  return s;
+}
+
 // ── Shared date formatting for <time datetime="..."> elements ──────────────────
 // Used by both settings.html (sync-ts) and admin.html (next-daily-ts, next-rec-ts,
 // moved there by #96) — kept here since both pages need the exact same formatting.
@@ -107,7 +121,7 @@ let activeSeason = '';
 
   sorted.forEach(key => {
     const [year, season] = key.split('|');
-    const label = season.charAt(0) + season.slice(1).toLowerCase() + ' ' + year;
+    const label = t('js_season_label', {season: t('season_' + season.toLowerCase()), year});
     const opt = document.createElement('option');
     opt.value = key;
     opt.textContent = label;
@@ -382,7 +396,7 @@ if (recFilterEl) {
 
   const allBtn = document.createElement('button');
   allBtn.className = 'filter-btn active';
-  allBtn.textContent = 'All';
+  allBtn.textContent = t('status_all');
   allBtn.addEventListener('click', () => setRecGenre('', allBtn));
   recFilterEl.appendChild(allBtn);
 
@@ -463,10 +477,10 @@ document.querySelectorAll('.btn-mark-seen').forEach(btn => {
       btn.dataset.progress = newProgress;
       btn.textContent = '✓';
       const progressEl = btn.closest('.upcoming-item')?.querySelector('.upcoming-progress');
-      if (progressEl) progressEl.textContent = `You're at episode ${newProgress}`;
+      if (progressEl) progressEl.textContent = t('upcoming_progress', {num: newProgress});
     } catch {
       btn.disabled = false;
-      btn.textContent = '+1 ep';
+      btn.textContent = t('upcoming_mark_seen_btn');
     }
   });
 });
@@ -493,7 +507,7 @@ function openNotesModal(card, isDrop = false) {
   modalNotes.value         = card.dataset.notes || '';
   modalPriority.value      = card.dataset.priority || '';
   if (modalDropHint) modalDropHint.hidden = !isDrop;
-  modalSave.textContent    = isDrop ? 'Drop' : 'Save';
+  modalSave.textContent    = isDrop ? t('lib_drop_btn') : t('settings_save_button');
   notesModal.hidden        = false;
   modalDrop.focus();
 }
@@ -533,7 +547,8 @@ if (notesModal) {
     const isDrop = dropMode;
 
     modalSave.disabled = true;
-    modalSave.textContent = 'Saving…';
+    modalSave.textContent = t('js_saving');
+    let saveFailed = false;
     try {
       const r1 = await fetch(`/api/anime/${animeId}/notes`, {
         method: 'POST',
@@ -572,10 +587,11 @@ if (notesModal) {
 
       closeNotesModal();
     } catch {
-      modalSave.textContent = 'Error — retry';
+      saveFailed = true;
+      modalSave.textContent = t('js_error_retry');
     } finally {
       modalSave.disabled = false;
-      if (modalSave.textContent === 'Saving…') modalSave.textContent = isDrop ? 'Drop' : 'Save';
+      if (!saveFailed) modalSave.textContent = isDrop ? t('lib_drop_btn') : t('settings_save_button');
     }
   });
 
@@ -595,14 +611,14 @@ document.querySelectorAll('.btn-delete-sm').forEach(btn => {
     const card = btn.closest('.card');
     const animeId = btn.dataset.animeId;
     const title = card?.dataset.cardTitle || 'this anime';
-    if (!confirm(`Remove "${title}" from your library and AniList? This can't be undone here.`)) return;
+    if (!confirm(t('js_confirm_delete', {title}))) return;
 
     btn.disabled = true;
     try {
       const resp = await fetch(`/api/anime/${animeId}/delete`, { method: 'POST' });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
-        alert(data.error || 'Delete failed.');
+        alert(data.error || t('js_delete_failed'));
         btn.disabled = false;
         return;
       }
@@ -612,7 +628,7 @@ document.querySelectorAll('.btn-delete-sm').forEach(btn => {
         setTimeout(() => card.remove(), 300);
       }
     } catch {
-      alert('Delete failed — check connection.');
+      alert(t('js_delete_failed_connection'));
       btn.disabled = false;
     }
   });
@@ -730,7 +746,7 @@ document.querySelectorAll('.btn-mark-watched').forEach(btn => {
       setTimeout(() => item.remove(), 300);
     } catch {
       btn.disabled = false;
-      btn.textContent = '✓ Watched';
+      btn.textContent = '✓ ' + t('queue_watched_btn');
     }
   });
 });
@@ -757,7 +773,7 @@ document.querySelectorAll('.btn-add-planning').forEach(btn => {
       setTimeout(() => card.remove(), 300);
     } catch {
       btn.disabled = false;
-      btn.textContent = '+ Planning';
+      btn.textContent = t('rec_add_planning_btn');
     }
   });
 });

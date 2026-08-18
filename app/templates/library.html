@@ -49,7 +49,7 @@
       {% endfor %}
     </div>
 
-    <button id="bulk-toggle" class="filter-btn">Select</button>
+    <button id="bulk-toggle" class="filter-btn">{{ t('js_select') }}</button>
   </div>
 </div>
 
@@ -61,11 +61,11 @@
       <option value="{{ s }}">{{ t('status_' + s.lower()) }}</option>
       {% endfor %}
     </select>
-    <button id="bulk-apply" class="btn-save">Apply status</button>
+    <button id="bulk-apply" class="btn-save">{{ t('js_apply_status') }}</button>
   </div>
   <div class="bulk-bar-group">
     <input id="bulk-tags-input" class="form-input" type="text" placeholder="{{ t('lib_add_tags_placeholder') }}">
-    <button id="bulk-apply-tags" class="btn-save">Add tags</button>
+    <button id="bulk-apply-tags" class="btn-save">{{ t('js_add_tags') }}</button>
   </div>
   <button id="bulk-clear" class="filter-btn">{{ t('lib_clear_btn') }}</button>
 </div>
@@ -264,14 +264,14 @@
 
   function updateBar() {
     const n = getChecked().length;
-    countEl.textContent = `${n} selected`;
+    countEl.textContent = t('js_bulk_selected', {n});
     bar.hidden = n === 0;
   }
 
   toggleBtn.addEventListener('click', () => {
     bulkMode = !bulkMode;
     toggleBtn.classList.toggle('active', bulkMode);
-    toggleBtn.textContent = bulkMode ? 'Done' : 'Select';
+    toggleBtn.textContent = bulkMode ? t('js_done') : t('js_select');
     document.querySelectorAll('.bulk-checkbox').forEach(cb => {
       cb.hidden = !bulkMode;
       if (!bulkMode) cb.checked = false;
@@ -294,7 +294,7 @@
     const newStatus = statusSel.value;
     const animeIds = checked.map(cb => parseInt(cb.dataset.animeId, 10));
     applyBtn.disabled = true;
-    applyBtn.textContent = `Queuing ${animeIds.length}…`;
+    applyBtn.textContent = t('js_queuing', {n: animeIds.length});
 
     const resp = await fetch('/api/anime/bulk-status', {
       method: 'POST',
@@ -302,9 +302,9 @@
       body: JSON.stringify({status: newStatus, anime_ids: animeIds}),
     });
     if (!resp.ok) {
-      countEl.textContent = 'Failed to queue bulk update.';
+      countEl.textContent = t('js_bulk_status_failed');
       applyBtn.disabled = false;
-      applyBtn.textContent = 'Apply status';
+      applyBtn.textContent = t('js_apply_status');
       return;
     }
     pollBulkStatus(animeIds);
@@ -316,7 +316,7 @@
     if (!checked.length || !tags) return;
     const animeIds = checked.map(cb => parseInt(cb.dataset.animeId, 10));
     tagsBtn.disabled = true;
-    tagsBtn.textContent = `Adding to ${animeIds.length}…`;
+    tagsBtn.textContent = t('js_adding_to', {n: animeIds.length});
 
     const resp = await fetch('/api/anime/bulk-tags', {
       method: 'POST',
@@ -325,9 +325,9 @@
     });
 
     tagsBtn.disabled = false;
-    tagsBtn.textContent = 'Add tags';
+    tagsBtn.textContent = t('js_add_tags');
     if (!resp.ok) {
-      countEl.textContent = 'Failed to add tags.';
+      countEl.textContent = t('js_bulk_tags_failed');
       return;
     }
     tagsInput.value = '';
@@ -343,8 +343,8 @@
         const failed = items.filter(i => i.state === 'failed');
         const pending = items.length - synced - failed.length;
 
-        countEl.innerHTML = `${synced} synced, ${pending} pending` +
-          (failed.length ? `, <span class="bulk-failed">${failed.length} failed</span>` : '');
+        countEl.innerHTML = t('js_bulk_sync_progress', {synced, pending}) +
+          (failed.length ? `, <span class="bulk-failed">${t('js_bulk_failed_suffix', {n: failed.length})}</span>` : '');
 
         if (pending > 0) {
           setTimeout(() => pollBulkStatus(animeIds), 1500);
@@ -352,9 +352,9 @@
         }
 
         applyBtn.disabled = false;
-        applyBtn.textContent = 'Apply status';
+        applyBtn.textContent = t('js_apply_status');
         if (failed.length) {
-          countEl.innerHTML += ` <button id="bulk-retry-failed" class="filter-btn">Retry failed</button>`;
+          countEl.innerHTML += ` <button id="bulk-retry-failed" class="filter-btn">${t('js_retry_failed')}</button>`;
           document.getElementById('bulk-retry-failed').addEventListener('click', () => {
             Promise.all(failed.map(i =>
               fetch(`/api/anime/${i.anime_id}/bulk-status/retry`, {method: 'POST'})
@@ -381,8 +381,7 @@
 
   // Hide FAB when bulk mode is active
   bulkToggle.addEventListener('click', () => {
-    const isBulkActive = bulkToggle.textContent.trim() === 'Done';
-    fab.style.display = isBulkActive ? 'none' : '';
+    fab.style.display = bulkToggle.classList.contains('active') ? 'none' : '';
   });
 
   function openModal() {
@@ -409,7 +408,7 @@
     clearTimeout(debounceTimer);
     const q = searchInput.value.trim();
     if (q.length < 2) { resultsEl.innerHTML = ''; statusEl.textContent = ''; return; }
-    statusEl.textContent = 'Searching…';
+    statusEl.textContent = t('js_searching');
     debounceTimer = setTimeout(() => doSearch(q), 400);
   });
 
@@ -419,12 +418,12 @@
       const data = await resp.json();
       statusEl.textContent = '';
       if (!Array.isArray(data) || data.length === 0) {
-        resultsEl.innerHTML = '<p class="add-anime-empty">No results found on AniList.</p>';
+        resultsEl.innerHTML = `<p class="add-anime-empty">${t('js_no_results_anilist')}</p>`;
         return;
       }
       renderResults(data);
     } catch {
-      statusEl.textContent = 'Search failed — check connection.';
+      statusEl.textContent = t('js_search_failed');
       resultsEl.innerHTML = '';
     }
   }
@@ -436,11 +435,11 @@
         .filter(Boolean).join(' · ');
       const inLib = item.in_library;
       const libBadge = inLib
-        ? `<span class="add-result-lib-badge">${item.library_status.toLowerCase()}</span>`
+        ? `<span class="add-result-lib-badge">${t('status_' + item.library_status.toLowerCase())}</span>`
         : '';
       const addBtn = inLib
-        ? `<button class="add-result-btn add-result-btn--in-lib" disabled>In library</button>`
-        : `<button class="add-result-btn" data-id="${item.id}">+ Add</button>`;
+        ? `<button class="add-result-btn add-result-btn--in-lib" disabled>${t('notes_in_library')}</button>`
+        : `<button class="add-result-btn" data-id="${item.id}">${t('js_add_btn')}</button>`;
       const cover = item.cover
         ? `<img src="${item.cover}" alt="" class="add-result-cover">`
         : `<div class="add-result-cover add-result-cover--placeholder"></div>`;
@@ -462,7 +461,7 @@
 
   async function doAdd(animeId, btn) {
     btn.disabled = true;
-    btn.textContent = 'Adding…';
+    btn.textContent = t('js_adding');
     try {
       const resp = await fetch(`/api/anime/${animeId}/add`, {
         method: 'POST',
@@ -471,16 +470,16 @@
       });
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
-        btn.textContent = '+ Add';
+        btn.textContent = t('js_add_btn');
         btn.disabled = false;
-        statusEl.textContent = data.error || 'Add failed.';
+        statusEl.textContent = data.error || t('js_add_failed');
         return;
       }
       // Transform the row into a status + rating form
       const row = btn.closest('.add-result-item');
       showAddedForm(row, animeId);
     } catch {
-      btn.textContent = '+ Add';
+      btn.textContent = t('js_add_btn');
       btn.disabled = false;
     }
   }
@@ -488,7 +487,7 @@
   function showAddedForm(row, animeId) {
     const statuses = ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'];
     const statusOpts = statuses.map(s =>
-      `<option value="${s}"${s === 'PLANNING' ? ' selected' : ''}>${s[0] + s.slice(1).toLowerCase()}</option>`
+      `<option value="${s}"${s === 'PLANNING' ? ' selected' : ''}>${t('status_' + s.toLowerCase())}</option>`
     ).join('');
     row.querySelector('.add-result-btn')?.remove();
     row.insertAdjacentHTML('afterbegin', `
@@ -497,7 +496,7 @@
         <div class="add-rate-stars">
           ${[1,2,3,4,5].map(i => `<span class="add-rate-star" data-val="${i}">★</span>`).join('')}
         </div>
-        <button class="add-rate-save">Save</button>
+        <button class="add-rate-save">${t('settings_save_button')}</button>
       </div>
     `);
     row.classList.add('add-result-item--expanded');
@@ -523,7 +522,7 @@
       const saveBtn = form.querySelector('.add-rate-save');
       const status = form.querySelector('.add-rate-status').value;
       saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving…';
+      saveBtn.textContent = t('js_saving');
 
       const calls = [
         fetch(`/api/anime/${animeId}/status`, {
@@ -539,7 +538,7 @@
       }
       await Promise.all(calls);
 
-      form.innerHTML = `<span class="add-rate-done">Saved as ${status.toLowerCase()}${selectedScore ? ' · ' + '★'.repeat(selectedScore) : ''}</span>`;
+      form.innerHTML = `<span class="add-rate-done">${t('js_saved_as', {status: t('status_' + status.toLowerCase())})}${selectedScore ? ' · ' + '★'.repeat(selectedScore) : ''}</span>`;
     });
   }
 }());
