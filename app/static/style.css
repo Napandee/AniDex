@@ -1585,7 +1585,7 @@ body.auth-page main {
 .drop-patterns-grid { margin-top: 1.25rem; }
 .drop-patterns-sub {
   font-size: 0.8rem;
-  color: #666;
+  color: var(--t6);
   margin: -0.5rem 0 1rem;
 }
 .drop-patterns-body {
@@ -1597,12 +1597,12 @@ body.auth-page main {
 .drop-patterns-subhead {
   font-size: 0.72rem;
   font-weight: 600;
-  color: #888;
+  color: var(--t5);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 0 0 0.65rem;
 }
-.drop-patterns-empty { font-size: 0.8rem; color: #555; }
+.drop-patterns-empty { font-size: 0.8rem; color: var(--t7); }
 
 .drop-rate-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .drop-rate-row {
@@ -1613,7 +1613,7 @@ body.auth-page main {
 }
 .drop-rate-label {
   font-size: 0.78rem;
-  color: #ccc;
+  color: var(--t3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1621,26 +1621,26 @@ body.auth-page main {
 .drop-rate-bar-track {
   height: 8px;
   border-radius: 4px;
-  background: #1b1b1b;
+  background: var(--bg-surface);
   overflow: hidden;
 }
 .drop-rate-bar-fill {
   display: block;
   height: 100%;
-  background: #f87171;
+  background: var(--pill-danger-text-strong);
   border-radius: 4px;
 }
-.drop-rate-pct { font-size: 0.72rem; color: #aaa; white-space: nowrap; }
-.drop-rate-n { color: #555; }
+.drop-rate-pct { font-size: 0.72rem; color: var(--t4); white-space: nowrap; }
+.drop-rate-n { color: var(--t7); }
 
 .drop-tag-cloud { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .drop-tag-chip {
   font-size: 0.7rem;
   padding: 0.15rem 0.55rem;
-  background: #1b1b1b;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: #ccc;
+  color: var(--t3);
 }
 
 @media (max-width: 720px) {
