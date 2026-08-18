@@ -458,14 +458,15 @@ def main():
         sys.exit(1)
     log(f"Fetched {len(raw_items)} new watch-history rows")
 
-    if reached_true_end:
-        _set_walk_complete(conn, True)
-        log("Reached true end of Crunchyroll history — full walk marked complete")
-
     history = parse_items(raw_items)
     log(f"Parsed {len(history)} unique series from CR history")
 
     if not history:
+        # Issue #104 — safe to mark complete here even though the processing loop
+        # below never ran: there's nothing to process, so nothing can be stranded.
+        if reached_true_end:
+            _set_walk_complete(conn, True)
+            log("Reached true end of Crunchyroll history — full walk marked complete")
         log("No new activity — nothing to do")
         conn.close()
         sys.exit(0)
@@ -513,6 +514,15 @@ def main():
         except Exception as e:
             log(f"  ERROR processing '{title}': {e}")
             skipped += 1
+
+    # Issue #104 — only mark the walk complete once every fetched title has actually
+    # been processed. Marking it right after fetch (the original #97 shape) risked
+    # permanently stranding matches if this loop got interrupted partway through: a
+    # later sync would trust walk_complete and never re-walk to pick up what was
+    # fetched but never reached.
+    if reached_true_end:
+        _set_walk_complete(conn, True)
+        log("Reached true end of Crunchyroll history — full walk marked complete")
 
     conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
