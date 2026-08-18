@@ -222,6 +222,28 @@ CREATE TABLE personal_notes (
     UNIQUE (user_id, anime_id)
 );
 
+-- A note attached to a specific rewatch (issue #14), separate from the general/
+-- original note in personal_notes.notes. Dedicated table rather than a JSON array
+-- field on personal_notes: personal_notes is otherwise flat/single-row-per-anime,
+-- and this gets clean per-row upsert semantics plus the same FK integrity the other
+-- personal-layer tables get. Sync jobs must never write here, only the app's own
+-- note-editing routes.
+CREATE TABLE rewatch_notes (
+    id                  SERIAL PRIMARY KEY,
+    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anime_id            INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    -- Which rewatch this note is for, matching library_entries.repeat_count.
+    -- 1 = first rewatch; the original watch (repeat_count 0) keeps using
+    -- personal_notes.notes — no row here for that case.
+    repeat_count        INTEGER NOT NULL CHECK (repeat_count >= 1),
+    note                TEXT NOT NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, anime_id, repeat_count)
+);
+
+CREATE INDEX idx_rewatch_notes_user_anime ON rewatch_notes (user_id, anime_id);
+
 -- Output of the recommender job. Fully rebuildable, but kept as a table (not computed
 -- on every page load) so scores are stable and dismissals persist between runs.
 CREATE TABLE recommendation_scores (
