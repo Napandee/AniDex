@@ -628,6 +628,36 @@ main {
 .settings-section-desc { font-size: 0.85rem; color: #666; margin: 0 0 1rem; line-height: 1.5; }
 .settings-section form { display: flex; flex-direction: column; gap: 1.25rem; }
 
+/* Help disclosure (#141) — small "i" button next to a section heading or inline in a
+   field label; click/tap toggles the panel below it open. Click/tap only, deliberately
+   no hover-only path — see issue for why. */
+.help-disclosure-btn {
+  all: unset;
+  cursor: pointer;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  color: #777;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+.help-disclosure-btn:hover { border-color: #2563eb; color: #2563eb; }
+.help-disclosure-btn:focus-visible { border-color: #2563eb; color: #2563eb; outline: 2px solid #2563eb; outline-offset: 2px; }
+.help-disclosure-btn[aria-expanded="true"] { border-color: #2563eb; color: #fff; background: #2563eb; }
+
+.help-disclosure-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.18s ease; }
+.help-disclosure-panel.open { grid-template-rows: 1fr; }
+.help-disclosure-panel > div { overflow: hidden; }
+.help-disclosure-panel-body { font-size: 0.8rem; color: #888; line-height: 1.5; padding: 0.5rem 0 0.7rem; max-width: 34rem; }
+
 /* Sub-groups within a section, e.g. one per credential provider */
 .settings-subsection { display: flex; flex-direction: column; gap: 1.25rem; }
 .settings-subsection + .settings-subsection { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed #222; }

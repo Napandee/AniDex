@@ -110,11 +110,15 @@
 
     {# ── Credentials ──────────────────────────────────────────────────── #}
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Credentials</h2>
-      <p class="settings-section-desc">
-        Used by the sync pipeline. Leave a token field blank to keep the existing value.
-        Stored in Postgres — not in the container env file.
-      </p>
+      <h2 class="settings-section-title">Credentials
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-credentials">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-credentials"><div>
+        <p class="help-disclosure-panel-body">
+          Used by the sync pipeline. Leave a token field blank to keep the existing value.
+          Stored in Postgres — not in the container env file.
+        </p>
+      </div></div>
       {% if saved == 'credentials' %}<p class="settings-success">Credentials saved.</p>{% endif %}
       {% if csv_import_error %}<p class="settings-error">{{ csv_import_error }}</p>{% endif %}
 
@@ -161,11 +165,16 @@
           <div class="form-field">
             <label class="form-label" for="netflix_cookie_header">
               Cookie header
-              <span class="form-label-hint">— full "cookie" request header value from your browser's
-                devtools (Network tab, any netflix.com request, Request Headers → cookie). Needs the
-                whole thing, not just NetflixId/SecureNetflixId — Netflix's viewing-activity API
-                checks several of the other session cookies too.</span>
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-netflix-cookie">i</button>
             </label>
+            <div class="help-disclosure-panel" id="help-netflix-cookie"><div>
+              <p class="help-disclosure-panel-body">
+                Full "cookie" request header value from your browser's devtools (Network tab, any
+                netflix.com request, Request Headers → cookie). Needs the whole thing, not just
+                NetflixId/SecureNetflixId — Netflix's viewing-activity API checks several of the
+                other session cookies too.
+              </p>
+            </div></div>
             <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
                    name="netflix_cookie_header" placeholder="{% if settings.netflix_cookie_header %}set (leave blank to keep){% else %}not set{% endif %}"
                    autocomplete="new-password">
@@ -175,9 +184,14 @@
           <div class="form-field">
             <label class="form-label" for="netflix_profile_guid">
               Profile guid
-              <span class="form-label-hint">— from the same devtools capture: any
-                api/aui/pathEvaluator request's POST body decodes to {"guid": "..."}; that value</span>
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-netflix-guid">i</button>
             </label>
+            <div class="help-disclosure-panel" id="help-netflix-guid"><div>
+              <p class="help-disclosure-panel-body">
+                From the same devtools capture: any api/aui/pathEvaluator request's POST body
+                decodes to {"guid": "..."}; that value.
+              </p>
+            </div></div>
             <input class="form-input form-input--secret" type="password" id="netflix_profile_guid"
                    name="netflix_profile_guid" placeholder="{% if settings.netflix_profile_guid %}set (leave blank to keep){% else %}not set{% endif %}"
                    autocomplete="new-password">
@@ -209,28 +223,36 @@
 
     {# ── AniList delivery queue ───────────────────────────────────────── #}
     <div class="settings-section">
-      <h2 class="settings-section-title">AniList delivery queue</h2>
-      <p class="settings-section-desc">
-        Status and progress updates — from bulk edits and from Crunchyroll/Netflix sync
-        alike — are written here immediately and delivered to AniList asynchronously in
-        the background, respecting AniList's rate limit collectively across every
-        source. A sync run finishing "ok" means the updates were staged correctly, not
-        necessarily that every one has reached AniList yet.
-      </p>
+      <h2 class="settings-section-title">AniList delivery queue
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-outbox">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-outbox"><div>
+        <p class="help-disclosure-panel-body">
+          Status and progress updates — from bulk edits and from Crunchyroll/Netflix sync
+          alike — are written here immediately and delivered to AniList asynchronously in
+          the background, respecting AniList's rate limit collectively across every
+          source. A sync run finishing "ok" means the updates were staged correctly, not
+          necessarily that every one has reached AniList yet.
+        </p>
+      </div></div>
       <div id="outbox-status" class="sync-status-text">Checking…</div>
     </div>
 
     {# ── Netflix CSV import ───────────────────────────────────────────── #}
     <div class="settings-section">
-      <h2 class="settings-section-title">Netflix CSV import</h2>
-      <p class="settings-section-desc">
-        Bootstrap fallback for a large or first-time Netflix account whose full watch
-        history can't reliably complete within Force Full Resync's timeout budget.
-        Download your own export from Netflix (Account &rarr; Profile &amp; Parental
-        Controls &rarr; Viewing activity &rarr; Download all) and upload the CSV here —
-        it's matched against your AniList library the same way a live sync is, and
-        counts as a complete review of your Netflix history once imported.
-      </p>
+      <h2 class="settings-section-title">Netflix CSV import
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-csv-import">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-csv-import"><div>
+        <p class="help-disclosure-panel-body">
+          Bootstrap fallback for a large or first-time Netflix account whose full watch
+          history can't reliably complete within Force Full Resync's timeout budget.
+          Download your own export from Netflix (Account &rarr; Profile &amp; Parental
+          Controls &rarr; Viewing activity &rarr; Download all) and upload the CSV here —
+          it's matched against your AniList library the same way a live sync is, and
+          counts as a complete review of your Netflix history once imported.
+        </p>
+      </div></div>
       {% if saved == 'netflix_csv_import' %}<p class="settings-success">Import complete — see Sync history below for details.</p>{% endif %}
 
       <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
@@ -275,8 +297,12 @@
        <script> at the end of the file, no shared state with any other section on
        this page. #}
     <div class="settings-section">
-      <h2 class="settings-section-title">Data import</h2>
-      <p class="settings-section-desc">Restore drop reasons, notes, tags, and queue priority from a previously exported library.json. Matched by AniList id — only ever writes to your own account, and existing notes are only overwritten after you confirm.</p>
+      <h2 class="settings-section-title">Data import
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-data-import">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-data-import"><div>
+        <p class="help-disclosure-panel-body">Restore drop reasons, notes, tags, and queue priority from a previously exported library.json. Matched by AniList id — only ever writes to your own account, and existing notes are only overwritten after you confirm.</p>
+      </div></div>
       <input type="file" id="import-file-input" accept="application/json,.json" class="form-input" style="max-width: 320px;">
       <div class="form-actions">
         <button type="button" id="import-btn" class="btn-save" disabled>Import</button>
@@ -291,12 +317,16 @@
   <div class="settings-tab-panel" data-tab-panel="notifications" hidden>
 
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Notifications</h2>
-      <p class="settings-section-desc">
-        Where sync alerts, new-episode alerts, and the weekly digest get sent. Enable a
-        channel and fill in its details — leave secret fields blank to keep the existing
-        value.
-      </p>
+      <h2 class="settings-section-title">Notifications
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-notifications">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-notifications"><div>
+        <p class="help-disclosure-panel-body">
+          Where sync alerts, new-episode alerts, and the weekly digest get sent. Enable a
+          channel and fill in its details — leave secret fields blank to keep the existing
+          value.
+        </p>
+      </div></div>
       {% if saved == 'notifications' %}<p class="settings-success">Notification settings saved.</p>{% endif %}
 
       <form method="post" action="/settings/notifications">
@@ -406,12 +436,16 @@
   <div class="settings-tab-panel" data-tab-panel="privacy" hidden>
 
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Privacy</h2>
-      <p class="settings-section-desc">
-        Controls for any feature that shows your library to other users on this instance
-        (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
-        these are opt-in.
-      </p>
+      <h2 class="settings-section-title">Privacy
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-privacy">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-privacy"><div>
+        <p class="help-disclosure-panel-body">
+          Controls for any feature that shows your library to other users on this instance
+          (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
+          these are opt-in.
+        </p>
+      </div></div>
       {% if saved == 'privacy' %}<p class="settings-success">Saved.</p>{% endif %}
 
       <form method="post" action="/settings/privacy">

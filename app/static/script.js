@@ -48,6 +48,21 @@ function initSettingsTabs(resolveInitialTab) {
   activate(initial, false);
 }
 
+// ── Help disclosures (#141) ──────────────────────────────────────────────────
+// The small "i" button next to a settings-section-title/form-label — click/tap
+// toggles the .help-disclosure-panel that follows it. One shared handler for both
+// settings.html and admin.html; new instances need no JS of their own, just the
+// button + panel markup with matching id/aria-controls.
+document.querySelectorAll('.help-disclosure-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const panel = document.getElementById(btn.getAttribute('aria-controls'));
+    if (!panel) return;
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', String(!open));
+    panel.classList.toggle('open', !open);
+  });
+});
+
 // ── Library search ────────────────────────────────────────────────────────────
 const librarySearch = document.getElementById('library-search');
 if (librarySearch) {
