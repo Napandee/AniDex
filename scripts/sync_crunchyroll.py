@@ -53,7 +53,9 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
-from anilist_sync_common import anilist_update, fetch_user_list, find_anilist_id
+from anilist_sync_common import (
+    anilist_update, fetch_user_list, find_anilist_id, seed_search_cache,
+)
 
 load_dotenv()
 
@@ -334,6 +336,27 @@ def _set_walk_complete(conn, complete: bool):
     conn.commit()
 
 
+def load_title_search_cache(conn) -> dict[str, int | None]:
+    """Global (not per-user) AniList title-search cache (issue #115) — a search
+    result for a given title string is the same regardless of which user or
+    provider is asking, so this is shared across the whole instance."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
+        return {row["title"]: row["media_id"] for row in cur.fetchall()}
+
+
+def save_title_search_cache_entry(conn, title: str, media_id: int | None):
+    """Persist one newly-resolved (or confirmed-no-match) title immediately, not
+    batched at the end of the run — issue #115's whole point is durability across
+    an interrupted sync, same principle as #104's walk_complete fix."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
+            ON CONFLICT (title) DO UPDATE SET media_id = EXCLUDED.media_id, cached_at = now()
+        """, (title, media_id))
+    conn.commit()
+
+
 # ── Sync logic ────────────────────────────────────────────────────────────────
 
 def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
@@ -475,6 +498,13 @@ def main():
     user_list, title_index = fetch_user_list()
     log(f"Loaded {len(user_list)} AniList entries, {len(title_index)} title variants indexed")
 
+    # Issue #115 — seed find_anilist_id()'s search fallback from what's already been
+    # resolved by any previous sync (any user, any provider), so this run doesn't
+    # re-search titles already known to match or known to have no match.
+    title_search_cache = load_title_search_cache(conn)
+    seed_search_cache(title_search_cache)
+    log(f"Loaded {len(title_search_cache)} cached AniList title-search results")
+
     updated = skipped = no_change = index_hits = search_hits = 0
 
     for title, data in sorted(history.items()):
@@ -482,6 +512,12 @@ def main():
         normalized = title.lower()
         in_index_before = normalized in title_index
         media_id = find_anilist_id(title, title_index)
+        if not in_index_before and title not in title_search_cache:
+            # A genuinely new search result this run — persist immediately, not just
+            # at the end, so an interrupted run doesn't lose it (same durability
+            # principle as #104's walk_complete fix).
+            save_title_search_cache_entry(conn, title, media_id)
+            title_search_cache[title] = media_id
         if in_index_before and media_id:
             index_hits += 1
         elif media_id:

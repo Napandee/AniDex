@@ -63,6 +63,61 @@ def test_set_walk_complete_noop_when_conn_is_none():
     nf._set_walk_complete(None, True)
 
 
+# ── Persistent title-search cache (issue #115) ───────────────────────────────
+# Minimal in-memory stand-in for a psycopg2 connection, just for
+# load_title_search_cache/save_title_search_cache_entry's title->media_id SQL.
+class _FakeSearchCacheConn:
+    def __init__(self, initial=None):
+        self.store = dict(initial or {})  # {title: media_id}
+        self.committed = False
+        self._rows = []
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params=None):
+        q = query.strip()
+        if q.startswith("SELECT"):
+            self._rows = [{"title": t, "media_id": m} for t, m in self.store.items()]
+        elif q.startswith("INSERT"):
+            title, media_id = params
+            self.store[title] = media_id
+
+    def fetchall(self):
+        return self._rows
+
+    def commit(self):
+        self.committed = True
+
+
+def test_load_title_search_cache_returns_all_rows():
+    conn = _FakeSearchCacheConn(initial={"Frieren": 154587, "Some Western Show": None})
+    assert nf.load_title_search_cache(conn) == {"Frieren": 154587, "Some Western Show": None}
+
+
+def test_load_title_search_cache_empty_when_conn_is_none():
+    # DRY_RUN — matches that mode's "no DB reads at all" framing.
+    assert nf.load_title_search_cache(None) == {}
+
+
+def test_save_title_search_cache_entry_persists_and_commits():
+    conn = _FakeSearchCacheConn()
+    nf.save_title_search_cache_entry(conn, "Some Western Show", None)
+    assert conn.store == {"Some Western Show": None}
+    assert conn.committed is True
+
+
+def test_save_title_search_cache_entry_noop_when_conn_is_none():
+    # Must not raise — DRY_RUN passes conn=None through to every state writer.
+    nf.save_title_search_cache_entry(None, "Some Western Show", None)
+
+
 # ── Parsing helpers ──────────────────────────────────────────────────────────
 # Fixture shapes match the real Falcor pathEvaluator response, confirmed live
 # against a real account on feature/netflix-sync-48 (2026-08-14) — see

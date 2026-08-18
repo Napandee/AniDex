@@ -127,7 +127,27 @@ def fetch_user_list() -> tuple[dict[int, dict], dict[str, int]]:
     return entries, title_index
 
 
+# In-process only by default — issue #115: callers with a DB connection (every
+# sync_*.py script) seed this from anilist_title_search_cache via seed_search_cache()
+# before matching, and persist new entries back via search_cache_snapshot() after, so
+# repeat searches for the same permanently-non-matching titles don't cost anything on a
+# later sync/retry. Kept as a plain in-process dict here (not DB-backed directly) so
+# this module stays a pure AniList-API helper with no psycopg2 dependency of its own.
 _search_cache: dict[str, int | None] = {}
+
+
+def seed_search_cache(entries: dict[str, int | None]) -> None:
+    """Pre-populate the in-process search cache from persisted data (issue #115)."""
+    _search_cache.update(entries)
+
+
+def search_cache_snapshot() -> dict[str, int | None]:
+    """Current contents of the in-process search cache — includes both seeded and
+    newly-resolved entries, so a caller can upsert the whole thing back to
+    anilist_title_search_cache unconditionally without tracking what's "new" (issue
+    #115). Safe to call at any point, including after an interrupted/timed-out run,
+    since it just reflects whatever's been resolved so far."""
+    return dict(_search_cache)
 
 
 def find_anilist_id(title: str, title_index: dict[str, int]) -> int | None:
