@@ -28,7 +28,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox
+from app import db, config, privacy, outbox, i18n
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -684,10 +684,19 @@ def get_current_user(request: Request) -> dict | None:
 
 
 def _nav_context(request: Request) -> dict:
-    """Context processor: makes the logged-in user available to every template as
-    nav_user, so base.html's nav can gate the admin link on is_admin without every
-    single route that renders a template needing to pass it explicitly."""
-    return {"nav_user": get_current_user(request)}
+    """Context processor: makes the logged-in user (nav_user) and the active-locale
+    translator (t) available to every template without each route needing to pass
+    them explicitly. Combined into one processor so both share the single
+    get_current_user DB lookup rather than each doing its own.
+
+    Locale resolution: the user's saved `language` setting wins when logged in;
+    logged-out pages (auth_login.html etc, which have no settings row to read yet)
+    fall back to the browser's Accept-Language header, then English. See app/i18n.py.
+    """
+    user = get_current_user(request)
+    user_language = config.get(user["id"], "language") if user else None
+    locale = i18n.resolve_locale(request.headers.get("accept-language"), user_language)
+    return {"nav_user": user, "t": i18n.translator(locale), "current_language": locale}
 
 
 templates.context_processors.append(_nav_context)
@@ -2004,6 +2013,8 @@ def settings_page(
         {
             "settings": current,
             "timezones": COMMON_TIMEZONES,
+            "languages": i18n.SUPPORTED_LOCALES,
+            "language_labels": i18n.LOCALE_LABELS,
             "last_synced": last_synced,
             "account": {
                 "has_password": bool(user["password_hash"]),
@@ -2031,7 +2042,7 @@ DAY_LABELS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thu
 
 
 @app.post("/settings/display")
-def settings_save_display(request: Request, timezone: str = Form(...)):
+def settings_save_display(request: Request, timezone: str = Form(...), language: str = Form("en")):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -2041,7 +2052,11 @@ def settings_save_display(request: Request, timezone: str = Form(...)):
     except ZoneInfoNotFoundError:
         timezone = "Europe/London"
 
+    if language not in i18n.SUPPORTED_LOCALES:
+        language = i18n.DEFAULT_LOCALE
+
     config.set_value(user["id"], "timezone", timezone)
+    config.set_value(user["id"], "language", language)
     return RedirectResponse(url="/settings?saved=display", status_code=303)
 
 

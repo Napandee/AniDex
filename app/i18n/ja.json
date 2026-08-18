@@ -1,0 +1,48 @@
+{
+  "nav_library": "ライブラリ",
+  "nav_upcoming": "放送予定",
+  "nav_queue": "キュー",
+  "nav_recommended": "おすすめ",
+  "nav_stats": "統計",
+  "nav_search_placeholder": "検索…",
+  "nav_settings_title": "設定",
+  "nav_admin_title": "管理",
+  "nav_logout_title": "ログアウト",
+
+  "title_login": "ログイン — Anime Tracker",
+  "title_register": "アカウント作成 — Anime Tracker",
+  "title_reset_password": "パスワードの再設定 — Anime Tracker",
+  "title_settings": "設定 — Anime Tracker",
+
+  "login_title": "ログイン",
+  "email_label": "メールアドレス",
+  "email_placeholder": "email@example.com",
+  "password_label": "パスワード",
+  "login_password_placeholder": "パスワード",
+  "login_submit": "ログイン",
+  "login_or_divider": "または",
+  "login_with_google": "Googleでログイン",
+  "login_with_discord": "Discordでログイン",
+  "need_account": "アカウントをお持ちでないですか？",
+
+  "register_title": "アカウント作成",
+  "password_placeholder_min8": "8文字以上",
+  "register_submit": "アカウントを作成",
+  "already_have_account": "すでにアカウントをお持ちですか？",
+
+  "reset_password_title": "新しいパスワードを設定",
+  "new_password_label": "新しいパスワード",
+  "reset_password_submit": "パスワードを設定",
+  "reset_invalid_title": "リンクが無効または期限切れです",
+  "reset_invalid_body": "このパスワード再設定リンクは無効、期限切れ、またはすでに使用されています。管理者に新しいリンクの発行を依頼してください。",
+
+  "settings_page_title": "設定",
+  "settings_page_sub": "このトラッカーの設定と認証情報。",
+  "settings_section_display": "表示",
+  "settings_saved": "保存しました。",
+  "settings_timezone_label": "タイムゾーン",
+  "settings_timezone_hint": "— すべての日時表示に使用されます",
+  "settings_language_label": "言語",
+  "settings_language_hint": "— このアカウントの表示言語",
+  "settings_save_button": "保存"
+}
