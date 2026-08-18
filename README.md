@@ -9,29 +9,41 @@ and a recommendation engine scored against your own taste profile.
 ## Features
 
 - **Library view** — your full AniList list with star ratings, episode progress, streaming
-  links, filters by format/score/season, and bulk status updates
+  links, filters by format/season/tag/score, and bulk status + bulk tag updates
 - **Search** — search within your own library; a separate quick-add lets you look up a
   title on AniList by name and add it straight to your list (not a full catalog browse —
   link out to AniList for that)
-- **Export** — download your library plus all personal-layer data (notes, tags, drop
-  reasons) as a single file
-- **Personal notes** — drop reasons, custom tags, freeform notes, and queue priority per
-  show; none of which AniList has a structured place for
+- **Export / Import** — download your library plus all personal-layer data (notes, tags,
+  drop reasons) as a single file; the same file can be restored via import, e.g. onto a
+  fresh instance
+- **Personal notes** — drop reasons, custom tags, freeform notes, queue priority, and
+  separate note history per rewatch, none of which AniList has a structured place for
 - **Multi-user** — invite-only accounts on the same instance; an opt-in "also watching"
   indicator shows who else on the instance has a show in their library, with per-user
   hidden tags/genres and an anonymize-my-activity option so nothing is surfaced by
-  default
+  default. Admins get a tabbed panel for invites, soft user deactivation, an audit log
+  of admin actions, an instance-health readout, and a one-click all-users backup export
 - **Recommendations** — unwatched/planning anime scored against the genres, tags, and
-  studios of your highest-rated completed shows; dismiss with a reason or mark as seen
-  (pushes COMPLETED + rating to AniList)
-- **Upcoming episodes** — airing schedule for anything in your Watching/Planning list
-- **Queue** — watch-next list ordered by recommendation score and manual priority
-- **Stats** — watch time, completion rate, score distribution, top genres and studios
+  studios of your highest-rated completed shows; dismiss with a reason, snooze for a
+  while, or mark as seen (pushes COMPLETED + rating to AniList). Includes a "new this
+  season" seasonal discovery digest
+- **Upcoming episodes** — airing schedule for anything in your Watching/Planning list,
+  plus a weekly Mon–Sun broadcast grid view
+- **Queue** — watch-next list ordered by recommendation score and manual priority,
+  filterable by tag and episode-count bucket
+- **Stats** — watch time, completion rate, score distribution, top genres and studios, a
+  watch-activity calendar heatmap, a "year in anime" wrap-up, and a drop-pattern
+  breakdown (genres/tags/words that show up most in what you drop)
 - **Crunchyroll sync** — watch history and progress synced from Crunchyroll into AniList,
   fetched directly via a cookie-authenticated client, no third-party tool (optional)
 - **Netflix sync** — watch history synced from Netflix's own viewing-activity API into
-  AniList progress, cookie-authenticated, incremental (optional)
-- **Telegram notifications** — new episode alerts, sync results, weekly digest (optional)
+  AniList progress, cookie-authenticated, incremental (optional). A CSV export import is
+  also available as a one-time bootstrap fallback for accounts with a lot of history
+- **Notifications** — new episode alerts, sync results, and a weekly digest, delivered to
+  any combination of Telegram, Discord (webhook), and ntfy, each toggled independently
+  (optional)
+- **Multi-language UI** — English, Spanish, Hindi, Japanese, and Simplified Chinese,
+  switchable per-user in Settings
 
 ## Architecture
 
@@ -42,14 +54,20 @@ Netflix ──────► sync_netflix.py ──────┘
 ```
 
 The app includes a built-in scheduler (APScheduler) that runs the daily AniList sync and
-weekly recommender automatically. Schedule is configurable via the Settings page.
+weekly recommender automatically. Schedule is configurable via the Admin page.
+
+Writes back to AniList (bulk status/tag edits, and any Crunchyroll/Netflix-originated
+progress update) go through an async outbox rather than blocking the request that
+triggered them — a background worker drains it and retries on transient AniList
+failures, so a slow or briefly-down AniList API doesn't stall the UI.
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - An AniList account
 - A Postgres instance (a compose file is provided)
-- Optional: Crunchyroll account, Netflix account, Telegram bot, GitHub account for CI/CD
+- Optional: Crunchyroll account, Netflix account, a notification channel (Telegram bot,
+  Discord webhook, and/or ntfy), GitHub account for CI/CD
 
 ## Quick start
 
@@ -251,16 +269,26 @@ is an interactive helper for (re-)populating these when developing locally.
 Once set, it runs automatically as part of the daily sync — or trigger it anytime via
 the "Sync Now" button on the Settings page (or `POST /api/sync`).
 
-## Telegram notifications (optional)
+## Notifications (optional)
 
-Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in Settings (or in `.env`) to enable:
+Configured per-user under **Settings → Notifications**. Three channels are supported,
+each with its own on/off toggle so you can run any combination of them:
 
 - New episode alerts for anything in your Watching/Planning list
 - Daily sync success/failure notification
 - Weekly digest of upcoming episodes
 
-Create a bot via [@BotFather](https://t.me/BotFather) on Telegram to get a token.
-Your chat ID can be retrieved by messaging [@userinfobot](https://t.me/userinfobot).
+**Telegram** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (in Settings, or in `.env`
+before first boot). Create a bot via [@BotFather](https://t.me/BotFather) to get a token;
+your chat ID can be retrieved by messaging [@userinfobot](https://t.me/userinfobot).
+
+**Discord** — paste a channel webhook URL into Settings. Create one via a Discord
+channel's *Edit Channel → Integrations → Webhooks*. Discord/ntfy have no `.env` fallback —
+they're Settings-only, since they're free-text URLs rather than a fixed provider host.
+
+**ntfy** — set a topic (and optionally a non-default server URL and auth token if
+self-hosting ntfy) in Settings. Uses [ntfy.sh](https://ntfy.sh) by default; no signup
+needed, just pick an unguessable topic name and subscribe to it in the ntfy app.
 
 ## CI/CD with GitHub Actions (optional)
 
@@ -291,14 +319,16 @@ Two more pieces round out the pipeline:
 
 Optionally, `notify-dependabot.yml` pings a Telegram bot whenever Dependabot opens a PR.
 To enable it, add two repo secrets: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` — note
-these are separate from the app's own `TELEGRAM_BOT_TOKEN` in `.env` below (that one's
-for in-app notifications; this one's a GitHub Actions secret for repo maintainers).
+these are separate from the app's own `TELEGRAM_BOT_TOKEN` in `.env` (see
+[Notifications](#notifications-optional) above — that one's for in-app notifications;
+this one's a GitHub Actions secret for repo maintainers).
 
 ## Social login (Google/Discord, optional)
 
 Google and Discord "Sign in with..." are optional alternatives to local email+password,
-admin-configured per-instance via **Admin → OAuth settings** (or the `GOOGLE_CLIENT_ID`
-/ `DISCORD_CLIENT_ID` env vars as a fallback — see the table below). This is a one-time,
+admin-configured per-instance via **Admin → Instance Config → OAuth settings** (or the
+`GOOGLE_CLIENT_ID` / `DISCORD_CLIENT_ID` env vars as a fallback — see the table below).
+This is a one-time,
 instance-wide setup: the client id/secret are never seen or entered by individual users,
 who just click Connect/Sign-in and authenticate with their own provider account, the
 same as any "Sign in with Google" button anywhere on the web.
@@ -309,7 +339,8 @@ same as any "Sign in with Google" button anywhere on the web.
    is `google` or `discord`), using your instance's actual public URL:
    - `https://your-instance-domain/auth/callback/{provider}`
    - `https://your-instance-domain/auth/link-callback/{provider}`
-3. Paste the client id/secret into Admin → OAuth settings and save — no restart needed.
+3. Paste the client id/secret into Admin → Instance Config → OAuth settings and save —
+   no restart needed.
 
 **Google-specific note:** unless you complete Google's app-verification review (not
 needed for a small invite-only instance — reviewable, higher-friction, and pointless
@@ -331,19 +362,23 @@ pre-approval step needed.
 | `DATABASE_URL` | Yes | Postgres connection string — `postgresql://user:pass@host:port/db` |
 | `ANILIST_USERNAME` | Yes | Your AniList username (not email) — used to fetch your library |
 | `ANILIST_TOKEN` | For writes | OAuth token — needed for rating, status, and progress updates |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No | Google OAuth login — fallback if not set via `/admin/oauth-settings` in the app |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No | Google OAuth login — fallback if not set via Admin → Instance Config → OAuth settings in the app |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | No | Discord OAuth login — same fallback pattern as Google above |
 | `CRUNCHYROLL_ETP_RT` | No | Crunchyroll session cookie — enables CR watch history sync |
 | `NETFLIX_COOKIE_HEADER` | No | Full Netflix session cookie header — enables Netflix watch history sync |
 | `NETFLIX_PROFILE_GUID` | No | Netflix profile guid — required alongside `NETFLIX_COOKIE_HEADER` |
-| `TELEGRAM_BOT_TOKEN` | No | Telegram bot token — enables notifications |
-| `TELEGRAM_CHAT_ID` | No | Your Telegram chat ID — where notifications are sent |
+| `TELEGRAM_BOT_TOKEN` | No | Telegram bot token — enables Telegram notifications |
+| `TELEGRAM_CHAT_ID` | No | Your Telegram chat ID — where Telegram notifications are sent |
 | `SESSION_SECRET_KEY` | Recommended | Signs session cookies. If unset, a random key is generated per process start and sessions won't survive a container restart — set this for any real deployment |
 | `GHCR_TOKEN` | CI/CD only | GitHub PAT with `read:packages` scope — used by the deploy job to pull from GHCR |
 | `TZ` | No | Container timezone, e.g. `Europe/London` (default: UTC) |
 
-All variables can also be set via the Settings page in the app after first launch.
-Credentials stored in Settings are saved to the `settings` table in Postgres.
+Discord webhook and ntfy notification settings are Settings-only (no `.env` equivalent —
+see [Notifications](#notifications-optional) above), since they're free-text
+URLs/topics rather than a single fixed provider host like Telegram's API.
+
+All other variables above can also be set via the Settings page in the app after first
+launch. Credentials stored in Settings are saved to the `settings` table in Postgres.
 
 ## Stack
 
