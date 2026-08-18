@@ -2577,10 +2577,17 @@ async def bulk_add_tags(request: Request):
                     VALUES (%s, %s, %s::jsonb)
                     ON CONFLICT (user_id, anime_id) DO UPDATE SET
                         personal_tags = (
-                            SELECT COALESCE(jsonb_agg(DISTINCT tag), '[]'::jsonb)
-                            FROM jsonb_array_elements_text(
-                                personal_notes.personal_tags || EXCLUDED.personal_tags
-                            ) AS tag
+                            -- Dedupe case-insensitively (matches how privacy.py/
+                            -- run_recommender.py compare tags), keeping each tag's
+                            -- first-seen casing via ordinality.
+                            SELECT COALESCE(jsonb_agg(tag ORDER BY ord), '[]'::jsonb)
+                            FROM (
+                                SELECT DISTINCT ON (lower(tag)) tag, ord
+                                FROM jsonb_array_elements_text(
+                                    personal_notes.personal_tags || EXCLUDED.personal_tags
+                                ) WITH ORDINALITY AS t(tag, ord)
+                                ORDER BY lower(tag), ord
+                            ) deduped
                         ),
                         updated_at = now()
                     """,
