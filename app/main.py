@@ -1423,7 +1423,7 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     anime = db.fetchone(
         """
         SELECT a.id, a.title_english, a.title_romaji, a.cover_image_url, le.status,
-               a.trailer_yt_id, a.relations, a.genres
+               a.trailer_yt_id, a.relations, a.genres, a.average_score, le.score
         FROM anime a
         LEFT JOIN library_entries le ON le.anime_id = a.id AND le.user_id = %s
         WHERE a.id = %s
