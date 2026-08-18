@@ -608,6 +608,18 @@ main {
 }
 .settings-section-inner:first-child { border-top: none; padding-top: 0; }
 
+/* Settings/Admin page tabs (#95, #96) — same pill look as .status-tabs/.tab, just
+   scoped to the settings-section max-width and rendered as buttons for client-side
+   switching instead of links, since there's no separate route per tab. */
+.settings-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  max-width: 640px;
+  margin: 0 auto 2rem;
+}
+.settings-tabs .tab { font: inherit; cursor: pointer; }
+
 /* Each settings *page* section is its own independent block — one per concern, whether
    it holds a form or not — so save/UI state in one never bleeds into another. */
 .settings-section { max-width: 640px; margin: 2rem auto 0; border-top: 1px solid #2a2a2a; padding-top: 1.5rem; }
