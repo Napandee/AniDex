@@ -82,6 +82,33 @@
     </table>
   </div>
 
+  {# ── Audit log ────────────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Audit log</h2>
+    <p class="settings-section-desc">
+      Chronological record of admin actions (invites, OAuth settings, privacy
+      defaults, password resets, user deactivation). Most recent first.
+    </p>
+    <table class="admin-table">
+      <thead>
+        <tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for a in audit_log %}
+        <tr>
+          <td>{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
+          <td>{{ a.admin_email or '—' }}</td>
+          <td>{{ a.action.replace('_', ' ') }}</td>
+          <td>{{ a.target_email or '—' }}</td>
+          <td>{{ a.detail or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="status-empty">No admin actions logged yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
   {# ── Backup ───────────────────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Backup</h2>

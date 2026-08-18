@@ -68,6 +68,21 @@ CREATE TABLE password_resets (
     used_at     TIMESTAMPTZ
 );
 
+-- Chronological trail of admin actions (issue #89). admin_user_id is who performed
+-- the action; target_user_id is who it was taken against, when the action has a
+-- specific target (reset-password, deactivate) — NULL for instance-wide actions
+-- (invite, oauth-settings, privacy-defaults). Both FKs use ON DELETE SET NULL rather
+-- than this schema's usual CASCADE, so the audit trail survives even if a referenced
+-- user row is ever removed.
+CREATE TABLE admin_audit_log (
+    id              SERIAL PRIMARY KEY,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    admin_user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action          TEXT NOT NULL,   -- 'invite_created' | 'oauth_settings_updated' | 'privacy_defaults_updated' | 'password_reset' | 'user_deactivated'
+    target_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    detail          TEXT
+);
+
 -- =========================================================================
 -- ANILIST-SOURCED (rebuildable — sync job upserts these, never hand-edit)
 -- =========================================================================
@@ -289,3 +304,4 @@ CREATE INDEX idx_recommendation_scores_score ON recommendation_scores(user_id, s
 CREATE INDEX idx_anime_genres ON anime USING GIN (genres);
 CREATE INDEX idx_anime_tags ON anime USING GIN (tags);
 CREATE INDEX idx_invites_email ON invites(email) WHERE accepted_at IS NULL;
+CREATE INDEX idx_admin_audit_log_created_at ON admin_audit_log(created_at DESC);
