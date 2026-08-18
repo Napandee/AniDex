@@ -2002,7 +2002,8 @@ def sync_log(request: Request):
 
     rows = db.fetchall(
         "SELECT run_at, type, status, entries_updated, error_msg, steps "
-        "FROM sync_log WHERE user_id = %s ORDER BY run_at DESC LIMIT 20",
+        "FROM sync_log WHERE user_id = %s AND run_at >= now() - interval '7 days' "
+        "ORDER BY run_at DESC",
         (user["id"],),
     )
     return JSONResponse([
