@@ -82,6 +82,45 @@
     </table>
   </div>
 
+  {# ── Instance health ──────────────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">Instance health</h2>
+    <p class="settings-section-desc">
+      Read-only sanity check after a deploy or migration — no restart/migrate
+      controls here, display only.
+    </p>
+    <table class="admin-table">
+      <tbody>
+        <tr>
+          <th>Build version</th>
+          <td>
+            {% if instance_health.build_version %}
+            <code>{{ instance_health.build_version }}</code>
+            {% else %}
+            <span class="status-empty">unknown (not baked into this image)</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <th>Database size</th>
+          <td>{{ instance_health.db_size or '—' }}</td>
+        </tr>
+        <tr>
+          <th><code>library_entries</code> rows</th>
+          <td>{{ instance_health.row_counts.library_entries }}</td>
+        </tr>
+        <tr>
+          <th><code>anime</code> rows</th>
+          <td>{{ instance_health.row_counts.anime }}</td>
+        </tr>
+        <tr>
+          <th><code>users</code> rows</th>
+          <td>{{ instance_health.row_counts.users }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   {# ── Audit log ────────────────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Audit log</h2>

@@ -1138,11 +1138,35 @@ def _log_admin_action(admin_user_id: int, action: str, target_user_id: int | Non
     )
 
 
+def _instance_health() -> dict:
+    """Read-only instance-health data for the admin panel (issue #86): running
+    build version (if baked into the image via the Dockerfile's GIT_SHA build
+    arg — see Dockerfile), Postgres database size, and row counts for a few key
+    tables. Display only — deliberately no write/control actions here."""
+    git_sha = os.environ.get("GIT_SHA", "").strip()
+
+    db_size_row = db.fetchone(
+        "SELECT pg_size_pretty(pg_database_size(current_database())) AS size"
+    )
+
+    return {
+        "build_version": git_sha[:12] if git_sha else None,
+        "db_size": db_size_row["size"] if db_size_row else None,
+        "row_counts": {
+            "library_entries": db.fetchone("SELECT COUNT(*) AS n FROM library_entries")["n"],
+            "anime": db.fetchone("SELECT COUNT(*) AS n FROM anime")["n"],
+            "users": db.fetchone("SELECT COUNT(*) AS n FROM users")["n"],
+        },
+    }
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request):
     denied = _require_admin(request)
     if denied:
         return denied
+
+    instance_health = _instance_health()
 
     invites = db.fetchall("SELECT * FROM invites ORDER BY created_at DESC")
 
@@ -1211,6 +1235,7 @@ def admin_page(request: Request):
         request,
         "admin.html",
         {
+            "instance_health": instance_health,
             "invites": invites,
             "users": users_view,
             "google_status": _provider_status("google"),
