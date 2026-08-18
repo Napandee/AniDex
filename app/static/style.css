@@ -1246,6 +1246,72 @@ body.auth-page main {
 }
 .heatmap-legend .heatmap-cell { width: 10px; height: 10px; }
 
+/* ── Stats: drop-pattern panel (issue #73) ───────────────────────────────── */
+.drop-patterns-grid { margin-top: 1.25rem; }
+.drop-patterns-sub {
+  font-size: 0.8rem;
+  color: #666;
+  margin: -0.5rem 0 1rem;
+}
+.drop-patterns-body {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 1.5rem;
+}
+.drop-patterns-col { min-width: 0; }
+.drop-patterns-subhead {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.65rem;
+}
+.drop-patterns-empty { font-size: 0.8rem; color: #555; }
+
+.drop-rate-list { display: flex; flex-direction: column; gap: 0.55rem; }
+.drop-rate-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+.drop-rate-label {
+  font-size: 0.78rem;
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drop-rate-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #1b1b1b;
+  overflow: hidden;
+}
+.drop-rate-bar-fill {
+  display: block;
+  height: 100%;
+  background: #f87171;
+  border-radius: 4px;
+}
+.drop-rate-pct { font-size: 0.72rem; color: #aaa; white-space: nowrap; }
+.drop-rate-n { color: #555; }
+
+.drop-tag-cloud { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.drop-tag-chip {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.55rem;
+  background: #1b1b1b;
+  border: 1px solid #2a2a2a;
+  border-radius: 999px;
+  color: #ccc;
+}
+
+@media (max-width: 720px) {
+  .drop-patterns-body { grid-template-columns: 1fr; }
+}
+
 /* ── Recommendations ─────────────────────────────────────────────────────── */
 
 .page-header { margin-bottom: 2rem; }
