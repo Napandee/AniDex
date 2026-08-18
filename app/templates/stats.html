@@ -57,6 +57,31 @@
     </div>
   </div>
 
+  <!-- Drop-pattern panel (issue #73) — hidden entirely (both wrapper and JS
+       below) unless /api/stats returns a non-null drop_patterns, i.e. the user
+       has at least DROP_PATTERN_MIN_SAMPLES dropped entries with a drop_reason
+       set. See app/main.py's _compute_drop_patterns for the threshold rationale. -->
+  <div class="stats-grid drop-patterns-grid" id="drop-patterns-section" hidden>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">Drop patterns</h2>
+      <p class="drop-patterns-sub" id="drop-patterns-sub"></p>
+      <div class="drop-patterns-body">
+        <div class="drop-patterns-col">
+          <h3 class="drop-patterns-subhead">Genres you drop most</h3>
+          <div id="drop-genre-list" class="drop-rate-list"></div>
+        </div>
+        <div class="drop-patterns-col">
+          <h3 class="drop-patterns-subhead">Common words in your drop reasons</h3>
+          <div id="drop-word-list" class="drop-tag-cloud"></div>
+        </div>
+        <div class="drop-patterns-col">
+          <h3 class="drop-patterns-subhead">Common tags on dropped shows</h3>
+          <div id="drop-tag-list" class="drop-tag-cloud"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -222,6 +247,58 @@
     grid.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
     monthsRow.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
   })(data.heatmap);
+
+  // Drop-pattern panel (issue #73) — stays hidden entirely below the
+  // backend's minimum-sample threshold (data.drop_patterns is null).
+  (function renderDropPatterns(dp) {
+    const section = document.getElementById('drop-patterns-section');
+    if (!dp) return; // below threshold, or no dropped entries with a reason yet
+    section.hidden = false;
+
+    document.getElementById('drop-patterns-sub').textContent =
+      `Based on ${dp.sample_size} dropped ${dp.sample_size === 1 ? 'entry' : 'entries'} with a drop reason noted` +
+      (dp.avg_progress_pct != null ? ` — on average you drop around ${dp.avg_progress_pct}% through.` : '.');
+
+    const genreList = document.getElementById('drop-genre-list');
+    if (dp.genre_drop_rate.length) {
+      dp.genre_drop_rate.forEach(g => {
+        const row = document.createElement('div');
+        row.className = 'drop-rate-row';
+        row.innerHTML = `
+          <span class="drop-rate-label">${g.genre}</span>
+          <span class="drop-rate-bar-track"><span class="drop-rate-bar-fill" style="width:${g.rate}%"></span></span>
+          <span class="drop-rate-pct">${g.rate}% <span class="drop-rate-n">(${g.dropped}/${g.total})</span></span>
+        `;
+        genreList.appendChild(row);
+      });
+    } else {
+      genreList.innerHTML = '<p class="drop-patterns-empty">Not enough per-genre data yet.</p>';
+    }
+
+    const wordList = document.getElementById('drop-word-list');
+    if (dp.top_words.length) {
+      dp.top_words.forEach(w => {
+        const chip = document.createElement('span');
+        chip.className = 'drop-tag-chip';
+        chip.textContent = `${w.word} (${w.count})`;
+        wordList.appendChild(chip);
+      });
+    } else {
+      wordList.innerHTML = '<p class="drop-patterns-empty">No recurring words yet.</p>';
+    }
+
+    const tagList = document.getElementById('drop-tag-list');
+    if (dp.top_tags.length) {
+      dp.top_tags.forEach(t => {
+        const chip = document.createElement('span');
+        chip.className = 'personal-tag';
+        chip.textContent = `${t.tag} (${t.count})`;
+        tagList.appendChild(chip);
+      });
+    } else {
+      tagList.innerHTML = '<p class="drop-patterns-empty">No personal tags on dropped shows yet.</p>';
+    }
+  })(data.drop_patterns);
 }());
 </script>
 {% endblock %}

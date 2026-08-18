@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import zipfile
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
@@ -2445,6 +2446,127 @@ def outbox_status(request: Request):
     return JSONResponse({"by_state": by_state})
 
 
+# ── Drop-pattern mining (issue #73) ─────────────────────────────────────────
+# Read-only aggregation of personal_notes.drop_reason / personal_tags against
+# dropped library entries' genres/format/episodes. Never writes to
+# personal_notes; the drop_reason/personal_tags capture UI is untouched.
+#
+# Minimum-sample gate: the panel only renders once a user has at least this many
+# DROPPED entries with a non-empty drop_reason. Below that, any genre/word
+# breakdown is just noise from one or two data points, not a real pattern — and
+# an empty/near-empty panel would clutter the stats page for new users who
+# haven't dropped much yet. 5 was picked (issue suggested 3-5) because the
+# per-genre breakdown further splits an already-small sample; 5 distinct
+# reasoned drops gives at least a couple of genres/words a chance to repeat.
+DROP_PATTERN_MIN_SAMPLES = 5
+
+# Deliberately simple stopword list for v1 keyword mining — no NLP/stemming,
+# per the issue's explicit scope. Covers common function words plus a few
+# domain words ("anime", "episode", "show"...) that would otherwise dominate
+# every result without saying anything genre/reason-specific.
+_DROP_REASON_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "it", "its", "it's", "to", "of", "in",
+    "on", "for", "was", "were", "is", "are", "be", "been", "being", "i", "im",
+    "i'm", "this", "that", "these", "those", "just", "so", "too", "very",
+    "really", "with", "without", "not", "didn't", "couldn't", "wasn't",
+    "doesn't", "don't", "after", "before", "because", "got", "get", "getting",
+    "like", "felt", "feel", "feels", "at", "by", "as", "my", "me", "them",
+    "then", "than", "from", "have", "had", "has", "having", "up", "out",
+    "into", "about", "when", "which", "what", "who", "if", "no", "yes", "you",
+    "your", "it'll", "will", "would", "could", "should", "one", "all", "more",
+    "even", "still", "here", "there", "did", "do", "does", "again", "also",
+    "dropped", "drop", "dropping", "show", "shows", "series", "anime",
+    "episode", "episodes", "ep", "eps", "watching", "watch", "watched",
+}
+
+
+def _tokenize_drop_reason(text: str) -> list[str]:
+    """Lowercase word extraction + stopword filter. No NLP/stemming — v1 per
+    issue #73's explicit scope. Words <= 2 chars are dropped as noise."""
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    return [w for w in words if len(w) > 2 and w not in _DROP_REASON_STOPWORDS]
+
+
+def _compute_drop_patterns(user_id: int) -> dict | None:
+    rows = db.fetchall(
+        """
+        SELECT le.progress, a.genres, a.format, a.episodes, pn.drop_reason, pn.personal_tags
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
+        WHERE le.user_id = %s AND le.status = 'DROPPED'
+          AND pn.drop_reason IS NOT NULL AND btrim(pn.drop_reason) <> ''
+        """,
+        (user_id,),
+    )
+    if len(rows) < DROP_PATTERN_MIN_SAMPLES:
+        return None
+
+    # Completed-per-genre counts, to turn raw drop counts into a rate
+    # ("what % of your Isekai ever get dropped") rather than just a count that's
+    # mostly a proxy for how much of that genre you watch in the first place.
+    completed_genre_rows = db.fetchall(
+        """
+        SELECT genre, COUNT(*) AS cnt
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id,
+             jsonb_array_elements_text(a.genres) AS genre
+        WHERE le.status = 'COMPLETED' AND le.user_id = %s
+        GROUP BY genre
+        """,
+        (user_id,),
+    )
+    completed_by_genre = {r["genre"]: int(r["cnt"]) for r in completed_genre_rows}
+
+    genre_drop_counts: Counter = Counter()
+    format_drop_counts: Counter = Counter()
+    tag_counts: Counter = Counter()
+    word_counts: Counter = Counter()
+    progress_ratios = []
+
+    for row in rows:
+        for genre in (row["genres"] or []):
+            genre_drop_counts[genre] += 1
+        if row["format"]:
+            format_drop_counts[row["format"]] += 1
+        for tag in (row["personal_tags"] or []):
+            if tag and tag.strip():
+                tag_counts[tag.strip().lower()] += 1
+        for word in _tokenize_drop_reason(row["drop_reason"]):
+            word_counts[word] += 1
+        if row["episodes"] and row["progress"] is not None and row["episodes"] > 0:
+            progress_ratios.append(min(row["progress"] / row["episodes"], 1.0))
+
+    # Genre drop rate, restricted to genres with a combined (completed + dropped)
+    # sample of at least 3 — otherwise one dropped one-off in a genre you've
+    # otherwise never touched shows up as a false "100% drop rate".
+    genre_drop_rate = []
+    for genre, dropped_cnt in genre_drop_counts.items():
+        total = completed_by_genre.get(genre, 0) + dropped_cnt
+        if total < 3:
+            continue
+        genre_drop_rate.append({
+            "genre": genre,
+            "rate": round(dropped_cnt / total * 100),
+            "dropped": dropped_cnt,
+            "total": total,
+        })
+    genre_drop_rate.sort(key=lambda r: (-r["rate"], -r["total"]))
+
+    avg_progress_pct = (
+        round(sum(progress_ratios) / len(progress_ratios) * 100) if progress_ratios else None
+    )
+
+    return {
+        "sample_size": len(rows),
+        "genre_drop_rate": genre_drop_rate[:8],
+        "top_words": [{"word": w, "count": c} for w, c in word_counts.most_common(10)],
+        "top_tags": [{"tag": t, "count": c} for t, c in tag_counts.most_common(10)],
+        "top_formats": [{"format": f, "count": c} for f, c in format_drop_counts.most_common(6)],
+        "avg_progress_pct": avg_progress_pct,
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request):
     user, denied = _require_user_api(request)
@@ -2534,12 +2656,14 @@ def stats_data(request: Request):
     watch_minutes = int(totals["watch_minutes"])
     watch_hours = watch_minutes // 60
     watch_days = round(watch_minutes / 1440, 1)
+    drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
         "genres": [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows],
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
+        "drop_patterns": drop_patterns,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),
