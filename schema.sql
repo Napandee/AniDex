@@ -270,12 +270,17 @@ CREATE TABLE sync_log (
     run_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     type            TEXT NOT NULL,          -- 'full_sync' | 'recommender'
     status          TEXT NOT NULL,          -- 'running' (transient) | 'ok' | 'partial' | 'error'
-    entries_updated INTEGER,
+    entries_updated INTEGER,                -- sum of steps[].entries_updated across non-skipped
+                                             -- steps (issue #46) — real entries touched this run,
+                                             -- not a library row count
     error_msg       TEXT,
+    trigger         TEXT,                   -- 'manual' | 'scheduled' (issue #46, migration 009);
+                                             -- full_sync/force_full_resync only, null for recommender
     steps           JSONB                   -- full_sync only; see scripts/run_full_sync.py. Shape:
                                              -- [{"service": "crunchyroll"|"netflix"|"anilist_postgres",
                                              --   "status": "running"|"ok"|"error"|"skipped",
-                                             --   "entries_updated": int|null, "error_msg": str|null}, ...]
+                                             --   "entries_updated": int|null, "error_msg": str|null,
+                                             --   "full_pull": bool|null, "entries_fetched": int|null}, ...]
 );
 
 -- =========================================================================

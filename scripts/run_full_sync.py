@@ -80,8 +80,21 @@ def load_settings() -> dict:
         conn.close()
 
 
-def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, timeout: int | None = None) -> bool:
-    """subprocess.TimeoutExpired is deliberately not caught here — it propagates up to
+def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, timeout: int | None = None) -> dict:
+    """Runs cmd with output captured (rather than inherited) so this can parse a
+    trailing `SYNC_RESULT: {...}` JSON line the child scripts emit (issue #46) — the
+    only channel this orchestrator has for learning a step's real entry counts back
+    from the subprocess, since the exit code alone only tells us pass/fail. The full
+    captured output is still echoed to this process's own stdout afterward, so
+    container logs keep the complete per-step output — just no longer streamed
+    live line-by-line while the step is running.
+
+    Returns {"ok": bool, "entries_updated": int|None, "entries_fetched": int|None,
+    "full_pull": bool|None} — the last three keys come straight from the child's
+    SYNC_RESULT line and are all None if it didn't emit one (e.g. it failed before
+    reaching that point).
+
+    subprocess.TimeoutExpired is deliberately not caught here — it propagates up to
     _run_step's existing generic exception handler (issue #91), which already turns
     any unexpected exception in a step into that step's own error status without
     aborting the rest of the pipeline. str(TimeoutExpired) reads as e.g. "Command
@@ -89,25 +102,42 @@ def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, 
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
-    result = subprocess.run(cmd, env=env, cwd=cwd, timeout=timeout)
-    return result.returncode == 0
+    result = subprocess.run(
+        cmd, env=env, cwd=cwd, timeout=timeout, capture_output=True, text=True,
+    )
+    output = (result.stdout or "") + (result.stderr or "")
+    print(output, end="", flush=True)
+
+    sync_result = {"entries_updated": None, "entries_fetched": None, "full_pull": None}
+    for line in output.splitlines():
+        if line.startswith("SYNC_RESULT: "):
+            try:
+                sync_result.update(json.loads(line[len("SYNC_RESULT: "):]))
+            except json.JSONDecodeError:
+                pass
+
+    return {"ok": result.returncode == 0, **sync_result}
 
 
-def _start_log(sync_type: str) -> int:
+def _start_log(sync_type: str, trigger: str) -> int:
     """INSERT the 'running' row for this pipeline run; returns its id. Steps get filled
     in incrementally via _update_log_steps as the run progresses, so a status/log poll
     mid-run sees live per-step progress rather than nothing until the run finishes.
 
     sync_type is 'full_sync' for a normal run or 'force_full_resync' when
     FORCE_FULL_RESYNC is set (issue #20) — recorded once here and never overwritten by
-    _finish_log()'s later UPDATE."""
+    _finish_log()'s later UPDATE.
+
+    trigger is 'manual' (Sync Now / Force Full Resync button) or 'scheduled' (the
+    daily APScheduler loop) — issue #46, threaded in from app/main.py via the
+    TRIGGER env var so the sync-history UI can distinguish the two."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO sync_log (user_id, type, status, steps) VALUES (%s, %s, %s, %s) "
+                "INSERT INTO sync_log (user_id, type, status, steps, trigger) VALUES (%s, %s, %s, %s, %s) "
                 "RETURNING id",
-                (USER_ID, sync_type, "running", "[]"),
+                (USER_ID, sync_type, "running", "[]", trigger),
             )
             return cur.fetchone()[0]
     finally:
@@ -144,45 +174,48 @@ def _finish_log(
         log(f"Warning: could not finalize sync log: {e}")
 
 
+_EMPTY_STEP_RESULT = {"entries_updated": None, "error_msg": None, "full_pull": None, "entries_fetched": None}
+
+
 def _run_step(log_id: int, steps: list[dict], service: str, fn) -> str:
-    """Run one step's fn() -> (status, entries_updated, error_msg), recording a live
-    'running' placeholder before it starts (so a mid-run poll sees which step is
-    currently in flight) and the real result once it finishes. An unexpected exception
-    inside fn() is caught here and recorded as that step's error instead of crashing the
-    whole pipeline — this is what makes steps independent."""
-    steps.append({"service": service, "status": "running", "entries_updated": None, "error_msg": None})
+    """Run one step's fn() -> {"status", "entries_updated", "error_msg", "full_pull",
+    "entries_fetched"}, recording a live 'running' placeholder before it starts (so a
+    mid-run poll sees which step is currently in flight) and the real result once it
+    finishes. An unexpected exception inside fn() is caught here and recorded as that
+    step's error instead of crashing the whole pipeline — this is what makes steps
+    independent."""
+    steps.append({"service": service, "status": "running", **_EMPTY_STEP_RESULT})
     _update_log_steps(log_id, steps)
     try:
-        status, entries_updated, error_msg = fn()
+        result = fn()
     except Exception as e:
-        status, entries_updated, error_msg = "error", None, f"Unexpected error: {e}"
-    steps[-1] = {"service": service, "status": status, "entries_updated": entries_updated, "error_msg": error_msg}
+        result = {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": f"Unexpected error: {e}"}
+    steps[-1] = {"service": service, **result}
     _update_log_steps(log_id, steps)
-    if status == "error":
-        log(f"ERROR: {service} — {error_msg}")
-    return status
+    if result["status"] == "error":
+        log(f"ERROR: {service} — {result['error_msg']}")
+    return result["status"]
 
 
-def _do_crunchyroll(
-    cr_etp_rt: str, credentials_env: dict, force_full_resync: bool = False
-) -> tuple[str, int | None, str | None]:
+def _do_crunchyroll(cr_etp_rt: str, credentials_env: dict, force_full_resync: bool = False) -> dict:
     if not cr_etp_rt:
         log("Crunchyroll — no ETP-RT configured, skipping")
-        return "skipped", None, None
+        return {"status": "skipped", **_EMPTY_STEP_RESULT}
 
     log("Crunchyroll — syncing → AniList" + (" (forced full resync)" if force_full_resync else ""))
     extra_env = {**credentials_env, "CRUNCHYROLL_ETP_RT": cr_etp_rt}
     if force_full_resync:
         extra_env["FORCE_FULL_RESYNC"] = "1"
-    ok = run(
+    result = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_crunchyroll.py")],
         extra_env=extra_env,
         timeout=PROVIDER_STEP_TIMEOUT,
     )
-    if not ok:
-        return "error", None, "Crunchyroll → AniList sync failed"
+    if not result["ok"]:
+        return {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": "Crunchyroll → AniList sync failed"}
 
-    return "ok", None, None
+    return {"status": "ok", "entries_updated": result["entries_updated"], "error_msg": None,
+            "full_pull": result["full_pull"], "entries_fetched": result["entries_fetched"]}
 
 
 def _do_netflix(
@@ -190,10 +223,10 @@ def _do_netflix(
     netflix_profile_guid: str,
     credentials_env: dict,
     force_full_resync: bool = False,
-) -> tuple[str, int | None, str | None]:
+) -> dict:
     if not (netflix_cookie_header and netflix_profile_guid):
         log("Netflix — no credentials configured, skipping")
-        return "skipped", None, None
+        return {"status": "skipped", **_EMPTY_STEP_RESULT}
 
     log("Netflix — syncing → AniList" + (" (forced full resync)" if force_full_resync else ""))
     extra_env = {
@@ -203,37 +236,30 @@ def _do_netflix(
     }
     if force_full_resync:
         extra_env["FORCE_FULL_RESYNC"] = "1"
-    ok = run(
+    result = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_netflix.py")],
         extra_env=extra_env,
         timeout=PROVIDER_STEP_TIMEOUT,
     )
-    if not ok:
-        return "error", None, "Netflix → AniList sync failed"
+    if not result["ok"]:
+        return {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": "Netflix → AniList sync failed"}
 
-    return "ok", None, None
+    return {"status": "ok", "entries_updated": result["entries_updated"], "error_msg": None,
+            "full_pull": result["full_pull"], "entries_fetched": result["entries_fetched"]}
 
 
-def _do_anilist_postgres(credentials_env: dict) -> tuple[str, int | None, str | None]:
+def _do_anilist_postgres(credentials_env: dict) -> dict:
     log("AniList — syncing → Postgres")
-    ok = run(
+    result = run(
         [sys.executable, str(SCRIPTS_DIR / "sync_anilist.py")],
         extra_env=credentials_env,
         timeout=ANILIST_STEP_TIMEOUT,
     )
-    if not ok:
-        return "error", None, "AniList → Postgres sync failed"
+    if not result["ok"]:
+        return {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": "AniList → Postgres sync failed"}
 
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM library_entries WHERE user_id = %s", (USER_ID,))
-            total = cur.fetchone()[0]
-        conn.close()
-    except Exception:
-        total = None
-
-    return "ok", total, None
+    return {"status": "ok", "entries_updated": result["entries_updated"], "error_msg": None,
+            "full_pull": result["full_pull"], "entries_fetched": result["entries_fetched"]}
 
 
 def _compute_overall_status(steps: list[dict]) -> str:
@@ -252,7 +278,10 @@ def main() -> None:
     # step always does a fresh full read of the current AniList list state.
     force_full_resync = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in ("1", "true", "yes")
     sync_type = "force_full_resync" if force_full_resync else "full_sync"
-    log_id = _start_log(sync_type)
+    # Issue #46 — set by app/main.py's _run_sync_task (defaults to "manual" for the
+    # Sync Now / Force Full Resync buttons; "scheduled" for the daily APScheduler loop).
+    trigger = os.environ.get("TRIGGER", "manual")
+    log_id = _start_log(sync_type, trigger)
     settings = load_settings()
 
     # Resolve credentials: DB settings take priority over env vars (env var fallback
@@ -290,7 +319,12 @@ def main() -> None:
     overall_status = _compute_overall_status(steps)
     anilist_step = next(s for s in steps if s["service"] == "anilist_postgres")
     top_error_msg = anilist_step["error_msg"] if overall_status == "error" else None
-    _finish_log(log_id, overall_status, anilist_step["entries_updated"], top_error_msg, steps)
+    # Issue #46 — real "entries touched this run" across all three channels, not just
+    # the AniList step's own count (and no longer the AniList library's total row
+    # count either). Skipped steps (no credentials configured) contribute nothing;
+    # an errored step's entries_updated is always None so also contributes 0.
+    entries_updated = sum(s["entries_updated"] or 0 for s in steps if s["status"] != "skipped")
+    _finish_log(log_id, overall_status, entries_updated, top_error_msg, steps)
 
     log(f"Full sync pipeline complete — overall status: {overall_status}")
     sys.exit(0 if overall_status in ("ok", "partial") else 1)

@@ -381,7 +381,7 @@
           <th>Time</th>
           <th>Type</th>
           <th>Status</th>
-          <th>Entries</th>
+          <th>Entries touched</th>
           <th>Error</th>
         </tr>
       </thead>
@@ -441,7 +441,18 @@ function renderStepChips(steps) {
     const s = bySvc[svc];
     const status = s ? s.status : 'pending';
     const err = s && s.error_msg ? ' — ' + s.error_msg : '';
-    const title = (fmtService(svc) + ': ' + status + err).replace(/"/g, '&quot;');
+    // Issue #46 — touched/fetched counts + full-pull-vs-incremental, straight from
+    // steps[].entries_updated/entries_fetched/full_pull. Only shown once a real count
+    // could exist (ok/partial-contributing outcomes; skipped/error/pending never have one).
+    let detail = '';
+    if (s && s.status === 'ok') {
+      const bits = [(s.entries_updated != null ? s.entries_updated : '?') + ' touched'];
+      if (s.entries_fetched != null) bits.push(s.entries_fetched + ' fetched');
+      if (s.full_pull === true) bits.push('full walk');
+      else if (s.full_pull === false) bits.push('incremental');
+      detail = ' — ' + bits.join(', ');
+    }
+    const title = (fmtService(svc) + ': ' + status + err + detail).replace(/"/g, '&quot;');
     return `<span class="step-chip step-chip--${status}" title="${title}"></span>`;
   }).join('') + '</span>';
 }
@@ -512,10 +523,13 @@ function renderStepChips(steps) {
 (function () {
   const tbody = document.getElementById('sync-log-body');
 
-  function fmtType(t) {
-    return t === 'full_sync' ? 'Full sync'
+  function fmtType(t, trigger) {
+    const base = t === 'full_sync' ? 'Full sync'
       : t === 'force_full_resync' ? 'Force full resync'
       : t === 'recommender' ? 'Recommender' : t;
+    // Issue #46 — trigger is only ever set for full_sync/force_full_resync rows.
+    const triggerLabel = trigger === 'manual' ? 'manual' : trigger === 'scheduled' ? 'scheduled' : null;
+    return triggerLabel ? `${base} (${triggerLabel})` : base;
   }
 
   function renderLog(rows) {
@@ -528,7 +542,7 @@ function renderStepChips(steps) {
       const entries = r.entries_updated != null ? r.entries_updated : '—';
       const err = r.error_msg ? `<span title="${r.error_msg.replace(/"/g,'&quot;')}">${r.error_msg.slice(0,60)}${r.error_msg.length > 60 ? '…' : ''}</span>` : '—';
       const stepsHtml = (r.type === 'full_sync' || r.type === 'force_full_resync') ? renderStepChips(r.steps) : '';
-      return `<tr><td>${ts}</td><td>${fmtType(r.type)}</td>` +
+      return `<tr><td>${ts}</td><td>${fmtType(r.type, r.trigger)}</td>` +
              `<td><span class="log-${r.status}">${r.status}</span> ${stepsHtml}</td>` +
              `<td>${entries}</td><td>${err}</td></tr>`;
     }).join('');
