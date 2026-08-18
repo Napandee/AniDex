@@ -1425,27 +1425,41 @@ def _fetch_visible_recommendations(user_id: int) -> list[dict]:
     """Recommendation rows visible to `user_id`: not permanently dismissed, and not
     currently snoozed (issue #75). Broken out of recommendations() so the exclusion
     logic is directly testable against a real Postgres without needing to fake a
-    full Request/session — see tests/test_recommendation_snooze.py."""
+    full Request/session — see tests/test_recommendation_snooze.py.
+
+    Issue #13: `rs.source` distinguishes the original similarity-based path from
+    the new seasonal discovery digest. The LIMIT is applied per-source (via
+    ROW_NUMBER) rather than globally, so a season with a lot of new releases can't
+    starve out the similarity picks (or vice versa) — both get their own top-100
+    budget, sorted by score within each."""
     return db.fetchall(
         """
-        SELECT
-            a.id,
-            a.title_english,
-            a.title_romaji,
-            a.cover_image_url,
-            a.format,
-            a.episodes,
-            a.average_score,
-            a.genres,
-            rs.score       AS rec_score,
-            rs.reason
-        FROM recommendation_scores rs
-        JOIN anime a ON a.id = rs.anime_id
-        WHERE rs.dismissed = false
-          AND (rs.snoozed_until IS NULL OR rs.snoozed_until <= now())
-          AND rs.user_id = %s
-        ORDER BY rs.score DESC
-        LIMIT 100
+        SELECT id, title_english, title_romaji, cover_image_url, format, episodes,
+               average_score, genres, season, season_year, rec_score, reason, source
+        FROM (
+            SELECT
+                a.id,
+                a.title_english,
+                a.title_romaji,
+                a.cover_image_url,
+                a.format,
+                a.episodes,
+                a.average_score,
+                a.genres,
+                a.season,
+                a.season_year,
+                rs.score  AS rec_score,
+                rs.reason,
+                rs.source,
+                ROW_NUMBER() OVER (PARTITION BY rs.source ORDER BY rs.score DESC) AS rn
+            FROM recommendation_scores rs
+            JOIN anime a ON a.id = rs.anime_id
+            WHERE rs.dismissed = false
+              AND (rs.snoozed_until IS NULL OR rs.snoozed_until <= now())
+              AND rs.user_id = %s
+        ) ranked
+        WHERE rn <= 100
+        ORDER BY source, rec_score DESC
         """,
         (user_id,),
     )
@@ -1474,6 +1488,7 @@ def recommendations(request: Request):
     ]
 
     entries = []
+    seasonal_count = 0
     for row in rows:
         rec_genres = set(row["genres"] or [])
         best_title, best_overlap = None, 0
@@ -1483,12 +1498,18 @@ def recommendations(request: Request):
                 best_overlap, best_title = overlap, title
         entry = dict(row)
         entry["similar_to"] = best_title if best_overlap >= 2 else None
+        # Issue #13 — "Fall 2026"-style badge for seasonal-digest cards.
+        if entry.get("source") == "seasonal" and entry.get("season"):
+            entry["season_label"] = f"{entry['season'].title()} {entry['season_year']}"
+            seasonal_count += 1
+        else:
+            entry["season_label"] = None
         entries.append(entry)
 
     return templates.TemplateResponse(
         request,
         "recommendations.html",
-        {"entries": entries},
+        {"entries": entries, "seasonal_count": seasonal_count},
     )
 
 

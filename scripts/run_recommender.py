@@ -9,6 +9,18 @@ The `dismissed` flag on existing rows is never touched by this script, and
 neither is `snoozed_until` (issue #75's time-boxed "not now") — both are user
 decisions that must survive a rebuild.
 
+Two candidate-discovery paths write into the same recommendation_scores table,
+distinguished by the `source` column (issue #13, migration 012):
+  - 'similarity': fetch_recommendation_candidates() — AniList's per-show
+    recommendations off what you've completed, plus your own PLANNING entries.
+    This is the original path.
+  - 'seasonal': fetch_seasonal_candidates() — AniList's current season/year
+    query (issue #13's "new this season" digest: currently-airing/upcoming
+    anime you haven't added yet, scored against the same taste profile). Additive,
+    not a replacement — see CLAUDE.md's Scope section.
+Both paths reuse the same build_taste_profile()/score_candidate() scoring logic;
+the only real difference between them is candidate *sourcing*.
+
 Single-user, invoked once per user by app/main.py's _scheduled_recommender() (which
 sets USER_ID) or directly for local dev/testing.
 
@@ -24,6 +36,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime, timezone
 
 import httpx
 import psycopg2
@@ -40,6 +53,13 @@ USER_ID = int(os.environ["USER_ID"])
 TOP_SHOWS_FOR_RECS = 30   # how many of the user's top completed shows to pull recs for
 RECS_PER_SHOW_PAGES = 2   # pages of recommendations per show (25 per page = up to 50 recs/show)
 INTER_REQUEST_SLEEP = 0.8  # seconds between API calls
+
+# Seasonal discovery digest (issue #13) — how many pages of the current season's
+# release list to pull, batched via AniList's Page pagination rather than looping
+# one show at a time. 3 pages * 50/page = up to 150 candidates per run, sorted by
+# AniList popularity — plenty for a single season's worth of releases without
+# ballooning the scoring/storage work below.
+SEASONAL_MAX_PAGES = 3
 
 # Collaborative-filtering signal (#27) — how much other same-instance users'
 # ratings move a candidate's score, tunable independently of the taste-profile
@@ -71,6 +91,17 @@ query ($mediaId: Int, $page: Int) {
           title { romaji }
         }
       }
+    }
+  }
+}
+"""
+
+SEASONAL_IDS_QUERY = """
+query ($season: MediaSeason, $seasonYear: Int, $page: Int) {
+  Page(page: $page, perPage: 50) {
+    pageInfo { hasNextPage }
+    media(season: $season, seasonYear: $seasonYear, type: ANIME, sort: POPULARITY_DESC) {
+      id
     }
   }
 }
@@ -242,6 +273,49 @@ def fetch_recommendation_candidates(
     return candidates
 
 
+def current_season_year(now: datetime | None = None) -> tuple[str, int]:
+    """Map the real calendar date to AniList's own season convention (issue #13):
+    WINTER = Jan-Mar, SPRING = Apr-Jun, SUMMER = Jul-Sep, FALL = Oct-Dec. Computed
+    in UTC so it stays correct regardless of the host's local timezone, and so it
+    keeps being correct as time passes rather than needing a hardcoded season/year."""
+    now = now or datetime.now(timezone.utc)
+    month = now.month
+    if month <= 3:
+        season = "WINTER"
+    elif month <= 6:
+        season = "SPRING"
+    elif month <= 9:
+        season = "SUMMER"
+    else:
+        season = "FALL"
+    return season, now.year
+
+
+def fetch_seasonal_candidates(library_ids: set[int]) -> set[int]:
+    """
+    Issue #13 — seasonal discovery digest. Candidate sourcing by current
+    season/year rather than similarity-to-library: pulls AniList's release list
+    for the current season, batched via Page pagination (not a per-show loop) to
+    stay well under the 90 req/min rate limit. Anime already in the user's
+    library are excluded here so downstream scoring never has to special-case them.
+    """
+    season, year = current_season_year()
+    print(f"  Season: {season} {year}")
+    candidates: set[int] = set()
+    page = 1
+    while page <= SEASONAL_MAX_PAGES:
+        data = gql(SEASONAL_IDS_QUERY, {"season": season, "seasonYear": year, "page": page})
+        page_data = data["Page"]
+        for media in page_data["media"]:
+            if media["id"] not in library_ids:
+                candidates.add(media["id"])
+        if not page_data["pageInfo"]["hasNextPage"]:
+            break
+        page += 1
+        time.sleep(INTER_REQUEST_SLEEP)
+    return candidates
+
+
 def fetch_and_store_candidates(conn, media_ids: list[int]) -> None:
     """Batch-fetch media details from AniList and upsert into the anime table."""
     remaining = list(media_ids)
@@ -409,7 +483,16 @@ def score_candidate(media: dict, profile: dict, cross_user: dict | None = None) 
     return raw, reason
 
 
-def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
+def score_and_store(
+    conn,
+    all_candidate_ids: set[int],
+    profile: dict,
+    sources: dict[int, str] | None = None,
+) -> int:
+    """`sources` maps anime_id -> 'similarity' | 'seasonal' (issue #13); any
+    candidate not present in the map defaults to 'similarity', which keeps this
+    backward-compatible with the original single-source call shape."""
+    sources = sources or {}
     cross_user_signal = fetch_cross_user_signal(conn, all_candidate_ids, USER_ID)
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -432,17 +515,18 @@ def score_and_store(conn, all_candidate_ids: set[int], profile: dict) -> int:
     with conn.cursor() as cur:
         for anime_id, score, reason in scored:
             cur.execute("""
-                INSERT INTO recommendation_scores (user_id, anime_id, score, reason, dismissed, computed_at)
-                VALUES (%s, %s, %s, %s, false, now())
+                INSERT INTO recommendation_scores (user_id, anime_id, score, reason, source, dismissed, computed_at)
+                VALUES (%s, %s, %s, %s, %s, false, now())
                 ON CONFLICT (user_id, anime_id) DO UPDATE SET
                     score       = EXCLUDED.score,
                     reason      = EXCLUDED.reason,
+                    source      = EXCLUDED.source,
                     computed_at = now()
                     -- dismissed and snoozed_until are intentionally excluded from this
                     -- SET clause: both are user decisions that must survive re-runs
                     -- (issue #75 extends the original dismissed-preservation guarantee
                     -- to cover the new time-boxed "not now" snooze too).
-            """, (USER_ID, anime_id, score, json.dumps(reason)))
+            """, (USER_ID, anime_id, score, json.dumps(reason), sources.get(anime_id, "similarity")))
     conn.commit()
     return len(scored)
 
@@ -492,7 +576,7 @@ def main() -> None:
     log_id = _start_log()
     conn = psycopg2.connect(DATABASE_URL)
     try:
-        print("Step 1/4 — Building taste profile from library...")
+        print("Step 1/5 — Building taste profile from library...")
         profile = build_taste_profile(conn)
         print(
             f"  Profile: {len(profile['genres'])} genres, "
@@ -509,12 +593,24 @@ def main() -> None:
             f"{len(planning_ids)} PLANNING entries as direct candidates"
         )
 
-        print(f"\nStep 2/4 — Fetching AniList recommendations for top {len(top_ids)} shows...")
+        print(f"\nStep 2/5 — Fetching AniList recommendations for top {len(top_ids)} shows...")
         rec_candidate_ids = fetch_recommendation_candidates(top_ids, library_ids)
         print(f"  {len(rec_candidate_ids)} unique external candidates discovered")
 
-        all_candidate_ids = rec_candidate_ids | planning_ids
+        print("\nStep 3/5 — Fetching seasonal discovery digest candidates (issue #13)...")
+        seasonal_candidate_ids = fetch_seasonal_candidates(library_ids)
+        print(f"  {len(seasonal_candidate_ids)} unique seasonal candidates discovered")
+
+        similarity_ids = rec_candidate_ids | planning_ids
+        all_candidate_ids = similarity_ids | seasonal_candidate_ids
         print(f"  {len(all_candidate_ids)} total candidates to score")
+
+        # Label each candidate by discovery path (issue #13's `source` column).
+        # 'seasonal' wins on overlap — it's the more specific/informative label
+        # ("new this season AND matches your taste") for the recommendations page's
+        # "New this season" filter.
+        sources: dict[int, str] = {aid: "similarity" for aid in similarity_ids}
+        sources.update({aid: "seasonal" for aid in seasonal_candidate_ids})
 
         # Fetch details for candidates not yet in our anime table
         with conn.cursor() as cur:
@@ -522,13 +618,13 @@ def main() -> None:
             known_ids = {row[0] for row in cur.fetchall()}
         unknown_ids = all_candidate_ids - known_ids
         if unknown_ids:
-            print(f"\nStep 3/4 — Fetching details for {len(unknown_ids)} new anime...")
+            print(f"\nStep 4/5 — Fetching details for {len(unknown_ids)} new anime...")
             fetch_and_store_candidates(conn, list(unknown_ids))
         else:
-            print("\nStep 3/4 — All candidate details already cached, skipping fetch.")
+            print("\nStep 4/5 — All candidate details already cached, skipping fetch.")
 
-        print(f"\nStep 4/4 — Scoring and storing {len(all_candidate_ids)} candidates...")
-        n = score_and_store(conn, all_candidate_ids, profile)
+        print(f"\nStep 5/5 — Scoring and storing {len(all_candidate_ids)} candidates...")
+        n = score_and_store(conn, all_candidate_ids, profile, sources)
         print(f"\nDone — {n} recommendations scored and stored.")
         _finish_log(log_id, "ok", n, None)
 
