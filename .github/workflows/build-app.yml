@@ -11,12 +11,18 @@ on:
       - '.github/workflows/pr-validate.yml'
       - '.github/workflows/notify-dependabot.yml'
 
+concurrency:
+  group: build-deploy-main
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +38,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -50,10 +57,10 @@ jobs:
           GHCR_TOKEN=$(grep '^GHCR_TOKEN=' ${{ vars.APPDATA_PATH }}/.env | cut -d= -f2- | tr -d '\r\n')
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$OWNER" --password-stdin
 
-      - name: Pull new image
+      - name: Pull new image by digest
         run: |
           OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
-          docker pull ghcr.io/$OWNER/anidex:latest
+          docker pull ghcr.io/$OWNER/anidex@${{ needs.build.outputs.digest }}
 
       - name: Restart container
         run: |
@@ -65,4 +72,4 @@ jobs:
             --restart unless-stopped \
             -p 8889:8888 \
             --env-file ${{ vars.APPDATA_PATH }}/.env \
-            ghcr.io/$OWNER/anidex:latest
+            ghcr.io/$OWNER/anidex@${{ needs.build.outputs.digest }}
