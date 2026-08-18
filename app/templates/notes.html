@@ -16,6 +16,16 @@
       {% if anime.status %}
       <div class="notes-context-sub">{{ anime.status.title() }}</div>
       {% endif %}
+      <div class="notes-scores">
+        <span class="notes-score">
+          <span class="notes-score-label">Your score</span>
+          {% if anime.score %}{{ anime.score }} ★{% else %}<span class="notes-score-empty">Not rated</span>{% endif %}
+        </span>
+        <span class="notes-score">
+          <span class="notes-score-label">AniList average</span>
+          {% if anime.average_score %}{{ anime.average_score }}%{% else %}<span class="notes-score-empty">No average</span>{% endif %}
+        </span>
+      </div>
       <a href="https://anilist.co/anime/{{ (notes.anilist_id_override if notes and notes.anilist_id_override else anime.id) }}"
          target="_blank" rel="noopener" class="btn-anilist" style="margin-top:0.5rem;display:inline-block">AniList ↗</a>
     </div>
