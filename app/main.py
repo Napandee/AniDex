@@ -2584,6 +2584,56 @@ async def bulk_status_retry(anime_id: int, request: Request):
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/anime/bulk-tags")
+async def bulk_add_tags(request: Request):
+    """Bulk-apply personal tags from library bulk-select mode (issue #15). Additive —
+    merges into each entry's existing personal_tags rather than replacing them, and
+    purely local (personal_notes only, no AniList mutation), so it commits
+    synchronously instead of going through the status_sync_outbox like bulk-status."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    tags_raw = body.get("tags") or ""
+    anime_ids = body.get("anime_ids", [])
+    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    if not tags:
+        return JSONResponse({"error": "tags required"}, status_code=400)
+    if not anime_ids or not all(isinstance(i, int) for i in anime_ids):
+        return JSONResponse({"error": "anime_ids required"}, status_code=400)
+
+    tags_json = json.dumps(tags)
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            for anime_id in anime_ids:
+                cur.execute(
+                    """
+                    INSERT INTO personal_notes (user_id, anime_id, personal_tags)
+                    VALUES (%s, %s, %s::jsonb)
+                    ON CONFLICT (user_id, anime_id) DO UPDATE SET
+                        personal_tags = (
+                            -- Dedupe case-insensitively (matches how privacy.py/
+                            -- run_recommender.py compare tags), keeping each tag's
+                            -- first-seen casing via ordinality.
+                            SELECT COALESCE(jsonb_agg(tag ORDER BY ord), '[]'::jsonb)
+                            FROM (
+                                SELECT DISTINCT ON (lower(tag)) tag, ord
+                                FROM jsonb_array_elements_text(
+                                    personal_notes.personal_tags || EXCLUDED.personal_tags
+                                ) WITH ORDINALITY AS t(tag, ord)
+                                ORDER BY lower(tag), ord
+                            ) deduped
+                        ),
+                        updated_at = now()
+                    """,
+                    (user["id"], anime_id, tags_json),
+                )
+        conn.commit()
+
+    return JSONResponse({"ok": True, "count": len(anime_ids)})
+
+
 @app.post("/api/anime/{anime_id}/progress")
 async def set_progress(anime_id: int, request: Request):
     user, denied = _require_user_api(request)
