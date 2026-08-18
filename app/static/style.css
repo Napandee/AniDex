@@ -27,15 +27,26 @@ nav {
   letter-spacing: 0.02em;
 }
 
-.nav-links { display: flex; gap: 1rem; }
+.nav-links {
+  display: flex;
+  gap: 0;
+  background: #1a1a1a;
+  border: 1px solid #262626;
+  border-radius: 999px;
+  padding: 0.25rem;
+}
 
 .nav-link {
   color: #888;
   text-decoration: none;
   font-size: 0.9rem;
-  transition: color 0.15s;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  transition: background 0.15s, color 0.15s;
 }
 .nav-link:hover { color: #ddd; }
+.nav-link.active { background: #2563eb; color: #fff; }
+.nav-link.active:hover { color: #fff; }
 
 .account-fabs {
   position: fixed;
@@ -62,6 +73,10 @@ nav {
 .icon-fab { background: #262626; color: #b3b3b3; text-decoration: none; }
 .icon-fab:hover { background: #333; color: #e0e0e0; transform: scale(1.08); }
 .icon-fab svg { width: 1.05rem; height: 1.05rem; }
+.icon-fab.active { background: #2563eb; color: #fff; }
+.icon-fab.active:hover { background: #1d4ed8; color: #fff; }
+.icon-fab-admin.active { background: #7f1d1d; color: #fca5a5; }
+.icon-fab-admin.active:hover { background: #5f1616; color: #fca5a5; }
 
 .logout-fab { background: #7f1d1d; color: #e2b8b8; }
 .logout-fab:hover { background: #3f1515; color: #fca5a5; transform: scale(1.08); }
@@ -1865,7 +1880,10 @@ body.auth-page main {
     width: 100%;
     overflow-x: auto;
     gap: 0.25rem;
-    padding-bottom: 0.25rem;
+    padding: 0 0 0.25rem;
+    background: none;
+    border: none;
+    border-radius: 0;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
@@ -1878,6 +1896,7 @@ body.auth-page main {
     border-radius: 6px;
     font-size: 0.8rem;
   }
+  .nav-link.active { background: #2563eb; }
 
   /* ── Main padding ─────────────────────────────────────────────────────── */
   main { padding: 1rem; }
