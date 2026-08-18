@@ -1,22 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Upcoming — Anime Tracker{% endblock %}
 
-{% block content %}
-<div class="page-header">
-  <h1 class="page-title">Upcoming Episodes</h1>
-  <p class="page-sub">New episodes for your watching &amp; planning list.</p>
-</div>
-
-{% if entries %}
-  {% set ns = namespace(current_group=None) %}
-  {% for e in entries %}
-    {% if e.group != ns.current_group %}
-      {% if ns.current_group is not none %}</ul>{% endif %}
-      {% set ns.current_group = e.group %}
-      <h2 class="upcoming-group">{{ e.group }}</h2>
-      <ul class="upcoming-list">
-    {% endif %}
-
+{% macro entry_card(e) %}
     <li class="upcoming-item">
       {% if e.cover_image_url %}
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="upcoming-cover">
@@ -42,9 +27,54 @@
               data-anime-id="{{ e.id }}"
               data-progress="{{ e.progress or 0 }}">+1 ep</button>
     </li>
+{% endmacro %}
 
-  {% endfor %}
-  </ul>
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Upcoming Episodes</h1>
+  <p class="page-sub">New episodes for your watching &amp; planning list.</p>
+</div>
+
+{% if entries %}
+  <div class="library-toolbar">
+    <div class="toolbar-right">
+      <div class="view-toggle-group" role="group" aria-label="Upcoming view">
+        <button type="button" id="upcoming-view-list-btn" class="filter-btn active" data-view="list">List</button>
+        <button type="button" id="upcoming-view-grid-btn" class="filter-btn" data-view="grid">Weekly grid</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="upcoming-list-view">
+    {% set ns = namespace(current_group=None) %}
+    {% for e in entries %}
+      {% if e.group != ns.current_group %}
+        {% if ns.current_group is not none %}</ul>{% endif %}
+        {% set ns.current_group = e.group %}
+        <h2 class="upcoming-group">{{ e.group }}</h2>
+        <ul class="upcoming-list">
+      {% endif %}
+      {{ entry_card(e) }}
+    {% endfor %}
+    </ul>
+  </div>
+
+  <div id="upcoming-grid-view" class="upcoming-grid" hidden>
+    {% for day in week_grid %}
+    <div class="upcoming-grid-day{% if day.is_today %} is-today{% endif %}">
+      <h3 class="upcoming-grid-day-header">{{ day.name }}</h3>
+      {% if day.entries %}
+      <ul class="upcoming-list upcoming-grid-day-list">
+        {% for e in day.entries %}
+          {{ entry_card(e) }}
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="upcoming-grid-empty">Nothing airing</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 {% else %}
 <p class="empty">No upcoming episodes — nothing currently airing in your list.</p>
 {% endif %}
