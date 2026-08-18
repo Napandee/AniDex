@@ -8,14 +8,18 @@ once per eligible user; the manual "Sync Now" button does the same for just the
 logged-in user. This script itself has no concept of "all users."
 
 Reads credentials from that user's settings DB row (falling back to env vars only for
-local dev/testing without a real user), then runs three independent steps:
-  - crunchyroll        — sync_crunchyroll.py (fetches CR watch history directly, issue
+local dev/testing without a real user), then runs three independent steps, in this
+order:
+  - anilist_postgres    — AniList library → Postgres (the step that actually refreshes
+                           the app's data; never skipped, only ok/error). Runs first
+                           (issue #99) so crunchyroll/netflix's title matching can read
+                           a fresh local library_entries mirror instead of each making
+                           its own live AniList list-fetch call.
+  - crunchyroll         — sync_crunchyroll.py (fetches CR watch history directly, issue
                           #45 — no separate "fetch" sub-step or history.json anymore;
                           the vendored crunchyexporter-cli this used to shell out to has
                           been retired entirely)
   - netflix             — Netflix viewing activity → AniList progress updates
-  - anilist_postgres    — AniList library → Postgres (the step that actually refreshes
-                           the app's data; never skipped, only ok/error)
 
 crunchyroll/netflix are independently guarded on that service's credentials being
 configured (skipped, not failed, if absent) and — critically — a failure in one step no
@@ -272,10 +276,16 @@ def main() -> None:
         "USER_ID":          str(USER_ID),
     }
 
+    # Issue #99 — anilist_postgres now runs first, not last: crunchyroll/netflix
+    # matching reads AniList's list from the local library_entries mirror instead of
+    # each independently making its own live fetch_user_list() call, so that mirror
+    # needs to be fresh before they run. _compute_overall_status/_finish_log below key
+    # off steps[i]["service"] by name, not position, so this reorder doesn't affect
+    # how overall status or entries_updated get computed.
     steps: list[dict] = []
+    _run_step(log_id, steps, "anilist_postgres", lambda: _do_anilist_postgres(credentials_env))
     _run_step(log_id, steps, "crunchyroll", lambda: _do_crunchyroll(cr_etp_rt, credentials_env, force_full_resync))
     _run_step(log_id, steps, "netflix", lambda: _do_netflix(netflix_cookie_header, netflix_profile_guid, credentials_env, force_full_resync))
-    _run_step(log_id, steps, "anilist_postgres", lambda: _do_anilist_postgres(credentials_env))
 
     overall_status = _compute_overall_status(steps)
     anilist_step = next(s for s in steps if s["service"] == "anilist_postgres")

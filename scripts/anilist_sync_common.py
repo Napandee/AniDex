@@ -11,6 +11,8 @@ import os
 import time
 
 import httpx
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,6 +20,8 @@ load_dotenv()
 ANILIST_TOKEN = os.environ["ANILIST_TOKEN"]
 ANILIST_USERNAME = os.environ["ANILIST_USERNAME"]
 ANILIST_API = "https://graphql.anilist.co"
+DATABASE_URL = os.environ["DATABASE_URL"]
+USER_ID = int(os.environ["USER_ID"])
 
 
 MAX_RATE_LIMIT_RETRIES = 5
@@ -123,6 +127,62 @@ def fetch_user_list() -> tuple[dict[int, dict], dict[str, int]]:
             for t in (romaji, english):
                 if t:
                     title_index[t.lower()] = mid
+
+    return entries, title_index
+
+
+def load_user_list_from_db() -> tuple[dict[int, dict], dict[str, int]]:
+    """Local-mirror equivalent of fetch_user_list() (issue #99) — reads the AniList
+    library from Postgres's library_entries/anime tables instead of making a live
+    AniList API call. Crunchyroll and Netflix sync were each independently calling
+    fetch_user_list() once per pipeline run (2x redundant today, 3x once Prime Video
+    exists); run_full_sync.py now runs the anilist_postgres step first specifically so
+    this mirror is fresh before crunchyroll/netflix matching needs it.
+
+    Same return shape as fetch_user_list() — callers can swap between the two with a
+    one-line change, and find_anilist_id()/is_plausible_match() are unchanged either
+    way, since only the *source* of this data changed, not its shape."""
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    library_entries.anime_id AS media_id,
+                    library_entries.status,
+                    library_entries.progress,
+                    library_entries.repeat_count,
+                    anime.episodes AS total_episodes,
+                    anime.format,
+                    anime.title_romaji,
+                    anime.title_english
+                FROM library_entries
+                JOIN anime ON anime.id = library_entries.anime_id
+                WHERE library_entries.user_id = %s
+            """, (USER_ID,))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    entries: dict[int, dict] = {}
+    title_index: dict[str, int] = {}
+
+    for row in rows:
+        mid = row["media_id"]
+        romaji = (row["title_romaji"] or "").strip()
+        english = (row["title_english"] or "").strip()
+
+        entries[mid] = {
+            "status": row["status"],
+            "progress": row["progress"] or 0,
+            "repeat": row["repeat_count"] or 0,
+            "total_episodes": row["total_episodes"],
+            "format": row["format"],
+            "title": english or romaji or "",
+        }
+
+        for t in (romaji, english):
+            if t:
+                title_index[t.lower()] = mid
 
     return entries, title_index
 

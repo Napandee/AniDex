@@ -69,7 +69,7 @@ import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    anilist_update, fetch_user_list, find_anilist_id, is_plausible_match, seed_search_cache,
+    anilist_update, find_anilist_id, is_plausible_match, load_user_list_from_db, seed_search_cache,
 )
 
 load_dotenv()
@@ -617,9 +617,11 @@ def main():
     watched_by_series = aggregate_by_series(raw_items)
     log(f"{len(watched_by_series)} unique series/movies touched since last sync")
 
-    log("Fetching AniList library (one call)...")
-    user_list, title_index = fetch_user_list()
-    log(f"Loaded {len(user_list)} AniList entries, {len(title_index)} title variants indexed")
+    # Issue #99 — reads the local library_entries mirror instead of making our own
+    # live AniList API call. run_full_sync.py now runs anilist_postgres before this
+    # step specifically so the mirror is fresh.
+    user_list, title_index = load_user_list_from_db()
+    log(f"Loaded {len(user_list)} AniList entries, {len(title_index)} title variants indexed (from local mirror)")
 
     # Issue #115 — seed find_anilist_id()'s search fallback from what's already been
     # resolved by any previous sync (any user, any provider), so this run doesn't
