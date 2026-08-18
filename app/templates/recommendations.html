@@ -83,6 +83,7 @@
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="wrong_genre">Wrong genre</button>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="too_long">Too long</button>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="">✕</button>
+          <button class="dismiss-chip snooze-chip" data-anime-id="{{ e.id }}" title="Hide for 30 days, then it comes back">Not now</button>
         </div>
       </div>
     </div>
@@ -123,6 +124,18 @@ async function doDismiss(animeId, reason) {
   });
   if (card) card.remove();
 }
+
+// "Not now" — time-boxed snooze (issue #75), distinct from permanent dismiss above.
+async function doSnooze(animeId) {
+  const card = document.querySelector(`.rec-card[data-anime-id="${animeId}"]`);
+  if (card) { card.style.opacity = '0.3'; card.style.pointerEvents = 'none'; }
+  await fetch(`/recommendations/${animeId}/snooze`, { method: 'POST' });
+  if (card) card.remove();
+}
+
+document.querySelectorAll('.snooze-chip').forEach(chip => {
+  chip.addEventListener('click', () => doSnooze(chip.dataset.animeId));
+});
 
 // "Seen it" — intercept to show rating modal
 document.querySelectorAll('.seen-it-chip').forEach(chip => {
@@ -181,8 +194,8 @@ document.getElementById('seen-it-confirm').addEventListener('click', async () =>
   await doDismiss(id, 'already_watched');
 });
 
-// All other dismiss chips (not seen-it)
-document.querySelectorAll('.dismiss-chip:not(.seen-it-chip)').forEach(chip => {
+// All other dismiss chips (not seen-it, not the separate "not now" snooze action)
+document.querySelectorAll('.dismiss-chip:not(.seen-it-chip):not(.snooze-chip)').forEach(chip => {
   chip.addEventListener('click', () => doDismiss(chip.dataset.animeId, chip.dataset.reason));
 });
 </script>

@@ -232,6 +232,11 @@ CREATE TABLE recommendation_scores (
     reason               JSONB DEFAULT '{}',            -- {"matched_genres": [...], "matched_tags": [...], "matched_studio": "..."}
     dismissed            BOOLEAN NOT NULL DEFAULT false,  -- user said "not interested" — exclude from future runs
     dismiss_reason       TEXT,                            -- optional chip: "not_interested", "already_watched", "wrong_genre", "too_long"
+    snoozed_until        TIMESTAMPTZ,                     -- time-boxed "not now" (issue #75); NULL = not snoozed.
+                                                            -- Excluded from the recommendations view while in the
+                                                            -- future, same as dismissed = true, but resurfaces once
+                                                            -- it passes. Preserved across recommender rebuilds the
+                                                            -- same way dismissed is (added migration 008).
     computed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, anime_id)
 );
