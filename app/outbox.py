@@ -1,7 +1,13 @@
 """Background worker draining status_sync_outbox — the async AniList push half of
-local-first bulk status edits (issue #18).
+local-first writes. Originally built for UI bulk-status edits (issue #18); issue #100
+extended the same outbox to also carry Crunchyroll/Netflix/Prime-originated progress
+updates, so this one worker now delivers every source under a single, collective
+AniList rate-limit budget instead of each provider script making its own independent,
+blocking SaveMediaListEntry calls. The `source` column on status_sync_outbox exists
+purely for observability — the drain/delivery logic below treats every row identically
+regardless of where it came from.
 
-A bulk status edit lands in library_entries (marked sync_status='pending') and an
+A local-first write lands in library_entries (marked sync_status='pending') and an
 outbox row immediately; this module's worker thread then pushes each queued item to
 AniList and, on success, flips the row back to sync_status='synced' and deletes the
 outbox row. Rows only ever sit in status_sync_outbox while in flight or failed —
@@ -12,7 +18,9 @@ Deliberately not APScheduler: the existing scheduled jobs are all coarse CronTri
 (tightest is hourly), but this needs to drain promptly right after an enqueue. Runs as
 a plain daemon thread inside the app process instead, woken via a threading.Event on
 enqueue with a periodic fallback sweep (in case a wake() is missed, or the app restarts
-with rows still pending/in_progress from before).
+with rows still pending/in_progress from before) — the fallback sweep is also how rows
+enqueued by a scripts/sync_*.py subprocess (which can't reach this in-process Event)
+get picked up, within SWEEP_INTERVAL seconds of being written.
 """
 
 import logging
@@ -42,14 +50,20 @@ def wake() -> None:
 
 
 def _push_one(item: dict) -> tuple[bool, str | None]:
-    """One push attempt to AniList for a single outbox item. Returns (ok, error)."""
+    """One push attempt to AniList for a single outbox item. Returns (ok, error).
+
+    Issue #100 — builds variables from whichever of status/progress/repeat_count the
+    row actually carries (a UI bulk-status edit only ever sets status; a Crunchyroll/
+    Netflix-originated row may carry progress alone, or progress with status/repeat) —
+    the schema guarantees at least one is non-null (status_sync_outbox's CHECK
+    constraint), so there's always something to send."""
     # Imported lazily (not at module top-level) to avoid a circular import — app.main
     # imports this module for its startup/shutdown hooks and the bulk endpoint, and
     # this module needs a few of app.main's constants/helpers in return.
     from app.main import (
         ANILIST_API,
         ANILIST_MOCK,
-        SAVE_STATUS_MUTATION,
+        SAVE_MEDIA_LIST_MUTATION,
         STATUS_TO_ANILIST,
         _get_anilist_token,
     )
@@ -61,16 +75,18 @@ def _push_one(item: dict) -> tuple[bool, str | None]:
     if not token:
         return False, "AniList token not configured"
 
+    variables: dict = {"mediaId": item["anime_id"]}
+    if item["status"] is not None:
+        variables["status"] = STATUS_TO_ANILIST.get(item["status"], item["status"])
+    if item["progress"] is not None:
+        variables["progress"] = item["progress"]
+    if item["repeat_count"] is not None:
+        variables["repeat"] = item["repeat_count"]
+
     try:
         resp = httpx.post(
             ANILIST_API,
-            json={
-                "query": SAVE_STATUS_MUTATION,
-                "variables": {
-                    "mediaId": item["anime_id"],
-                    "status": STATUS_TO_ANILIST.get(item["status"], item["status"]),
-                },
-            },
+            json={"query": SAVE_MEDIA_LIST_MUTATION, "variables": variables},
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
             timeout=10,
         )
@@ -96,14 +112,18 @@ def _process_item(item: dict) -> None:
     while attempt < MAX_ATTEMPTS:
         ok, error = _push_one(item)
         if ok:
+            # The target field values were already written to library_entries when
+            # this row was enqueued (local-first — see enqueue_outbox_update() /
+            # bulk_set_status()); the only thing left to do here is flip the dirty
+            # flag back to 'synced' now that AniList has actually confirmed it, and
+            # remove the row (issue #100 — no longer duplicates status/progress/repeat
+            # into this UPDATE, since that would just be re-writing the same values
+            # library_entries already holds).
             with db.get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """
-                        UPDATE library_entries SET status = %s, sync_status = 'synced'
-                        WHERE user_id = %s AND anime_id = %s
-                        """,
-                        (item["status"], item["user_id"], item["anime_id"]),
+                        "UPDATE library_entries SET sync_status = 'synced' WHERE user_id = %s AND anime_id = %s",
+                        (item["user_id"], item["anime_id"]),
                     )
                     cur.execute("DELETE FROM status_sync_outbox WHERE id = %s", (item["id"],))
                 conn.commit()
@@ -123,8 +143,10 @@ def _process_item(item: dict) -> None:
             time.sleep(BASE_BACKOFF * (2 ** (attempt - 1)))
 
     log.error(
-        "Outbox item %s exhausted retries pushing anime_id=%s status=%s for user_id=%s: %s",
-        item["id"], item["anime_id"], item["status"], item["user_id"], error,
+        "Outbox item %s (source=%s) exhausted retries pushing anime_id=%s "
+        "status=%s progress=%s repeat=%s for user_id=%s: %s",
+        item["id"], item["source"], item["anime_id"],
+        item["status"], item["progress"], item["repeat_count"], item["user_id"], error,
     )
     db.execute(
         "UPDATE status_sync_outbox SET state = 'failed', attempts = %s, last_error = %s, updated_at = now() WHERE id = %s",

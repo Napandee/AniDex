@@ -88,14 +88,6 @@ query ($search: String) {
 }
 """
 
-UPDATE_MUTATION = """
-mutation ($mediaId: Int!, $progress: Int, $status: MediaListStatus, $repeat: Int) {
-  SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat) {
-    id progress status repeat
-  }
-}
-"""
-
 
 def fetch_user_list() -> tuple[dict[int, dict], dict[str, int]]:
     """Fetch all the user's AniList entries in one call.
@@ -234,17 +226,61 @@ def find_anilist_id(title: str, title_index: dict[str, int]) -> int | None:
         return None
 
 
-def anilist_update(media_id: int, progress: int | None = None,
-                   status: str | None = None, repeat: int | None = None):
-    variables: dict = {"mediaId": media_id}
-    if progress is not None:
-        variables["progress"] = progress
-    if status is not None:
-        variables["status"] = status
-    if repeat is not None:
-        variables["repeat"] = repeat
-    gql(UPDATE_MUTATION, variables, token=ANILIST_TOKEN)
-    time.sleep(0.7)  # stay under AniList's 90 req/min
+def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None = None,
+                           progress: int | None = None, repeat: int | None = None) -> None:
+    """Local-first write (issue #100) — replaces the old direct, synchronous
+    SaveMediaListEntry call this used to make. Applies the update to library_entries
+    immediately (sync_status='pending', so sync_anilist.py's pull-refresh guard —
+    upsert_library_entry()'s `WHERE sync_status = 'synced'` clause — can't clobber it,
+    the exact same protection issue #18 already gives UI bulk-edits) and enqueues a
+    status_sync_outbox row for the app's single shared worker (app/outbox.py) to
+    actually deliver to AniList. This is what lets Crunchyroll/Netflix sync stop
+    blocking their own fetch/match loop on AniList's rate limit — delivery is now
+    decoupled and collectively rate-limited across every outbox source, not just this
+    one provider's own sequential calls.
+
+    Deliberately does not commit — runs inside the caller's own transaction, so it
+    lands atomically together with that call's own state-tracking write
+    (save_nf_state()/save_cr_state()), which does the actual commit. This replaces the
+    old "anilist_update() must run BEFORE save_state(), not after" ordering
+    requirement (a network call that could fail mid-flight) with something strictly
+    safer: recording intent and advancing the watermark now either both happen or
+    neither does, in one atomic commit — no network round-trip in between to fail.
+
+    Supersedes (deletes) any not-yet-delivered row for this anime first, same as the
+    UI bulk-edit endpoint does, so an older queued update can't fire after a newer one.
+    """
+    if status is None and progress is None and repeat is None:
+        raise ValueError("enqueue_outbox_update requires at least one of status/progress/repeat")
+
+    with conn.cursor() as cur:
+        set_clauses = ["sync_status = 'pending'"]
+        params: list = []
+        if status is not None:
+            set_clauses.append("status = %s")
+            params.append(status)
+        if progress is not None:
+            set_clauses.append("progress = %s")
+            params.append(progress)
+        if repeat is not None:
+            set_clauses.append("repeat_count = %s")
+            params.append(repeat)
+        params.extend([USER_ID, anime_id])
+        cur.execute(
+            f"UPDATE library_entries SET {', '.join(set_clauses)} WHERE user_id = %s AND anime_id = %s",
+            params,
+        )
+        cur.execute(
+            "DELETE FROM status_sync_outbox WHERE user_id = %s AND anime_id = %s AND state IN ('pending', 'failed')",
+            (USER_ID, anime_id),
+        )
+        cur.execute(
+            """
+            INSERT INTO status_sync_outbox (user_id, anime_id, source, status, progress, repeat_count)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (USER_ID, anime_id, source, status, progress, repeat),
+        )
 
 
 def is_plausible_match(entry: dict, watched_format: str | None,

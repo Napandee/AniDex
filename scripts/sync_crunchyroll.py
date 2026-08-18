@@ -55,7 +55,7 @@ import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    anilist_update, find_anilist_id, load_user_list_from_db, seed_search_cache,
+    enqueue_outbox_update, find_anilist_id, load_user_list_from_db, seed_search_cache,
 )
 
 load_dotenv()
@@ -370,6 +370,14 @@ def save_title_search_cache_entry(conn, title: str, media_id: int | None):
 
 # ── Sync logic ────────────────────────────────────────────────────────────────
 
+def _update(conn, anilist_id: int, **kwargs):
+    """Issue #100 — no longer pushes to AniList directly/synchronously; enqueues to
+    status_sync_outbox for the app's single shared outbox worker to deliver, same
+    local-first pattern issue #18 built for UI bulk-edits. Mirrors sync_netflix.py's
+    own _update() wrapper (this script has no DRY_RUN mode, so no branch needed here)."""
+    enqueue_outbox_update(conn, anilist_id, "crunchyroll", **kwargs)
+
+
 def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
             conn) -> str:
     """
@@ -396,15 +404,15 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     # ── AniList status already REPEATING but rewatch not recorded in state ────
     # Handles: user changes status to REPEATING in the app/AniList before sync
     # runs. Set rewatch_active so subsequent syncs advance progress correctly.
-    # anilist_update() must run BEFORE save_cr_state(), not after — if the write
-    # throws (a transient AniList error, e.g. rate-limiting), saving state anyway
-    # would mark this watermark as handled while the real progress update never
-    # landed, and since the sync only re-considers activity newer than the stored
-    # watermark, that miss would never get retried on a later run. Confirmed live
-    # via the identical bug in sync_netflix.py's equivalent branch (issue #48).
+    # Issue #100 — _update() now enqueues to the outbox rather than pushing to
+    # AniList directly, and doesn't commit; call order with save_cr_state() (which
+    # does commit) no longer matters for correctness the way it used to when the
+    # update was a network call that could fail mid-flight — both now land in one
+    # atomic transaction, so either the outbox row + advanced watermark both
+    # persist or neither does. Kept in this order for consistency/minimal diff.
     if status == "REPEATING" and not rewatch_active:
         if cr_ep > al_ep:
-            anilist_update(anilist_id, progress=cr_ep)
+            _update(conn, anilist_id, progress=cr_ep)
             save_cr_state(conn, anilist_id, title, cr_ep, True)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {cr_ep}"
         save_cr_state(conn, anilist_id, title, cr_ep, True)
@@ -414,7 +422,7 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     # Must come BEFORE the no-change guard: cr_ep < last_ep satisfies that guard
     # and would short-circuit before we ever detect the rewatch.
     if status == "COMPLETED" and cr_ep < (last_ep or total or 999) and not rewatch_active:
-        anilist_update(anilist_id, progress=cr_ep, status="REPEATING")
+        _update(conn, anilist_id, progress=cr_ep, status="REPEATING")
         save_cr_state(conn, anilist_id, title, cr_ep, True)
         return f"rewatch started → REPEATING ep {cr_ep}"
 
@@ -429,25 +437,25 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
 
     # ── Rewatch completion: REPEATING and reached total episodes ─────────────
     if rewatch_active and total and cr_ep >= total:
-        anilist_update(anilist_id, progress=cr_ep, status="COMPLETED", repeat=repeat + 1)
+        _update(conn, anilist_id, progress=cr_ep, status="COMPLETED", repeat=repeat + 1)
         save_cr_state(conn, anilist_id, title, cr_ep, False)
         return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
 
     # ── Progress advance for active rewatch ───────────────────────────────────
     if rewatch_active and cr_ep > al_ep:
-        anilist_update(anilist_id, progress=cr_ep)
+        _update(conn, anilist_id, progress=cr_ep)
         save_cr_state(conn, anilist_id, title, cr_ep, True)
         return f"rewatch progress {al_ep} → {cr_ep}"
 
     # ── DROPPED: user picked it back up ──────────────────────────────────────
     if status == "DROPPED" and cr_ep > last_ep:
-        anilist_update(anilist_id, progress=cr_ep, status="CURRENT")
+        _update(conn, anilist_id, progress=cr_ep, status="CURRENT")
         save_cr_state(conn, anilist_id, title, cr_ep, False)
         return f"resumed after DROP → CURRENT ep {cr_ep}"
 
     # ── Normal progress advance (CURRENT, PAUSED) ─────────────────────────────
     if cr_ep > al_ep:
-        anilist_update(anilist_id, progress=cr_ep)
+        _update(conn, anilist_id, progress=cr_ep)
         save_cr_state(conn, anilist_id, title, cr_ep, False)
         return f"progress {al_ep} → {cr_ep}"
 

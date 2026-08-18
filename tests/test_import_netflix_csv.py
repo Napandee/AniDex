@@ -126,7 +126,7 @@ def _patch_common(monkeypatch, nf_state=None, title_search_cache=None):
     monkeypatch.setattr(nf, "_set_walk_complete", lambda conn, complete: walk_complete_calls.append(complete))
 
     updates = []
-    monkeypatch.setattr(nf, "_update", lambda anilist_id, **kw: updates.append((anilist_id, kw)))
+    monkeypatch.setattr(nf, "_update", lambda conn, anilist_id, **kw: updates.append((anilist_id, kw)))
     monkeypatch.setattr(nf, "_save_state", lambda conn, anilist_id, title, watched_at, rewatch: None)
 
     monkeypatch.setattr(csvimp, "seed_search_cache", lambda cache: None)

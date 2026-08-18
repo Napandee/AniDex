@@ -261,7 +261,7 @@ def _entry(status="CURRENT", progress=0, repeat=0, total=24, anilist_id=42):
 
 def _capture(monkeypatch):
     calls = []
-    monkeypatch.setattr(cr, "anilist_update", lambda anilist_id, **kw: calls.append(("update", anilist_id, kw)))
+    monkeypatch.setattr(cr, "_update", lambda conn, anilist_id, **kw: calls.append(("update", anilist_id, kw)))
     monkeypatch.setattr(
         cr, "save_cr_state",
         lambda conn, anilist_id, title, last_ep, rewatch: calls.append(("save", anilist_id, last_ep, rewatch)),
@@ -331,12 +331,15 @@ def test_no_progress_since_last_sync_makes_no_anilist_call(monkeypatch):
 
 def test_repeating_branch_does_not_save_state_if_update_fails(monkeypatch):
     # Regression test (issue #52) — the identical bug shape was confirmed live in
-    # sync_netflix.py's equivalent branch (issue #48): a 429 from AniList mid-write
-    # left state saved as if the rewatch was handled while the real progress
-    # update never landed, permanently hiding the miss from future watermark-based
-    # syncs. anilist_update() must run before save_cr_state(), not after.
+    # sync_netflix.py's equivalent branch (issue #48): a mid-write failure left
+    # state saved as if the rewatch was handled while the real progress update
+    # never landed, permanently hiding the miss from future watermark-based syncs.
+    # _update() must run before save_cr_state(), not after — issue #100 changed
+    # what _update() does (enqueues to the outbox instead of pushing to AniList
+    # directly) but the ordering guarantee this test protects is unchanged: an
+    # exception from _update() must still prevent save_cr_state() from running.
     calls = []
-    monkeypatch.setattr(cr, "anilist_update", lambda anilist_id, **kw: (_ for _ in ()).throw(RuntimeError("429")))
+    monkeypatch.setattr(cr, "_update", lambda conn, anilist_id, **kw: (_ for _ in ()).throw(RuntimeError("db error")))
     monkeypatch.setattr(
         cr, "save_cr_state",
         lambda conn, anilist_id, title, last_ep, rewatch: calls.append(("save", anilist_id, last_ep, rewatch)),
