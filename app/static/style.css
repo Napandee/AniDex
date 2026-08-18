@@ -1498,15 +1498,15 @@ body.auth-page main {
 .wrapup-controls { display: flex; gap: 0.5rem; }
 .wrapup-controls select {
   padding: 0.3rem 0.6rem;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #e0e0e0;
+  color: var(--t2);
   font-size: 0.8rem;
   cursor: pointer;
   outline: none;
 }
-.wrapup-controls select:focus { border-color: #2563eb; }
+.wrapup-controls select:focus { border-color: var(--accent); }
 .wrapup-body {
   display: flex;
   gap: 1.5rem;
@@ -1516,14 +1516,14 @@ body.auth-page main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #1a1a1a;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1rem 1.75rem;
   min-width: 120px;
   flex: 1;
 }
-.wrapup-empty { color: #666; font-size: 0.85rem; margin: 0; }
+.wrapup-empty { color: var(--t6); font-size: 0.85rem; margin: 0; }
 
 /* ── Stats: watch-activity heatmap (issue #10) ───────────────────────────── */
 .heatmap-wrap {
