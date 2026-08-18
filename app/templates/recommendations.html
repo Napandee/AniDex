@@ -1,21 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Recommended — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_recommendations') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Recommended for you</h1>
+  <h1 class="page-title">{{ t('rec_page_title') }}</h1>
   <p class="page-sub">
-    {{ entries|length }} suggestions
-    {%- if seasonal_count %} ({{ seasonal_count }} new this season){% endif %}
-    · scored against your completed &amp; watching history
+    {{ t('rec_suggestions_count', count=entries|length) }}
+    {%- if seasonal_count %} {{ t('rec_new_this_season', count=seasonal_count) }}{% endif %}
+    · {{ t('rec_scored_against') }}
   </p>
 </div>
 
 {% if entries %}
 {% if seasonal_count %}
 <div id="rec-source-filter" class="rec-genre-filter">
-  <button class="filter-btn active" data-source="">All</button>
-  <button class="filter-btn" data-source="seasonal">New this season ({{ seasonal_count }})</button>
+  <button class="filter-btn active" data-source="">{{ t('status_all') }}</button>
+  <button class="filter-btn" data-source="seasonal">{{ t('rec_filter_new_season', count=seasonal_count) }}</button>
 </div>
 {% endif %}
 <div id="rec-genre-filter" class="rec-genre-filter"></div>
@@ -29,7 +29,7 @@
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
       {% endif %}
       {% if e.season_label %}
-      <div class="rec-season-badge" title="New this season — issue #13's seasonal discovery digest">{{ e.season_label }}</div>
+      <div class="rec-season-badge" title="{{ t('rec_season_badge_title') }}">{{ e.season_label }}</div>
       {% endif %}
       <div class="rec-score-badge">{{ e.rec_score | int }}%</div>
     </div>
@@ -41,7 +41,7 @@
         <p class="title-sub">{{ e.title_romaji }}</p>
         {% endif %}
         <div class="meta">
-          {% if e.average_score %}<span class="community-score" title="AniList community score">⭐ {{ e.average_score }}</span>{% endif %}
+          {% if e.average_score %}<span class="community-score" title="{{ t('rec_community_score_title') }}">⭐ {{ e.average_score }}</span>{% endif %}
           {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
           {% if e.episodes %}<span class="progress">{{ e.episodes }} ep</span>{% endif %}
         </div>
@@ -49,7 +49,7 @@
 
       <div class="rec-matches">
         <div class="match-row">
-          <span class="match-label">Genres</span>
+          <span class="match-label">{{ t('rec_match_genres') }}</span>
           <div class="genres">
             {% if reason.matched_genres %}
               {% for g in reason.matched_genres %}<span class="genre match">{{ g }}</span>{% endfor %}
@@ -57,7 +57,7 @@
           </div>
         </div>
         <div class="match-row">
-          <span class="match-label">Tags</span>
+          <span class="match-label">{{ t('rec_match_tags') }}</span>
           <div class="genres">
             {% if reason.matched_tags %}
               {% for t in reason.matched_tags[:3] %}<span class="genre">{{ t }}</span>{% endfor %}
@@ -65,20 +65,20 @@
           </div>
         </div>
         <div class="match-row">
-          <span class="match-label">Studio</span>
+          <span class="match-label">{{ t('rec_match_studio') }}</span>
           {% if reason.matched_studio %}<span class="genre match">{{ reason.matched_studio }}</span>
           {% else %}<span class="match-empty">—</span>{% endif %}
         </div>
         <div class="match-row">
-          <span class="match-label">Similar to</span>
+          <span class="match-label">{{ t('rec_match_similar_to') }}</span>
           {% if e.similar_to %}<span class="similar-to-title">{{ e.similar_to }}</span>
           {% else %}<span class="match-empty">—</span>{% endif %}
         </div>
         <div class="match-row">
-          <span class="match-label">Others</span>
+          <span class="match-label">{{ t('rec_match_others') }}</span>
           {% if reason.cross_user_count %}
-          <span class="genre match" title="{{ reason.cross_user_count }} other user{{ 's' if reason.cross_user_count != 1 else '' }} rated this {{ reason.cross_user_min_score }}★+">
-            ★ {{ reason.cross_user_count }} rated {{ reason.cross_user_min_score }}★+
+          <span class="genre match" title="{% if reason.cross_user_count == 1 %}{{ t('rec_cross_user_title_singular', count=reason.cross_user_count, score=reason.cross_user_min_score) }}{% else %}{{ t('rec_cross_user_title_plural', count=reason.cross_user_count, score=reason.cross_user_min_score) }}{% endif %}">
+            {{ t('rec_cross_user_display', count=reason.cross_user_count, score=reason.cross_user_min_score) }}
           </span>
           {% else %}<span class="match-empty">—</span>{% endif %}
         </div>
@@ -86,17 +86,17 @@
 
       <div class="rec-footer">
         <div class="rec-actions">
-          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-rec btn-rec--anilist">AniList ↗</a>
-          <button class="btn-rec btn-rec--planning btn-add-planning" data-anime-id="{{ e.id }}">+ Planning</button>
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-rec btn-rec--anilist">{{ t('notes_anilist_link') }}</a>
+          <button class="btn-rec btn-rec--planning btn-add-planning" data-anime-id="{{ e.id }}">{{ t('rec_add_planning_btn') }}</button>
         </div>
         <div class="rec-dismiss-row">
-          <span class="dismiss-label">Dismiss:</span>
-          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="not_interested">Not interested</button>
-          <button class="dismiss-chip seen-it-chip" data-anime-id="{{ e.id }}" data-title="{{ e.title_english or e.title_romaji }}" data-reason="already_watched">Seen it</button>
-          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="wrong_genre">Wrong genre</button>
-          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="too_long">Too long</button>
+          <span class="dismiss-label">{{ t('rec_dismiss_label') }}</span>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="not_interested">{{ t('rec_dismiss_not_interested') }}</button>
+          <button class="dismiss-chip seen-it-chip" data-anime-id="{{ e.id }}" data-title="{{ e.title_english or e.title_romaji }}" data-reason="already_watched">{{ t('rec_dismiss_seen_it') }}</button>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="wrong_genre">{{ t('rec_dismiss_wrong_genre') }}</button>
+          <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="too_long">{{ t('rec_dismiss_too_long') }}</button>
           <button class="dismiss-chip" data-anime-id="{{ e.id }}" data-reason="">✕</button>
-          <button class="dismiss-chip snooze-chip" data-anime-id="{{ e.id }}" title="Hide for 30 days, then it comes back">Not now</button>
+          <button class="dismiss-chip snooze-chip" data-anime-id="{{ e.id }}" title="{{ t('rec_dismiss_not_now_title') }}">{{ t('rec_dismiss_not_now') }}</button>
         </div>
       </div>
     </div>
@@ -104,13 +104,13 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="empty">No recommendations yet — run the recommender to generate them.</p>
+<p class="empty">{{ t('rec_empty') }}</p>
 {% endif %}
 
 <div id="seen-it-backdrop" class="modal-backdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <div class="modal-title" id="seen-it-title"></div>
-    <p class="seen-it-hint">Rate it (optional) then confirm to mark as completed on AniList.</p>
+    <p class="seen-it-hint">{{ t('rec_seen_it_hint') }}</p>
     <div class="seen-it-stars">
       {% for i in [1,2,3,4,5] %}
       <span class="star seen-it-star" data-value="{{ i }}">★</span>
@@ -118,7 +118,7 @@
     </div>
     <div class="modal-actions">
       <button id="seen-it-confirm" class="btn-save">Mark as seen</button>
-      <button id="seen-it-cancel" class="btn-cancel-modal">Cancel</button>
+      <button id="seen-it-cancel" class="btn-cancel-modal">{{ t('notes_cancel_btn') }}</button>
     </div>
   </div>
 </div>

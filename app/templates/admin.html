@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Admin — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_admin') }}{% endblock %}
 
 {% block content %}
 <div class="notes-page">
 
   <div class="page-header">
-    <h1 class="page-title">Admin</h1>
-    <p class="page-sub">Instance-wide configuration and operational visibility.</p>
+    <h1 class="page-title">{{ t('admin_page_title') }}</h1>
+    <p class="page-sub">{{ t('admin_page_sub') }}</p>
   </div>
 
   <div class="settings-tabs" role="tablist">
-    <button type="button" class="tab active" data-tab="users" role="tab">Users</button>
-    <button type="button" class="tab" data-tab="invites" role="tab">Invites</button>
-    <button type="button" class="tab" data-tab="instance-config" role="tab">Instance Config</button>
-    <button type="button" class="tab" data-tab="operability" role="tab">Operability</button>
+    <button type="button" class="tab active" data-tab="users" role="tab">{{ t('admin_tab_users') }}</button>
+    <button type="button" class="tab" data-tab="invites" role="tab">{{ t('admin_tab_invites') }}</button>
+    <button type="button" class="tab" data-tab="instance-config" role="tab">{{ t('admin_tab_instance_config') }}</button>
+    <button type="button" class="tab" data-tab="operability" role="tab">{{ t('admin_tab_operability') }}</button>
   </div>
 
   {# ══════════════════════════════════════════════════════════════════════
@@ -21,18 +21,18 @@
      ══════════════════════════════════════════════════════════════════════ #}
   <div class="settings-tab-panel" data-tab-panel="users">
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Users</h2>
-      <p class="settings-section-desc">Login activity and each user's most recent sync run.</p>
+      <h2 class="settings-section-title">{{ t('admin_users_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_users_desc') }}</p>
       <table class="admin-table">
         <thead>
           <tr>
-            <th>Email</th>
-            <th>Admin</th>
-            <th>Created</th>
-            <th>Last login</th>
-            <th>Login status</th>
-            <th>Last sync</th>
-            <th>Last recommender</th>
+            <th>{{ t('admin_col_email') }}</th>
+            <th>{{ t('admin_col_admin') }}</th>
+            <th>{{ t('admin_col_created') }}</th>
+            <th>{{ t('admin_col_last_login') }}</th>
+            <th>{{ t('admin_col_login_status') }}</th>
+            <th>{{ t('admin_col_last_sync') }}</th>
+            <th>{{ t('admin_col_last_recommender') }}</th>
             <th></th>
           </tr>
         </thead>
@@ -40,12 +40,12 @@
           {% for u in users %}
           <tr>
             <td>{{ u.email }}</td>
-            <td>{% if u.is_admin %}yes{% endif %}</td>
+            <td>{% if u.is_admin %}{{ t('admin_yes') }}{% endif %}</td>
             <td>{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
             <td>{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else '—' }}</td>
             <td>
-              {% if not u.is_active %}<span class="status-error">deactivated</span>
-              {% elif u.locked %}<span class="status-error">locked</span>
+              {% if not u.is_active %}<span class="status-error">{{ t('admin_deactivated') }}</span>
+              {% elif u.locked %}<span class="status-error">{{ t('admin_locked') }}</span>
               {% else %}—{% endif %}
             </td>
             <td>
@@ -56,7 +56,7 @@
               — {{ u.last_sync.run_at.strftime('%Y-%m-%d %H:%M') if u.last_sync.run_at else '' }}
               {% if u.last_sync.error_msg %}<br><span class="status-error" title="{{ u.last_sync.error_msg }}">{{ u.last_sync.error_msg[:60] }}{% if u.last_sync.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
               {% else %}
-              <span class="status-empty">never synced</span>
+              <span class="status-empty">{{ t('admin_never_synced') }}</span>
               {% endif %}
             </td>
             <td>
@@ -67,22 +67,22 @@
               — {{ u.last_recommender.run_at.strftime('%Y-%m-%d %H:%M') if u.last_recommender.run_at else '' }}
               {% if u.last_recommender.error_msg %}<br><span class="status-error" title="{{ u.last_recommender.error_msg }}">{{ u.last_recommender.error_msg[:60] }}{% if u.last_recommender.error_msg|length > 60 %}…{% endif %}</span>{% endif %}
               {% else %}
-              <span class="status-empty">never run</span>
+              <span class="status-empty">{{ t('admin_never_run') }}</span>
               {% endif %}
             </td>
             <td>
               <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
-                <button type="submit" class="btn-save">Reset password</button>
+                <button type="submit" class="btn-save">{{ t('admin_reset_password_btn') }}</button>
               </form>
               {% if u.is_active %}
               {% if u.id != nav_user.id %}
-              <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('Deactivate {{ u.email }}? They will be logged out immediately and unable to log back in until reactivated.');">
-                <button type="submit" class="btn-save btn-warning">Deactivate</button>
+              <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_deactivate_confirm', email=u.email) }}');">
+                <button type="submit" class="btn-save btn-warning">{{ t('admin_deactivate_btn') }}</button>
               </form>
               {% endif %}
               {% else %}
               <form method="post" action="/admin/users/{{ u.id }}/reactivate" class="admin-inline-form">
-                <button type="submit" class="btn-save">Reactivate</button>
+                <button type="submit" class="btn-save">{{ t('admin_reactivate_btn') }}</button>
               </form>
               {% endif %}
             </td>
@@ -98,28 +98,28 @@
      ══════════════════════════════════════════════════════════════════════ #}
   <div class="settings-tab-panel" data-tab-panel="invites" hidden>
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Invites</h2>
+      <h2 class="settings-section-title">{{ t('admin_invites_title') }}</h2>
       <form method="post" action="/admin/invites" class="settings-form">
         <div class="form-field" style="max-width:320px;">
-          <input class="form-input" type="email" name="email" placeholder="email@example.com" required>
+          <input class="form-input" type="email" name="email" placeholder="{{ t('email_placeholder') }}" required>
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn-save">Invite</button>
+          <button type="submit" class="btn-save">{{ t('admin_invite_btn') }}</button>
         </div>
       </form>
       <table class="admin-table">
         <thead>
-          <tr><th>Email</th><th>Status</th><th>Created</th></tr>
+          <tr><th>{{ t('admin_col_email') }}</th><th>{{ t('admin_col_status') }}</th><th>{{ t('admin_col_created') }}</th></tr>
         </thead>
         <tbody>
           {% for i in invites %}
           <tr>
             <td>{{ i.email }}</td>
-            <td>{% if i.accepted_at %}<span class="status-ok">accepted</span>{% else %}pending{% endif %}</td>
+            <td>{% if i.accepted_at %}<span class="status-ok">{{ t('admin_accepted') }}</span>{% else %}{{ t('admin_pending') }}{% endif %}</td>
             <td>{{ i.created_at.strftime('%Y-%m-%d') if i.created_at else '—' }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="3" class="status-empty">No invites yet.</td></tr>
+          <tr><td colspan="3" class="status-empty">{{ t('admin_no_invites') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -135,24 +135,22 @@
 
     {# ── Sync schedule ────────────────────────────────────────────────── #}
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Sync schedule
+      <h2 class="settings-section-title">{{ t('admin_sync_schedule_title') }}
         <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-sync-schedule">i</button>
       </h2>
       <div class="help-disclosure-panel" id="help-sync-schedule"><div>
         <p class="help-disclosure-panel-body">
-          Times are UTC. Applies instance-wide, to every user's sync. The daily sync runs the
-          full pipeline (Crunchyroll/Netflix fetch → AniList → Postgres). The recommender scores
-          unwatched/planning titles weekly.
+          {{ t('admin_sync_schedule_help') }}
         </p>
       </div></div>
-      {% if saved == 'schedule' %}<p class="settings-success">Schedule saved.</p>{% endif %}
+      {% if saved == 'schedule' %}<p class="settings-success">{{ t('admin_schedule_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/schedule">
         <div class="form-field">
           <label class="form-label" for="sync_daily_time">
-            Daily sync time (HH:MM UTC)
+            {{ t('admin_daily_sync_label') }}
             {% if next_daily_sync %}
-            <span class="form-label-hint">— next run <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
+            <span class="form-label-hint">{{ t('admin_next_run_hint') }} <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
             {% endif %}
           </label>
           <input class="form-input form-input--narrow" type="time" id="sync_daily_time"
@@ -161,9 +159,9 @@
 
         <div class="form-field">
           <label class="form-label">
-            Weekly recommender
+            {{ t('admin_weekly_recommender_label') }}
             {% if next_recommender %}
-            <span class="form-label-hint">— next run <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
+            <span class="form-label-hint">{{ t('admin_next_run_hint') }} <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
             {% endif %}
           </label>
           <div class="schedule-row">
@@ -172,65 +170,63 @@
               <option value="{{ d }}" {% if d == schedule.sync_recommender_day %}selected{% endif %}>{{ day_labels[d] }}</option>
               {% endfor %}
             </select>
-            <span class="schedule-at">at</span>
+            <span class="schedule-at">{{ t('admin_schedule_at') }}</span>
             <input class="form-input form-input--narrow" type="time" name="sync_recommender_time"
                    value="{{ schedule.sync_recommender_time }}">
           </div>
         </div>
 
         <div class="form-actions">
-          <button type="submit" class="btn-save">Save schedule</button>
+          <button type="submit" class="btn-save">{{ t('admin_save_schedule_btn') }}</button>
         </div>
       </form>
     </div>
 
     {# ── Privacy defaults ─────────────────────────────────────────────── #}
     <div class="settings-section">
-      <h2 class="settings-section-title">Privacy defaults
+      <h2 class="settings-section-title">{{ t('admin_privacy_defaults_title') }}
         <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-privacy-defaults">i</button>
       </h2>
       <div class="help-disclosure-panel" id="help-privacy-defaults"><div>
         <p class="help-disclosure-panel-body">
-          Instance-wide hidden tags/genres for cross-user visibility features — unioned with
-          each user's own hidden-tags list from Settings, never replaces it. Opt-in only:
-          leave empty and nothing is hidden by default.
+          {{ t('admin_privacy_defaults_help') }}
         </p>
       </div></div>
       <form method="post" action="/admin/privacy-defaults" class="settings-form">
         <div class="form-field">
-          <label class="form-label" for="default_hidden_tags">Default hidden tags/genres</label>
+          <label class="form-label" for="default_hidden_tags">{{ t('admin_default_hidden_tags_label') }}</label>
           <input class="form-input" type="text" id="default_hidden_tags" name="default_hidden_tags"
-                 value="{{ default_hidden_tags }}" placeholder="e.g. Ecchi" autocomplete="off">
+                 value="{{ default_hidden_tags }}" placeholder="{{ t('admin_default_hidden_tags_placeholder') }}" autocomplete="off">
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn-save">Save</button>
+          <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
         </div>
       </form>
     </div>
 
     {# ── OAuth settings ───────────────────────────────────────────────── #}
     <div class="settings-section">
-      <h2 class="settings-section-title">OAuth settings</h2>
-      <p class="settings-section-desc">Optional — local email/password login always works regardless of these.</p>
+      <h2 class="settings-section-title">{{ t('admin_oauth_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_oauth_desc') }}</p>
 
       <div class="settings-section-inner">
         <h2 class="settings-section-title" style="font-size:0.9rem;">
           Google —
-          {% if google_status.configured %}<span class="status-ok">configured (client id: {{ google_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
+          {% if google_status.configured %}<span class="status-ok">{{ t('admin_oauth_configured', id=google_status.client_id) }}</span>{% else %}<span class="status-empty">{{ t('admin_oauth_not_configured') }}</span>{% endif %}
         </h2>
         <form method="post" action="/admin/oauth-settings" class="settings-form">
           <input type="hidden" name="provider" value="google">
           <div class="form-field">
-            <label class="form-label" for="google_client_id">Client ID</label>
+            <label class="form-label" for="google_client_id">{{ t('admin_client_id_label') }}</label>
             <input class="form-input" type="text" id="google_client_id" name="client_id">
           </div>
           <div class="form-field">
-            <label class="form-label" for="google_client_secret">Client Secret</label>
-            <input class="form-input form-input--secret" type="password" id="google_client_secret" name="client_secret" placeholder="leave blank to keep current">
+            <label class="form-label" for="google_client_secret">{{ t('admin_client_secret_label') }}</label>
+            <input class="form-input form-input--secret" type="password" id="google_client_secret" name="client_secret" placeholder="{{ t('admin_client_secret_placeholder') }}">
             <button type="button" class="btn-reveal" data-target="google_client_secret">Show</button>
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn-save">Save</button>
+            <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
           </div>
         </form>
       </div>
@@ -238,21 +234,21 @@
       <div class="settings-section-inner">
         <h2 class="settings-section-title" style="font-size:0.9rem;">
           Discord —
-          {% if discord_status.configured %}<span class="status-ok">configured (client id: {{ discord_status.client_id }})</span>{% else %}<span class="status-empty">not configured</span>{% endif %}
+          {% if discord_status.configured %}<span class="status-ok">{{ t('admin_oauth_configured', id=discord_status.client_id) }}</span>{% else %}<span class="status-empty">{{ t('admin_oauth_not_configured') }}</span>{% endif %}
         </h2>
         <form method="post" action="/admin/oauth-settings" class="settings-form">
           <input type="hidden" name="provider" value="discord">
           <div class="form-field">
-            <label class="form-label" for="discord_client_id">Client ID</label>
+            <label class="form-label" for="discord_client_id">{{ t('admin_client_id_label') }}</label>
             <input class="form-input" type="text" id="discord_client_id" name="client_id">
           </div>
           <div class="form-field">
-            <label class="form-label" for="discord_client_secret">Client Secret</label>
-            <input class="form-input form-input--secret" type="password" id="discord_client_secret" name="client_secret" placeholder="leave blank to keep current">
+            <label class="form-label" for="discord_client_secret">{{ t('admin_client_secret_label') }}</label>
+            <input class="form-input form-input--secret" type="password" id="discord_client_secret" name="client_secret" placeholder="{{ t('admin_client_secret_placeholder') }}">
             <button type="button" class="btn-reveal" data-target="discord_client_secret">Show</button>
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn-save">Save</button>
+            <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
           </div>
         </form>
       </div>
@@ -268,37 +264,36 @@
 
     {# ── Instance health ──────────────────────────────────────────────── #}
     <div class="settings-section settings-section--first">
-      <h2 class="settings-section-title">Instance health</h2>
+      <h2 class="settings-section-title">{{ t('admin_instance_health_title') }}</h2>
       <p class="settings-section-desc">
-        Read-only sanity check after a deploy or migration — no restart/migrate
-        controls here, display only.
+        {{ t('admin_instance_health_desc') }}
       </p>
       <table class="admin-table">
         <tbody>
           <tr>
-            <th>Build version</th>
+            <th>{{ t('admin_build_version') }}</th>
             <td>
               {% if instance_health.build_version %}
               <code>{{ instance_health.build_version }}</code>
               {% else %}
-              <span class="status-empty">unknown (not baked into this image)</span>
+              <span class="status-empty">{{ t('admin_build_version_unknown') }}</span>
               {% endif %}
             </td>
           </tr>
           <tr>
-            <th>Database size</th>
+            <th>{{ t('admin_db_size') }}</th>
             <td>{{ instance_health.db_size or '—' }}</td>
           </tr>
           <tr>
-            <th><code>library_entries</code> rows</th>
+            <th><code>library_entries</code> {{ t('admin_rows_suffix') }}</th>
             <td>{{ instance_health.row_counts.library_entries }}</td>
           </tr>
           <tr>
-            <th><code>anime</code> rows</th>
+            <th><code>anime</code> {{ t('admin_rows_suffix') }}</th>
             <td>{{ instance_health.row_counts.anime }}</td>
           </tr>
           <tr>
-            <th><code>users</code> rows</th>
+            <th><code>users</code> {{ t('admin_rows_suffix') }}</th>
             <td>{{ instance_health.row_counts.users }}</td>
           </tr>
         </tbody>
@@ -307,14 +302,13 @@
 
     {# ── Audit log ────────────────────────────────────────────────────── #}
     <div class="settings-section">
-      <h2 class="settings-section-title">Audit log</h2>
+      <h2 class="settings-section-title">{{ t('admin_audit_log_title') }}</h2>
       <p class="settings-section-desc">
-        Chronological record of admin actions (invites, OAuth settings, privacy
-        defaults, password resets, user deactivation). Most recent first.
+        {{ t('admin_audit_log_desc') }}
       </p>
       <table class="admin-table">
         <thead>
-          <tr><th>Time</th><th>Admin</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+          <tr><th>{{ t('admin_col_time') }}</th><th>{{ t('admin_col_admin') }}</th><th>{{ t('admin_col_action') }}</th><th>{{ t('admin_col_target') }}</th><th>{{ t('admin_col_detail') }}</th></tr>
         </thead>
         <tbody>
           {% for a in audit_log %}
@@ -326,7 +320,7 @@
             <td>{{ a.detail or '—' }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="5" class="status-empty">No admin actions logged yet.</td></tr>
+          <tr><td colspan="5" class="status-empty">{{ t('admin_no_audit') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -334,14 +328,12 @@
 
     {# ── Backup ───────────────────────────────────────────────────────── #}
     <div class="settings-section">
-      <h2 class="settings-section-title">Backup</h2>
+      <h2 class="settings-section-title">{{ t('admin_backup_title') }}</h2>
       <p class="settings-section-desc">
-        Export every user's library data (same query as each user's own Settings →
-        Data export) as one zip, one JSON file per user. Manual trigger only — not
-        scheduled.
+        {{ t('admin_backup_desc') }}
       </p>
       <div class="form-actions">
-        <a href="/admin/export-all" class="btn-save" download>Export all users</a>
+        <a href="/admin/export-all" class="btn-save" download>{{ t('admin_export_all_btn') }}</a>
       </div>
     </div>
   </div>

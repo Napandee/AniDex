@@ -1,12 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Watch Queue — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_queue') }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Watch Queue</h1>
+  <h1 class="page-title">{{ t('queue_page_title') }}</h1>
   <p class="page-sub">
-    Ordered by manual priority, then recommender score.
-    Set a priority from any title's notes page to pin it to the top.
+    {{ t('queue_page_sub') }}
   </p>
 </div>
 
@@ -14,7 +13,7 @@
   {% for s in queue_statuses %}
   <a href="/queue{% if s != 'ALL' %}?status={{ s }}{% endif %}"
      class="tab {% if s == active_status %}active{% endif %}">
-    {{ s.title() }}
+    {{ t('status_' + s.lower()) }}
   </a>
   {% endfor %}
 </div>
@@ -23,17 +22,17 @@
   <div class="toolbar-right">
     <div class="tag-filter-group">
       <select id="queue-tag-filter" class="tag-filter-select">
-        <option value="">All tags</option>
+        <option value="">{{ t('queue_tag_filter_all') }}</option>
       </select>
     </div>
     <div class="episode-filter-group">
       <select id="queue-episode-filter" class="episode-filter-select">
-        <option value="">All episode counts</option>
-        <option value="short">≤13 eps</option>
-        <option value="standard">14–26 eps</option>
-        <option value="long">27+ eps</option>
-        <option value="movie">Movie</option>
-        <option value="ongoing">Ongoing / unknown</option>
+        <option value="">{{ t('queue_episode_filter_all') }}</option>
+        <option value="short">{{ t('queue_ep_short') }}</option>
+        <option value="standard">{{ t('queue_ep_standard') }}</option>
+        <option value="long">{{ t('queue_ep_long') }}</option>
+        <option value="movie">{{ t('queue_ep_movie') }}</option>
+        <option value="ongoing">{{ t('queue_ep_ongoing') }}</option>
       </select>
     </div>
   </div>
@@ -46,7 +45,7 @@
       data-format="{{ e.format or '' }}"
       data-episodes="{{ e.episodes or '' }}"
       data-tags="{{ (e.personal_tags or []) | join(', ') }}">
-    <span class="queue-drag-handle" title="Drag to reorder">⠿</span>
+    <span class="queue-drag-handle" title="{{ t('queue_drag_handle_title') }}">⠿</span>
     <span class="queue-rank">{{ loop.index }}</span>
 
     {% if e.cover_image_url %}
@@ -65,21 +64,21 @@
           {% if e.watch_next_priority %}
           <span class="badge-priority">#{{ e.watch_next_priority }}</span>
           {% endif %}
-          <span class="badge-status badge-{{ e.status | lower }}">{{ e.status.title() }}</span>
+          <span class="badge-status badge-{{ e.status | lower }}">{{ t('status_' + e.status.lower()) }}</span>
           {% if e.repeat_count %}
-          <span class="rewatch-badge" title="Rewatched {{ e.repeat_count }} time{{ 's' if e.repeat_count > 1 else '' }}">↺ {{ e.repeat_count }}×</span>
+          <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
           {% endif %}
-          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
         </div>
       </div>
 
       <div class="queue-meta">
         {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
         {% if e.episodes %}<span class="format">{{ e.episodes }} ep</span>{% endif %}
-        {% if e.progress %}<span class="progress">resumed at ep {{ e.progress }}</span>{% endif %}
+        {% if e.progress %}<span class="progress">{{ t('queue_resumed_at', num=e.progress) }}</span>{% endif %}
         {% if e.average_score %}<span class="score">★ {{ e.average_score }}</span>{% endif %}
         {% if e.rec_score %}
-        <span class="queue-rec-score">match {{ e.rec_score | round(0) | int }}</span>
+        <span class="queue-rec-score">{{ t('queue_rec_match') }} {{ e.rec_score | round(0) | int }}</span>
         {% endif %}
       </div>
 
@@ -117,16 +116,16 @@
     <div class="queue-actions">
       <button class="btn-mark-watched"
               data-anime-id="{{ e.id }}"
-              data-episodes="{{ e.episodes or '' }}">✓ Watched</button>
-      <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="queue-notes-link" title="Edit notes / set priority">✏</a>
+              data-episodes="{{ e.episodes or '' }}">✓ {{ t('queue_watched_btn') }}</button>
+      <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="queue-notes-link" title="{{ t('queue_notes_edit_title') }}">✏</a>
     </div>
   </li>
   {% endfor %}
 </ol>
 {% else %}
-<p class="empty">Nothing in your planning or paused list.</p>
+<p class="empty">{{ t('queue_empty') }}</p>
 {% endif %}
-<p class="empty" id="queue-no-filter-results" style="display:none">No matches.</p>
+<p class="empty" id="queue-no-filter-results" style="display:none">{{ t('queue_no_matches') }}</p>
 
 <script>
 (function () {

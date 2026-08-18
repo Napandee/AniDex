@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Stats — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_stats') }}{% endblock %}
 
 {% block content %}
 <div class="stats-page">
 
   <div class="page-header">
-    <h1 class="page-title">Stats</h1>
+    <h1 class="page-title">{{ t('stats_page_title') }}</h1>
   </div>
 
   <div class="stats-headlines" id="stats-headlines">
-    <div class="stat-headline"><span class="stat-num" id="hl-completed">—</span><span class="stat-label">Completed</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-watching">—</span><span class="stat-label">Watching</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-episodes">—</span><span class="stat-label">Episodes watched</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-watchtime">—</span><span class="stat-label">Watch time</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-completion">—</span><span class="stat-label">Completion rate</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-meanscore">—</span><span class="stat-label">Mean score</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-completed">—</span><span class="stat-label">{{ t('status_completed') }}</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-watching">—</span><span class="stat-label">{{ t('status_watching') }}</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-episodes">—</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-watchtime">—</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-completion">—</span><span class="stat-label">{{ t('stats_hl_completion') }}</span></div>
+    <div class="stat-headline"><span class="stat-num" id="hl-meanscore">—</span><span class="stat-label">{{ t('stats_hl_meanscore') }}</span></div>
   </div>
 
   <!-- "Year in anime" wrap-up (issue #78) — combines existing /api/stats aggregates
@@ -46,39 +46,39 @@
 
   <div class="stats-grid">
     <div class="chart-card">
-      <h2 class="chart-title">Library status</h2>
+      <h2 class="chart-title">{{ t('stats_chart_status') }}</h2>
       <canvas id="chart-status"></canvas>
     </div>
     <div class="chart-card">
-      <h2 class="chart-title">Score distribution</h2>
+      <h2 class="chart-title">{{ t('stats_chart_scores') }}</h2>
       <canvas id="chart-scores"></canvas>
     </div>
     <div class="chart-card chart-card--wide">
-      <h2 class="chart-title">Top genres (completed)</h2>
+      <h2 class="chart-title">{{ t('stats_chart_genres') }}</h2>
       <canvas id="chart-genres"></canvas>
     </div>
     <div class="chart-card chart-card--wide">
-      <h2 class="chart-title">Completed by year</h2>
+      <h2 class="chart-title">{{ t('stats_chart_year') }}</h2>
       <canvas id="chart-year"></canvas>
     </div>
     <div class="chart-card chart-card--wide">
-      <h2 class="chart-title">Watch activity</h2>
+      <h2 class="chart-title">{{ t('stats_chart_activity') }}</h2>
       <div class="heatmap-wrap">
         <div class="heatmap-months" id="heatmap-months"></div>
         <div class="heatmap-body">
           <div class="heatmap-daylabels">
-            <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+            <span></span><span>{{ t('stats_day_mon') }}</span><span></span><span>{{ t('stats_day_wed') }}</span><span></span><span>{{ t('stats_day_fri') }}</span><span></span>
           </div>
           <div class="heatmap-grid" id="heatmap-grid"></div>
         </div>
         <div class="heatmap-legend">
-          <span>Less</span>
+          <span>{{ t('stats_heatmap_less') }}</span>
           <span class="heatmap-cell" data-level="0"></span>
           <span class="heatmap-cell" data-level="1"></span>
           <span class="heatmap-cell" data-level="2"></span>
           <span class="heatmap-cell" data-level="3"></span>
           <span class="heatmap-cell" data-level="4"></span>
-          <span>More</span>
+          <span>{{ t('stats_heatmap_more') }}</span>
         </div>
       </div>
     </div>

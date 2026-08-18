@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Search — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_search') }}{% endblock %}
 
 {% block content %}
 <div class="search-page">
 
   <form class="search-form" action="/search" method="get">
-    <input class="search-input" type="search" name="q" value="{{ q }}" placeholder="Search all titles…" autofocus autocomplete="off">
-    <button class="search-submit" type="submit">Search</button>
+    <input class="search-input" type="search" name="q" value="{{ q }}" placeholder="{{ t('search_placeholder') }}" autofocus autocomplete="off">
+    <button class="search-submit" type="submit">{{ t('search_submit_btn') }}</button>
   </form>
 
   {% if q %}
     {% if entries %}
-    <p class="search-count">{{ entries | length }} result{{ 's' if entries | length != 1 else '' }} for <strong>{{ q }}</strong></p>
+    <p class="search-count">{% if entries|length == 1 %}{{ t('search_result_singular', count=entries|length) }}{% else %}{{ t('search_result_plural', count=entries|length) }}{% endif %} <strong>{{ q }}</strong></p>
     <div class="grid">
       {% for e in entries %}
       <div class="card">
@@ -30,7 +30,7 @@
               {% endfor %}
             </div>
             {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
-            {% if e.average_score %}<span class="avg-score" title="AniList average">{{ e.average_score }}%</span>{% endif %}
+            {% if e.average_score %}<span class="avg-score" title="{{ t('lib_avg_score_title') }}">{{ e.average_score }}%</span>{% endif %}
           </div>
           {% if e.genres %}
           <div class="genres">
@@ -40,16 +40,16 @@
           </div>
           {% endif %}
           <div class="card-footer">
-            <span class="status-chip status-chip--{{ e.status | lower }}">{{ e.status.title() }}</span>
-            <a href="/?status={{ e.status }}#card-{{ e.id }}" class="btn-anilist-sm" title="Go to library tab">→</a>
-            <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
+            <span class="status-chip status-chip--{{ e.status | lower }}">{{ t('status_' + e.status.lower()) }}</span>
+            <a href="/?status={{ e.status }}#card-{{ e.id }}" class="btn-anilist-sm" title="{{ t('link_go_to_library') }}">→</a>
+            <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
           </div>
         </div>
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <p class="search-empty">No results for <strong>{{ q }}</strong>.</p>
+    <p class="search-empty">{{ t('search_empty_result') }} <strong>{{ q }}</strong>.</p>
     {% endif %}
   {% endif %}
 

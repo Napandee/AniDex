@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Notes — {{ anime.title_english or anime.title_romaji }} — Anime Tracker{% endblock %}
+{% block title %}{{ t('notes_title', title=(anime.title_english or anime.title_romaji)) }}{% endblock %}
 
 {% block content %}
 <div class="notes-page">
@@ -14,20 +14,20 @@
       <div class="notes-context-sub">{{ anime.title_romaji }}</div>
       {% endif %}
       {% if anime.status %}
-      <div class="notes-context-sub">{{ anime.status.title() }}</div>
+      <div class="notes-context-sub">{{ t('status_' + anime.status.lower()) }}</div>
       {% endif %}
       <div class="notes-scores">
         <span class="notes-score">
-          <span class="notes-score-label">Your score</span>
-          {% if anime.score %}{{ anime.score }} ★{% else %}<span class="notes-score-empty">Not rated</span>{% endif %}
+          <span class="notes-score-label">{{ t('notes_your_score') }}</span>
+          {% if anime.score %}{{ anime.score }} ★{% else %}<span class="notes-score-empty">{{ t('notes_not_rated') }}</span>{% endif %}
         </span>
         <span class="notes-score">
-          <span class="notes-score-label">AniList average</span>
-          {% if anime.average_score %}{{ anime.average_score }}%{% else %}<span class="notes-score-empty">No average</span>{% endif %}
+          <span class="notes-score-label">{{ t('notes_anilist_average') }}</span>
+          {% if anime.average_score %}{{ anime.average_score }}%{% else %}<span class="notes-score-empty">{{ t('notes_no_average') }}</span>{% endif %}
         </span>
       </div>
       <a href="https://anilist.co/anime/{{ (notes.anilist_id_override if notes and notes.anilist_id_override else anime.id) }}"
-         target="_blank" rel="noopener" class="btn-anilist" style="margin-top:0.5rem;display:inline-block">AniList ↗</a>
+         target="_blank" rel="noopener" class="btn-anilist" style="margin-top:0.5rem;display:inline-block">{{ t('notes_anilist_link') }}</a>
     </div>
   </div>
 
@@ -35,12 +35,12 @@
   {% if also_watching %}
   <div class="extra-section" style="margin-bottom:1.25rem;">
     <div>
-      <h2 class="extra-heading">Also in this instance</h2>
+      <h2 class="extra-heading">{{ t('notes_also_watching_heading') }}</h2>
       <div class="also-watching-list">
         {% for w in also_watching %}
         <div class="also-watching-row">
           <span class="also-watching-name">{{ w.name }}</span>
-          <span class="also-watching-status">{{ w.status.title() if w.status else 'In library' }}</span>
+          <span class="also-watching-status">{{ t('status_' + w.status.lower()) if w.status else t('notes_in_library') }}</span>
         </div>
         {% endfor %}
       </div>
@@ -50,24 +50,24 @@
 
   {# ── Trailer + related ────────────────────────────────────────────── #}
   {% set relation_labels = {
-    'PREQUEL': 'Prequel', 'SEQUEL': 'Sequel', 'PARENT': 'Parent',
-    'SIDE_STORY': 'Side story', 'SPIN_OFF': 'Spin-off', 'ALTERNATIVE': 'Alternative',
-    'COMPILATION': 'Compilation', 'CONTAINS': 'Contains', 'SUMMARY': 'Summary', 'OTHER': 'Related'
+    'PREQUEL': t('relation_prequel'), 'SEQUEL': t('relation_sequel'), 'PARENT': t('relation_parent'),
+    'SIDE_STORY': t('relation_side_story'), 'SPIN_OFF': t('relation_spin_off'), 'ALTERNATIVE': t('relation_alternative'),
+    'COMPILATION': t('relation_compilation'), 'CONTAINS': t('relation_contains'), 'SUMMARY': t('relation_summary'), 'OTHER': t('relation_other')
   } %}
   <div class="extra-section">
     <div>
-      <h2 class="extra-heading">Trailer</h2>
+      <h2 class="extra-heading">{{ t('notes_trailer_heading') }}</h2>
       {% if trailer %}
       <a href="{{ trailer.url }}" target="_blank" rel="noopener" class="trailer-link">
-        <img src="{{ trailer.thumbnail }}" alt="Watch trailer" class="trailer-thumb">
+        <img src="{{ trailer.thumbnail }}" alt="{{ t('notes_watch_trailer_alt') }}" class="trailer-thumb">
         <span class="trailer-play">▶</span>
       </a>
       {% else %}
-      <p class="extra-empty">No trailer available</p>
+      <p class="extra-empty">{{ t('notes_no_trailer') }}</p>
       {% endif %}
     </div>
     <div>
-      <h2 class="extra-heading">Related</h2>
+      <h2 class="extra-heading">{{ t('notes_related_heading') }}</h2>
       {% if related %}
       <div class="related-list">
         {% for r in related %}
@@ -82,14 +82,14 @@
             <div class="related-title">{{ r.title }}</div>
             <div class="related-meta">
               {% if r.format %}<span class="related-format">{{ r.format }}</span>{% endif %}
-              {% if r.in_library %}<span class="related-in-library">In library</span>{% endif %}
+              {% if r.in_library %}<span class="related-in-library">{{ t('notes_in_library') }}</span>{% endif %}
             </div>
           </div>
         </a>
         {% endfor %}
       </div>
       {% else %}
-      <p class="extra-empty">No related anime</p>
+      <p class="extra-empty">{{ t('notes_no_related') }}</p>
       {% endif %}
     </div>
   </div>
@@ -98,51 +98,51 @@
     <input type="hidden" name="back" value="{{ back }}">
 
     <div class="form-field">
-      <label class="form-label" for="drop_reason">Drop reason</label>
+      <label class="form-label" for="drop_reason">{{ t('notes_drop_reason_label') }}</label>
       <input class="form-input" type="text" id="drop_reason" name="drop_reason"
              value="{{ notes.drop_reason if notes and notes.drop_reason else '' }}"
-             placeholder="Why did you drop this? (leave blank if not applicable)">
+             placeholder="{{ t('notes_drop_reason_placeholder') }}">
     </div>
 
     <div class="form-field">
-      <label class="form-label" for="notes">Notes</label>
+      <label class="form-label" for="notes">{{ t('notes_notes_label') }}</label>
       <textarea class="form-textarea" id="notes" name="notes" rows="5"
-                placeholder="Anything you want to remember…">{{ notes.notes if notes and notes.notes else '' }}</textarea>
+                placeholder="{{ t('notes_notes_placeholder') }}">{{ notes.notes if notes and notes.notes else '' }}</textarea>
     </div>
 
     <div class="form-field">
       <label class="form-label" for="personal_tags">
-        Tags
-        <span class="form-label-hint">— comma-separated, e.g. "watch with partner, background"</span>
+        {{ t('notes_tags_label') }}
+        <span class="form-label-hint">{{ t('notes_tags_hint') }}</span>
       </label>
       <input class="form-input" type="text" id="personal_tags" name="personal_tags"
              value="{{ (notes.personal_tags | join(', ')) if notes and notes.personal_tags else '' }}"
-             placeholder="watch with partner, background watching…">
+             placeholder="{{ t('notes_tags_placeholder') }}">
     </div>
 
     <div class="form-field">
       <label class="form-label" for="watch_next_priority">
-        Queue priority
-        <span class="form-label-hint">— lower = watch sooner, leave blank for no override</span>
+        {{ t('notes_queue_priority_label') }}
+        <span class="form-label-hint">{{ t('notes_queue_priority_hint') }}</span>
       </label>
       <input class="form-input" type="number" id="watch_next_priority" name="watch_next_priority"
              value="{{ notes.watch_next_priority if notes and notes.watch_next_priority is not none else '' }}"
-             placeholder="1, 2, 10…" min="1">
+             placeholder="{{ t('notes_queue_priority_placeholder') }}" min="1">
     </div>
 
     <div class="form-field">
       <label class="form-label" for="anilist_id_override">
-        AniList ID override
-        <span class="form-label-hint">— if AniList links to the wrong entry, set the correct ID here</span>
+        {{ t('notes_anilist_override_label') }}
+        <span class="form-label-hint">{{ t('notes_anilist_override_hint') }}</span>
       </label>
       <input class="form-input form-input--narrow" type="number" id="anilist_id_override" name="anilist_id_override"
              value="{{ notes.anilist_id_override if notes and notes.anilist_id_override is not none else '' }}"
-             placeholder="{{ anime.id }} (current)">
+             placeholder="{{ t('notes_anilist_override_placeholder', id=anime.id) }}">
     </div>
 
     <div class="form-actions">
-      <button type="submit" class="btn-save">Save</button>
-      <a href="/?status={{ back }}" class="btn-cancel">Cancel</a>
+      <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
+      <a href="/?status={{ back }}" class="btn-cancel">{{ t('notes_cancel_btn') }}</a>
     </div>
   </form>
 
@@ -150,22 +150,21 @@
   {% if rewatch_notes %}
   <div class="extra-section" style="margin-top:1.25rem;">
     <div>
-      <h2 class="extra-heading">Rewatch notes</h2>
+      <h2 class="extra-heading">{{ t('notes_rewatch_heading') }}</h2>
       <p class="form-label-hint" style="margin-bottom:0.75rem;">
-        Separate from the general note above — one note per rewatch, so "this rewatch
-        hit different" doesn't overwrite or blend into the original watch's note.
+        {{ t('notes_rewatch_hint') }}
       </p>
       {% for rw in rewatch_notes %}
       <form method="post" action="/anime/{{ anime.id }}/rewatch-notes/{{ rw.repeat_count }}"
             class="notes-form" style="margin-bottom:0.75rem;">
         <input type="hidden" name="back" value="{{ back }}">
         <div class="form-field">
-          <label class="form-label" for="rewatch_note_{{ rw.repeat_count }}">Rewatch #{{ rw.repeat_count }}</label>
+          <label class="form-label" for="rewatch_note_{{ rw.repeat_count }}">{{ t('notes_rewatch_label', num=rw.repeat_count) }}</label>
           <textarea class="form-textarea" id="rewatch_note_{{ rw.repeat_count }}" name="note" rows="3"
-                    placeholder="Anything different this time around…">{{ rw.note }}</textarea>
+                    placeholder="{{ t('notes_rewatch_placeholder') }}">{{ rw.note }}</textarea>
         </div>
         <div class="form-actions">
-          <button type="submit" class="btn-save">Save rewatch #{{ rw.repeat_count }} note</button>
+          <button type="submit" class="btn-save">{{ t('notes_rewatch_save_btn', num=rw.repeat_count) }}</button>
         </div>
       </form>
       {% endfor %}
