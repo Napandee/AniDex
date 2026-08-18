@@ -94,6 +94,62 @@ def test_compute_fetch_watermark_none_when_no_state_recorded():
     assert cr.compute_fetch_watermark({1: {"last_seen_watched_at": None}}) is None
 
 
+# ── Walk-completeness tracking (issue #97) ───────────────────────────────────
+# Minimal in-memory stand-in for a psycopg2 connection — just enough to cover
+# load_walk_complete/_set_walk_complete's single-key settings SQL, not a
+# general-purpose DB fake.
+class _FakeWalkConn:
+    def __init__(self, initial_value=None):
+        self.value = initial_value  # None = "no row for this key yet"
+        self.committed = False
+        self._last_select = None
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params):
+        q = query.strip()
+        if q.startswith("SELECT"):
+            self._last_select = self.value
+        elif q.startswith("INSERT"):
+            self.value = params[-1]
+
+    def fetchone(self):
+        return {"value": self._last_select} if self._last_select is not None else None
+
+    def commit(self):
+        self.committed = True
+
+
+def test_load_walk_complete_defaults_to_has_existing_state_when_never_set():
+    # No settings row yet — an existing account with real sync state shouldn't
+    # get hit with a surprise full re-walk the first time this ships.
+    assert cr.load_walk_complete(_FakeWalkConn(initial_value=None), has_existing_state=True) is True
+    # A genuinely first-ever sync (no prior state) starts as not-complete.
+    assert cr.load_walk_complete(_FakeWalkConn(initial_value=None), has_existing_state=False) is False
+
+
+def test_load_walk_complete_reads_explicit_stored_value():
+    assert cr.load_walk_complete(_FakeWalkConn(initial_value="true"), has_existing_state=False) is True
+    assert cr.load_walk_complete(_FakeWalkConn(initial_value="false"), has_existing_state=True) is False
+
+
+def test_set_walk_complete_persists_and_commits():
+    conn = _FakeWalkConn()
+    cr._set_walk_complete(conn, True)
+    assert conn.value == "true"
+    assert conn.committed is True
+
+    cr._set_walk_complete(conn, False)
+    assert conn.value == "false"
+
+
 # ── CrunchyrollHistory.fetch_since — the actual incremental-fetch fix (#45) ───
 # _fetch_page is monkeypatched per test so these never touch the network — same
 # discipline as _capture()'s AniList/DB monkeypatching below.
@@ -121,10 +177,11 @@ def test_fetch_since_stops_at_watermark_without_including_it(monkeypatch):
 
     monkeypatch.setattr(client, "_fetch_page", fake_fetch_page)
     watermark = datetime(2026, 8, 10, tzinfo=timezone.utc)
-    items = client.fetch_since(watermark)
+    items, reached_true_end = client.fetch_since(watermark)
 
     assert len(items) == 2  # only the two page-1 items — page 2's first item hits the watermark
     assert calls == [1, 2]  # never walks as far as page 3
+    assert reached_true_end is False  # stopped at the watermark, not genuine end of history
 
 
 def test_fetch_since_no_watermark_walks_until_short_page(monkeypatch):
@@ -134,9 +191,10 @@ def test_fetch_since_no_watermark_walks_until_short_page(monkeypatch):
     pages = {1: full_page, 2: short_page}
     monkeypatch.setattr(client, "_fetch_page", lambda page: pages.get(page, []))
 
-    items = client.fetch_since(None)
+    items, reached_true_end = client.fetch_since(None)
 
     assert len(items) == cr.PAGE_SIZE + 1
+    assert reached_true_end is True  # stopped because page 2 was short, i.e. genuine end of history
 
 
 def _entry(status="CURRENT", progress=0, repeat=0, total=24, anilist_id=42):

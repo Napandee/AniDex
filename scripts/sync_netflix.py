@@ -206,15 +206,23 @@ class NetflixHistory:
             .get("value", {}).get("viewedItems", [])
         )
 
-    def fetch_since(self, watermark: datetime | None) -> list[dict]:
+    def fetch_since(self, watermark: datetime | None) -> tuple[list[dict], bool]:
         """Fetch viewing history newest-first, stopping once an item at/older than
-        `watermark` is hit, or a short page signals the end of history. Returns raw
-        viewedItems dicts (unparsed)."""
+        `watermark` is hit, or a short page signals the end of history. Returns
+        (raw viewedItems dicts (unparsed), reached_true_end_of_history).
+
+        reached_true_end is True only when pagination stopped because history
+        genuinely ran out (a short or empty page) — not because it hit the given
+        watermark or the MAX_PAGES safety cap. Issue #97 needs this distinction
+        to know when a full walk has actually finished vs. just caught up to a
+        previously-known point."""
         items: list[dict] = []
+        reached_true_end = False
 
         for page in range(1, MAX_PAGES + 1):
             page_items = self._fetch_page(page)
             if not page_items:
+                reached_true_end = True
                 break
 
             reached_watermark = False
@@ -225,13 +233,16 @@ class NetflixHistory:
                     break
                 items.append(item)
 
-            if reached_watermark or len(page_items) < PAGE_SIZE:
+            if len(page_items) < PAGE_SIZE:
+                reached_true_end = True
+                break
+            if reached_watermark:
                 break
         else:
             log(f"WARNING: hit the {MAX_PAGES}-page safety cap without reaching the "
                 f"watermark — response shape may not match what this script expects.")
 
-        return items
+        return items, reached_true_end
 
 
 def _item_watched_at(item: dict) -> datetime | None:
@@ -363,6 +374,44 @@ def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
     is still tracked per-series (to drive per-series rewatch detection)."""
     values = [s["last_seen_watched_at"] for s in state_map.values() if s.get("last_seen_watched_at")]
     return max(values) if values else None
+
+
+def load_walk_complete(conn, has_existing_state: bool) -> bool:
+    """Whether we've ever confirmed reviewing this account's full Netflix history
+    (issue #97) — distinct from compute_fetch_watermark()'s per-series max(),
+    which only tells us the newest point we've matched, not whether unreviewed
+    older history might still exist. A partial/interrupted full walk otherwise
+    leaves the per-series max looking complete when it isn't, silently causing a
+    later incremental sync to stop looking further back forever.
+
+    Defaults to `has_existing_state` when never explicitly set, so existing
+    accounts with an already-working incremental sync aren't hit with a
+    surprise full re-walk the first time this ships — only genuinely first-ever
+    syncs start as not-complete, matching today's existing "no watermark = full
+    pull" first-sync behavior. `conn` may be None in DRY_RUN, matching that
+    mode's existing "treated as a from-scratch first sync" framing."""
+    if conn is None:
+        return False
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT value FROM settings WHERE user_id = %s AND key = 'netflix_walk_complete'",
+            (USER_ID,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return has_existing_state
+    return row["value"].strip().lower() in ("1", "true", "yes")
+
+
+def _set_walk_complete(conn, complete: bool):
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO settings (user_id, key, value) VALUES (%s, 'netflix_walk_complete', %s)
+            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+        """, (USER_ID, "true" if complete else "false"))
+    conn.commit()
 
 
 # ── Sync logic ────────────────────────────────────────────────────────────────
@@ -503,21 +552,32 @@ def main():
         nf_state_map = load_nf_state(conn)
         log(f"Loaded Netflix sync state for {len(nf_state_map)} series")
 
-    watermark = compute_fetch_watermark(nf_state_map)
-    if FORCE_FULL_RESYNC:
-        log("FORCE_FULL_RESYNC set — ignoring stored watermark, re-fetching full history")
+    walk_complete = load_walk_complete(conn, has_existing_state=bool(nf_state_map))
+    if walk_complete and FORCE_FULL_RESYNC:
+        log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
+        _set_walk_complete(conn, False)  # persisted before the (possibly slow) fetch/process below,
+        walk_complete = False            # so an interruption leaves an honest "not complete" state
         watermark = None
-    log(f"Fetching Netflix viewing activity since {watermark or '(no watermark — first sync, full pull)'}")
+    elif walk_complete:
+        watermark = compute_fetch_watermark(nf_state_map)
+    else:
+        log("Full walk not yet complete — re-walking full history this run")
+        watermark = None
+    log(f"Fetching Netflix viewing activity since {watermark or '(no watermark — full walk)'}")
 
     client = NetflixHistory(NETFLIX_COOKIE_HEADER, NETFLIX_PROFILE_GUID)
     try:
-        raw_items = client.fetch_since(watermark)
+        raw_items, reached_true_end = client.fetch_since(watermark)
     except Exception as e:
         log(f"ERROR: Netflix fetch failed: {e}")
         if conn:
             conn.close()
         sys.exit(1)
     log(f"Fetched {len(raw_items)} new viewing-activity rows")
+
+    if reached_true_end:
+        _set_walk_complete(conn, True)
+        log("Reached true end of Netflix history — full walk marked complete")
 
     if not raw_items:
         log("No new activity — nothing to do")
