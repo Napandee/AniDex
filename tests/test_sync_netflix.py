@@ -267,7 +267,7 @@ def _entry(status="CURRENT", progress=0, repeat=0, total=24, anilist_id=42):
 
 def _capture(monkeypatch):
     calls = []
-    monkeypatch.setattr(nf, "_update", lambda anilist_id, **kw: calls.append(("update", anilist_id, kw)))
+    monkeypatch.setattr(nf, "_update", lambda conn, anilist_id, **kw: calls.append(("update", anilist_id, kw)))
     monkeypatch.setattr(
         nf, "_save_state",
         lambda conn, anilist_id, title, watched_at, rewatch: calls.append(("save", anilist_id, rewatch)),
@@ -344,9 +344,12 @@ def test_repeating_branch_does_not_save_state_if_update_fails(monkeypatch):
     # Regression test — confirmed live 2026-08-14: a 429 from AniList mid-write in
     # this exact branch left rewatch_in_progress=true saved with the real progress
     # update never landed, permanently hiding the miss from future watermark-based
-    # fetches. _update() must run before _save_state(), not after.
+    # fetches. _update() must run before _save_state(), not after — issue #100
+    # changed what _update() does (enqueues to the outbox instead of pushing to
+    # AniList directly) but the ordering guarantee this test protects is
+    # unchanged: an exception from _update() must still prevent _save_state().
     calls = []
-    monkeypatch.setattr(nf, "_update", lambda anilist_id, **kw: (_ for _ in ()).throw(RuntimeError("429")))
+    monkeypatch.setattr(nf, "_update", lambda conn, anilist_id, **kw: (_ for _ in ()).throw(RuntimeError("db error")))
     monkeypatch.setattr(
         nf, "_save_state",
         lambda conn, anilist_id, title, watched_at, rewatch: calls.append(("save", anilist_id, rewatch)),

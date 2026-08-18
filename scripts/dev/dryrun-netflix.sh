@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run this yourself — same rule as probe-netflix-falcor.sh: real credentials, your
 # shell only. Runs sync_netflix.py in DRY_RUN mode (see its own docstring) — reads
-# your real AniList library, logs every AniList update it *would* make, never calls
-# anilist_update() or touches any database.
+# your real AniList library, logs every outbox update it *would* enqueue, never
+# touches any database.
 #
 #   export NETFLIX_COOKIE_HEADER='...'
 #   export NETFLIX_PROFILE_GUID='...'

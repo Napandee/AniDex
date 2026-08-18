@@ -137,20 +137,33 @@ CREATE TABLE library_entries (
     UNIQUE (user_id, anilist_entry_id)
 );
 
--- Outbox for local-first bulk status edits (issue #18) — a row here means an edit has
--- landed in library_entries but not yet been confirmed pushed to AniList. Rows are
--- deleted on successful push; only in-flight or failed edits ever sit in this table.
+-- Outbox for local-first AniList delivery (issue #18, extended by #100) — a row here
+-- means an edit has landed in library_entries (locally, sync_status='pending') but not
+-- yet been confirmed pushed to AniList. Rows are deleted on successful push; only
+-- in-flight or failed edits ever sit in this table. Originally UI bulk-status edits
+-- only (issue #18); #100 extended it to also carry Crunchyroll/Netflix/Prime-originated
+-- progress updates, so the app's single shared worker (app/outbox.py) delivers every
+-- source under one collective AniList rate-limit budget instead of each provider script
+-- independently making its own synchronous, blocking SaveMediaListEntry calls.
+-- status/progress/repeat_count are independently nullable — a row carries whichever
+-- subset of fields actually changed (a UI bulk-status edit only ever sets status; a
+-- provider-sync progress advance may set only progress, or progress+status together).
 CREATE TABLE status_sync_outbox (
     id           SERIAL PRIMARY KEY,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     anime_id     INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
-    status       TEXT NOT NULL,
+    source       TEXT NOT NULL DEFAULT 'ui_bulk_edit'
+                     CHECK (source IN ('ui_bulk_edit', 'crunchyroll', 'netflix', 'prime_video')),
+    status       TEXT,
+    progress     INTEGER,
+    repeat_count INTEGER,
     state        TEXT NOT NULL DEFAULT 'pending'
                      CHECK (state IN ('pending', 'in_progress', 'failed')),
     attempts     INTEGER NOT NULL DEFAULT 0,
     last_error   TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (status IS NOT NULL OR progress IS NOT NULL OR repeat_count IS NOT NULL)
 );
 
 CREATE INDEX idx_status_sync_outbox_state ON status_sync_outbox (state);

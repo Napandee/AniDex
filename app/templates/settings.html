@@ -372,6 +372,19 @@
     <div id="sync-msg" class="sync-msg" hidden></div>
   </div>
 
+  {# ── AniList delivery queue ───────────────────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">AniList delivery queue</h2>
+    <p class="settings-section-desc">
+      Status and progress updates — from bulk edits and from Crunchyroll/Netflix sync
+      alike — are written here immediately and delivered to AniList asynchronously in
+      the background, respecting AniList's rate limit collectively across every
+      source. A sync run finishing "ok" means the updates were staged correctly, not
+      necessarily that every one has reached AniList yet.
+    </p>
+    <div id="outbox-status" class="sync-status-text">Checking…</div>
+  </div>
+
   {# ── Netflix CSV import ───────────────────────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">Netflix CSV import</h2>
@@ -578,6 +591,34 @@ function renderStepChips(steps) {
     .then(r => r.json())
     .then(data => renderLog(Array.isArray(data) ? data : []))
     .catch(() => { tbody.innerHTML = '<tr><td colspan="5" class="sync-log-empty">Could not load sync history.</td></tr>'; });
+}());
+
+// ── AniList delivery queue (issue #100) ──────────────────────────────────────
+(function () {
+  const el = document.getElementById('outbox-status');
+
+  function poll() {
+    fetch('/api/outbox/status')
+      .then(r => r.json())
+      .then(data => {
+        const staged = (data.by_state.pending || 0) + (data.by_state.in_progress || 0);
+        const failed = data.by_state.failed || 0;
+        if (!staged && !failed) {
+          el.className = 'sync-status-text';
+          el.textContent = 'Everything delivered to AniList.';
+          return;
+        }
+        const parts = [];
+        if (staged) parts.push(`${staged} staged, awaiting delivery`);
+        if (failed) parts.push(`${failed} failed — see container logs`);
+        el.className = 'sync-msg sync-msg--' + (failed ? 'error' : 'running');
+        el.textContent = parts.join(' · ');
+      })
+      .catch(() => { el.className = 'sync-status-text'; el.textContent = 'Could not reach server.'; });
+  }
+
+  poll();
+  setInterval(poll, 10000);
 }());
 </script>
 {% endblock %}

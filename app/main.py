@@ -424,6 +424,19 @@ mutation ($mediaId: Int!, $status: MediaListStatus!) {
 }
 """
 
+# Issue #100 — used by app/outbox.py's worker to deliver outbox rows, which may carry
+# any non-empty subset of status/progress/repeat (a UI bulk-status edit only ever sets
+# status; a Crunchyroll/Netflix-originated row may set progress alone, or progress
+# together with status/repeat). SAVE_STATUS_MUTATION above stays as-is for the
+# single-card synchronous endpoint, which only ever touches status.
+SAVE_MEDIA_LIST_MUTATION = """
+mutation ($mediaId: Int!, $progress: Int, $status: MediaListStatus, $repeat: Int) {
+  SaveMediaListEntry(mediaId: $mediaId, progress: $progress, status: $status, repeat: $repeat) {
+    id progress status repeat
+  }
+}
+"""
+
 SAVE_PROGRESS_MUTATION = """
 mutation ($mediaId: Int!, $progress: Int!) {
   SaveMediaListEntry(mediaId: $mediaId, progress: $progress) {
@@ -2241,6 +2254,26 @@ def sync_status(request: Request):
     })
 
 
+@app.get("/api/outbox/status")
+def outbox_status(request: Request):
+    """Issue #100 — aggregate status_sync_outbox counts for this user, across every
+    source (UI bulk edits and provider sync alike, since #100 merged them into one
+    outbox). Lets Settings show "staged, not yet delivered to AniList" instead of a
+    flat ok/error now that AniList delivery is decoupled from a sync run finishing."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    rows = db.fetchall(
+        "SELECT state, COUNT(*) AS cnt FROM status_sync_outbox WHERE user_id = %s GROUP BY state",
+        (user["id"],),
+    )
+    by_state = {"pending": 0, "in_progress": 0, "failed": 0}
+    for r in rows:
+        by_state[r["state"]] = r["cnt"]
+    return JSONResponse({"by_state": by_state})
+
+
 @app.get("/api/stats")
 def stats_data(request: Request):
     user, denied = _require_user_api(request)
@@ -2714,7 +2747,7 @@ async def bulk_set_status(request: Request):
                     (user["id"], anime_id),
                 )
                 cur.execute(
-                    "INSERT INTO status_sync_outbox (user_id, anime_id, status) VALUES (%s, %s, %s)",
+                    "INSERT INTO status_sync_outbox (user_id, anime_id, source, status) VALUES (%s, %s, 'ui_bulk_edit', %s)",
                     (user["id"], anime_id, status),
                 )
         conn.commit()
