@@ -499,6 +499,86 @@ document.querySelectorAll('.btn-delete-sm').forEach(btn => {
   });
 });
 
+// ── Queue filters: tag + episode count (issue #88) ──────────────────────────────
+// Reuses the tag-filter dropdown pattern shipped for the library view (#74): dedupe
+// tags case-insensitively from each item's data-tags, rebuild the <select> sorted,
+// filter by exact (lowercased) tag match. Episode count uses a fixed bucket list
+// instead of a built dropdown, since the buckets are a small fixed taxonomy rather
+// than something derived from per-entry data. Both filters combine with AND, and
+// only ever hide/show existing DOM nodes — the drag-reorder handler in queue.html
+// still walks the full (visible + hidden) list on drop, so reordering within a
+// filtered view keeps working exactly as it does unfiltered.
+(function () {
+  const list = document.getElementById('queue-list');
+  const tagSel = document.getElementById('queue-tag-filter');
+  const epSel = document.getElementById('queue-episode-filter');
+  if (!list || (!tagSel && !epSel)) return;
+
+  let activeTag = '';
+  let activeEpisodeBucket = '';
+
+  function episodeBucket(item) {
+    const format = (item.dataset.format || '').toUpperCase();
+    if (format === 'MOVIE') return 'movie';
+    const episodes = parseInt(item.dataset.episodes, 10);
+    if (!episodes) return 'ongoing';
+    if (episodes <= 13) return 'short';
+    if (episodes <= 26) return 'standard';
+    return 'long';
+  }
+
+  function refreshTagOptions() {
+    const seen = new Map();
+    list.querySelectorAll('.queue-item').forEach(item => {
+      (item.dataset.tags || '').split(',').forEach(t => {
+        const tag = t.trim();
+        if (tag && !seen.has(tag.toLowerCase())) seen.set(tag.toLowerCase(), tag);
+      });
+    });
+    const current = tagSel.value;
+    tagSel.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
+    [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([key, label]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = label;
+      tagSel.appendChild(opt);
+    });
+    tagSel.value = seen.has(current) ? current : '';
+    activeTag = tagSel.value;
+  }
+
+  function applyQueueFilters() {
+    const items = [...list.querySelectorAll('.queue-item')];
+    let visible = 0;
+    items.forEach(item => {
+      const itemTags = (item.dataset.tags || '').toLowerCase().split(',').map(t => t.trim());
+      const tagOk = !activeTag || itemTags.includes(activeTag);
+      const epOk = !activeEpisodeBucket || episodeBucket(item) === activeEpisodeBucket;
+      const show = tagOk && epOk;
+      item.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    const noResults = document.getElementById('queue-no-filter-results');
+    if (noResults) {
+      noResults.style.display = ((activeTag || activeEpisodeBucket) && visible === 0) ? '' : 'none';
+    }
+  }
+
+  if (tagSel) {
+    refreshTagOptions();
+    tagSel.addEventListener('change', () => {
+      activeTag = tagSel.value;
+      applyQueueFilters();
+    });
+  }
+  if (epSel) {
+    epSel.addEventListener('change', () => {
+      activeEpisodeBucket = epSel.value;
+      applyQueueFilters();
+    });
+  }
+}());
+
 // ── Mark watched (queue page) ─────────────────────────────────────────────────
 document.querySelectorAll('.btn-mark-watched').forEach(btn => {
   btn.addEventListener('click', async () => {

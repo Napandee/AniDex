@@ -19,10 +19,33 @@
   {% endfor %}
 </div>
 
+<div class="library-toolbar">
+  <div class="toolbar-right">
+    <div class="tag-filter-group">
+      <select id="queue-tag-filter" class="tag-filter-select">
+        <option value="">All tags</option>
+      </select>
+    </div>
+    <div class="episode-filter-group">
+      <select id="queue-episode-filter" class="episode-filter-select">
+        <option value="">All episode counts</option>
+        <option value="short">≤13 eps</option>
+        <option value="standard">14–26 eps</option>
+        <option value="long">27+ eps</option>
+        <option value="movie">Movie</option>
+        <option value="ongoing">Ongoing / unknown</option>
+      </select>
+    </div>
+  </div>
+</div>
+
 {% if entries %}
 <ol class="queue-list" id="queue-list">
   {% for e in entries %}
-  <li class="queue-item" draggable="true" data-anime-id="{{ e.id }}">
+  <li class="queue-item" draggable="true" data-anime-id="{{ e.id }}"
+      data-format="{{ e.format or '' }}"
+      data-episodes="{{ e.episodes or '' }}"
+      data-tags="{{ (e.personal_tags or []) | join(', ') }}">
     <span class="queue-drag-handle" title="Drag to reorder">⠿</span>
     <span class="queue-rank">{{ loop.index }}</span>
 
@@ -103,6 +126,7 @@
 {% else %}
 <p class="empty">Nothing in your planning or paused list.</p>
 {% endif %}
+<p class="empty" id="queue-no-filter-results" style="display:none">No matches.</p>
 
 <script>
 (function () {
