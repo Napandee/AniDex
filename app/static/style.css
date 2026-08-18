@@ -817,6 +817,11 @@ body.auth-page main {
   accent-color: #3b82f6;
 }
 
+/* Wraps onto multiple rows rather than forcing everything onto one — #15 already
+   pushed a single-row layout past comfortable width (status + tags together), and
+   any future third bulk action would make a one-row layout worse again. Controls
+   that belong together (select+apply, input+apply) are grouped in their own flex
+   containers below so a wrap always happens *between* groups, never mid-group. */
 .bulk-bar {
   position: fixed;
   bottom: 1.5rem;
@@ -827,14 +832,41 @@ body.auth-page main {
   border-radius: 10px;
   padding: 0.6rem 1.25rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  gap: 0.6rem 1rem;
   z-index: 200;
   box-shadow: 0 4px 24px #0008;
   font-size: 0.85rem;
+  /* width: auto here would let Chromium's "squarish" intrinsic-sizing heuristic for
+     wrapping flex containers force an unwanted 2-line layout even when everything
+     fits on one line with room to spare — max-content forces the real single-row
+     width to be used whenever it fits under max-width, and only actually wraps once
+     that no longer holds (narrow viewport, or a future third control group). */
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  box-sizing: border-box;
 }
-.bulk-bar select { font-size: 0.82rem; padding: 0.25rem 0.4rem; }
-.bulk-bar input[type="text"] { width: 12rem; font-size: 0.82rem; padding: 0.25rem 0.4rem; }
+.bulk-count { flex: 0 0 auto; }
+.bulk-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+.bulk-bar select {
+  font-size: 0.82rem;
+  padding: 0.25rem 0.4rem;
+  min-width: 8rem;
+  flex-shrink: 0;
+}
+.bulk-bar input[type="text"] {
+  width: 12rem;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.4rem;
+  flex-shrink: 0;
+}
 .bulk-failed { color: #fca5a5; }
 
 /* ── Watch queue ─────────────────────────────────────────────────────────── */
@@ -1917,6 +1949,17 @@ body.auth-page main {
   .upcoming-list { gap: 0.5rem; }
   .upcoming-item { gap: 0.6rem; padding: 0.6rem 0.75rem; }
   .upcoming-cover { width: 40px; }
+
+  /* ── Bulk select bar — edge-to-edge, groups stack full-width ─────────── */
+  .bulk-bar {
+    left: 1rem;
+    right: 1rem;
+    transform: none;
+    max-width: none;
+    width: auto;
+  }
+  .bulk-bar-group { width: 100%; justify-content: center; flex-wrap: wrap; }
+  .bulk-bar input[type="text"] { width: 100%; flex: 1 1 auto; }
 
   /* ── Modal — full screen on mobile ───────────────────────────────────── */
   .modal-box {
