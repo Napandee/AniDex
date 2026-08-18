@@ -75,8 +75,8 @@ nav {
 .icon-fab svg { width: 1.05rem; height: 1.05rem; }
 .icon-fab.active { background: #2563eb; color: #fff; }
 .icon-fab.active:hover { background: #1d4ed8; color: #fff; }
-.icon-fab-admin.active { background: #7f1d1d; color: #fca5a5; }
-.icon-fab-admin.active:hover { background: #5f1616; color: #fca5a5; }
+.icon-fab-admin.active { background: #7e22ce; color: #d8b4fe; }
+.icon-fab-admin.active:hover { background: #6b21a8; color: #d8b4fe; }
 
 .logout-fab { background: #7f1d1d; color: #e2b8b8; }
 .logout-fab:hover { background: #3f1515; color: #fca5a5; transform: scale(1.08); }
