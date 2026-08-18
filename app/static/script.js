@@ -341,8 +341,12 @@ document.querySelectorAll('.status-select').forEach(select => {
   });
 });
 
-// ── Recs genre filter ─────────────────────────────────────────────────────────
+// ── Recs genre + source filter ──────────────────────────────────────────────────
+// Source filter (issue #13 — "New this season" vs "All") lives in a separate
+// #rec-source-filter row and combines (AND) with the genre filter below, rather
+// than replacing it — both narrow the same card grid at once.
 const recFilterEl = document.getElementById('rec-genre-filter');
+const recSourceFilterEl = document.getElementById('rec-source-filter');
 if (recFilterEl) {
   const cards = [...document.querySelectorAll('.rec-card')];
   const genreSet = new Set();
@@ -350,6 +354,17 @@ if (recFilterEl) {
   const genres = [...genreSet].sort();
 
   let activeGenre = '';
+  let activeSource = '';
+
+  function applyRecFilters() {
+    cards.forEach(c => {
+      const cardGenres = (c.dataset.genres || '').split(',').map(g => g.trim());
+      const genreMatch = !activeGenre || cardGenres.includes(activeGenre);
+      const sourceMatch = !activeSource || c.dataset.source === activeSource;
+      c.style.display = (genreMatch && sourceMatch) ? '' : 'none';
+    });
+  }
+
   const allBtn = document.createElement('button');
   allBtn.className = 'filter-btn active';
   allBtn.textContent = 'All';
@@ -368,9 +383,17 @@ if (recFilterEl) {
     activeGenre = genre;
     recFilterEl.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    cards.forEach(c => {
-      const genres = (c.dataset.genres || '').split(',').map(g => g.trim());
-      c.style.display = (!genre || genres.includes(genre)) ? '' : 'none';
+    applyRecFilters();
+  }
+
+  if (recSourceFilterEl) {
+    recSourceFilterEl.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeSource = btn.dataset.source || '';
+        recSourceFilterEl.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyRecFilters();
+      });
     });
   }
 }

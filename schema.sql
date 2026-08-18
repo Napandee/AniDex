@@ -259,6 +259,17 @@ CREATE TABLE recommendation_scores (
                                                             -- future, same as dismissed = true, but resurfaces once
                                                             -- it passes. Preserved across recommender rebuilds the
                                                             -- same way dismissed is (added migration 008).
+    source               TEXT NOT NULL DEFAULT 'similarity'  -- how this candidate was discovered (issue #13):
+                                                            -- 'similarity' = AniList's per-show recommendations off
+                                                            -- what you've completed/planned (the original path);
+                                                            -- 'seasonal' = AniList's current-season/year query (the
+                                                            -- new "new this season" digest). Scoring is identical
+                                                            -- either way — this only drives labeling/filtering on
+                                                            -- the /recommendations page. If a candidate is
+                                                            -- discovered via both paths in the same run, 'seasonal'
+                                                            -- wins (see run_recommender.py's score_and_store) since
+                                                            -- it's the more specific label. Added migration 012.
+                             CHECK (source IN ('similarity', 'seasonal')),
     computed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, anime_id)
 );

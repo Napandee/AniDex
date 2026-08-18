@@ -4,19 +4,32 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">Recommended for you</h1>
-  <p class="page-sub">{{ entries|length }} suggestions · scored against your completed &amp; watching history</p>
+  <p class="page-sub">
+    {{ entries|length }} suggestions
+    {%- if seasonal_count %} ({{ seasonal_count }} new this season){% endif %}
+    · scored against your completed &amp; watching history
+  </p>
 </div>
 
 {% if entries %}
+{% if seasonal_count %}
+<div id="rec-source-filter" class="rec-genre-filter">
+  <button class="filter-btn active" data-source="">All</button>
+  <button class="filter-btn" data-source="seasonal">New this season ({{ seasonal_count }})</button>
+</div>
+{% endif %}
 <div id="rec-genre-filter" class="rec-genre-filter"></div>
 
 <div class="rec-grid">
   {% for e in entries %}
   {% set reason = e.reason or {} %}
-  <div class="rec-card" data-anime-id="{{ e.id }}" data-genres="{{ e.genres | join(',') if e.genres else '' }}">
+  <div class="rec-card" data-anime-id="{{ e.id }}" data-genres="{{ e.genres | join(',') if e.genres else '' }}" data-source="{{ e.source }}">
     <div class="rec-cover-wrap">
       {% if e.cover_image_url %}
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+      {% endif %}
+      {% if e.season_label %}
+      <div class="rec-season-badge" title="New this season — issue #13's seasonal discovery digest">{{ e.season_label }}</div>
       {% endif %}
       <div class="rec-score-badge">{{ e.rec_score | int }}%</div>
     </div>

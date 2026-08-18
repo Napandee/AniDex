@@ -1255,6 +1255,21 @@ body.auth-page main {
   backdrop-filter: blur(4px);
 }
 
+/* Seasonal discovery digest badge (issue #13) — "Fall 2026" pill, top-left so it
+   never collides with the score badge above. */
+.rec-season-badge {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  background: rgba(217, 119, 6, 0.9);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+}
+
 /* ── Rec card body layout ─────────────────────────────────────────────────── */
 .rec-body {
   display: flex;
