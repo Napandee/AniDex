@@ -1124,6 +1124,15 @@ def _require_admin(request: Request):
     return None
 
 
+def _log_admin_action(admin_user_id: int, action: str, target_user_id: int | None = None, detail: str | None = None):
+    """Issue #89 — append a row to admin_audit_log. Called after the action itself
+    has already taken effect, so a logging failure never blocks the action."""
+    db.execute(
+        "INSERT INTO admin_audit_log (admin_user_id, action, target_user_id, detail) VALUES (%s, %s, %s, %s)",
+        (admin_user_id, action, target_user_id, detail),
+    )
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request):
     denied = _require_admin(request)
@@ -1174,6 +1183,25 @@ def admin_page(request: Request):
 
     default_hidden_tags = json.loads(_instance_config_get("default_hidden_tags") or "[]")
 
+    # Issue #89 — simple chronological audit trail of admin actions. Joined against
+    # users for display; LEFT JOIN so a row still shows (with a blank name) if the
+    # admin_user_id/target_user_id it points at was ever cleared via ON DELETE SET NULL.
+    audit_log = db.fetchall(
+        """
+        SELECT
+            aal.created_at,
+            aal.action,
+            aal.detail,
+            admin_u.email AS admin_email,
+            target_u.email AS target_email
+        FROM admin_audit_log aal
+        LEFT JOIN users admin_u ON admin_u.id = aal.admin_user_id
+        LEFT JOIN users target_u ON target_u.id = aal.target_user_id
+        ORDER BY aal.created_at DESC
+        LIMIT 200
+        """
+    )
+
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -1183,6 +1211,7 @@ def admin_page(request: Request):
             "google_status": _provider_status("google"),
             "discord_status": _provider_status("discord"),
             "default_hidden_tags": ", ".join(default_hidden_tags),
+            "audit_log": audit_log,
         },
     )
 
@@ -1199,6 +1228,7 @@ def admin_invites_create(request: Request, email: str = Form(...)):
         "INSERT INTO invites (email, invited_by) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING",
         (email, admin_user["id"]),
     )
+    _log_admin_action(admin_user["id"], "invite_created", detail=f"email={email}")
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -1210,8 +1240,14 @@ def admin_privacy_defaults(request: Request, default_hidden_tags: str = Form("")
     if denied:
         return denied
 
+    admin_user = get_current_user(request)
     tags = [t.strip() for t in default_hidden_tags.split(",") if t.strip()]
     _instance_config_set("default_hidden_tags", json.dumps(tags))
+    _log_admin_action(
+        admin_user["id"],
+        "privacy_defaults_updated",
+        detail=f"default_hidden_tags={', '.join(tags) if tags else '(cleared)'}",
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -1228,11 +1264,21 @@ def admin_oauth_settings(
     if provider not in AUTH_PROVIDERS:
         return JSONResponse({"error": "unknown provider"}, status_code=404)
 
+    changed = []
     if client_id.strip():
         _instance_config_set(f"{provider}_client_id", client_id.strip())
+        changed.append("client_id")
     if client_secret.strip():
         _instance_config_set(f"{provider}_client_secret", client_secret.strip())
+        changed.append("client_secret")
 
+    admin_user = get_current_user(request)
+    # Never log the actual secret/id values — just which fields were touched.
+    _log_admin_action(
+        admin_user["id"],
+        "oauth_settings_updated",
+        detail=f"provider={provider}; updated={', '.join(changed) if changed else '(nothing submitted)'}",
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -1250,6 +1296,13 @@ def admin_reset_password(request: Request, user_id: int):
     db.execute(
         "INSERT INTO password_resets (token, user_id, expires_at) VALUES (%s, %s, now() + interval '1 hour')",
         (token, user_id),
+    )
+    admin_user = get_current_user(request)
+    _log_admin_action(
+        admin_user["id"],
+        "password_reset",
+        target_user_id=user_id,
+        detail=f"target_email={target['email']}",
     )
     reset_url = request.url_for("auth_reset_password_page", token=token)
     return HTMLResponse(f"""
@@ -1276,6 +1329,12 @@ def admin_deactivate_user(request: Request, user_id: int):
         return HTMLResponse("<h1>User not found</h1>", status_code=404)
 
     db.execute("UPDATE users SET is_active = false WHERE id = %s", (user_id,))
+    _log_admin_action(
+        admin_user["id"],
+        "user_deactivated",
+        target_user_id=user_id,
+        detail=f"target_email={target['email']}",
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
