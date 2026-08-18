@@ -2360,6 +2360,169 @@ def export_library(request: Request):
     )
 
 
+def _analyze_personal_notes_import(user_id: int, entries: list) -> dict:
+    """Issue #87 — read-only analysis pass for POST /api/import, no writes.
+
+    Figures out, for the given parsed /api/export JSON entries:
+      - which entries actually carry personal-layer data worth importing at all
+        (an export always includes every library entry, and most of them have
+        every personal_notes field null — importing those as-is would either be a
+        pure no-op or, worse, wipe out real notes the target account has grown
+        since the export was taken, so they're excluded from `importable` here,
+        never even reaching the overwrite count below)
+      - which of those match a local `anime` row by anilist_id (anime.id IS the
+        AniList media id in this schema — see schema.sql). A row that doesn't
+        match is skipped, not an error: `anime` is sync-job-owned and this
+        endpoint must never write to it, per CLAUDE.md's AniList-sourced/
+        personal-layer split.
+      - how many of the matched rows already have a personal_notes row for this
+        user — the count the caller uses to decide whether explicit confirmation
+        is required before anything is written.
+    """
+    candidate_ids = set()
+    for e in entries:
+        if isinstance(e, dict) and isinstance(e.get("anilist_id"), int):
+            candidate_ids.add(e["anilist_id"])
+
+    if candidate_ids:
+        ids_list = list(candidate_ids)
+        known_anime = {
+            r["id"] for r in db.fetchall(
+                "SELECT id FROM anime WHERE id = ANY(%s)", (ids_list,)
+            )
+        }
+        existing_notes = {
+            r["anime_id"] for r in db.fetchall(
+                "SELECT anime_id FROM personal_notes WHERE user_id = %s AND anime_id = ANY(%s)",
+                (user_id, ids_list),
+            )
+        }
+    else:
+        known_anime = set()
+        existing_notes = set()
+
+    importable = []
+    unmatched_count = 0
+    overwrite_count = 0
+
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        anilist_id = e.get("anilist_id")
+        if not isinstance(anilist_id, int):
+            continue
+
+        drop_reason = (e.get("drop_reason") or "").strip() or None
+        notes = (e.get("notes") or "").strip() or None
+        tags = e.get("personal_tags") or []
+        if not isinstance(tags, list):
+            tags = []
+        tags = [str(t).strip() for t in tags if str(t).strip()]
+        priority = e.get("watch_next_priority")
+        priority = priority if isinstance(priority, int) else None
+        al_override = e.get("anilist_id_override")
+        al_override = al_override if isinstance(al_override, int) else None
+
+        has_personal_data = bool(
+            drop_reason or notes or tags or priority is not None or al_override is not None
+        )
+        if not has_personal_data:
+            continue
+
+        if anilist_id not in known_anime:
+            unmatched_count += 1
+            continue
+
+        if anilist_id in existing_notes:
+            overwrite_count += 1
+
+        importable.append((anilist_id, drop_reason, tags, notes, priority, al_override))
+
+    return {
+        "importable": importable,
+        "unmatched_count": unmatched_count,
+        "overwrite_count": overwrite_count,
+    }
+
+
+def _import_requires_confirmation(analysis: dict, confirm: bool) -> bool:
+    """The confirmation gate itself, split out so the "would this overwrite
+    anything" decision is testable independent of the HTTP layer."""
+    return analysis["overwrite_count"] > 0 and not confirm
+
+
+def _apply_personal_notes_import(user_id: int, importable: list) -> None:
+    """Upserts personal_notes for exactly the rows _analyze_personal_notes_import
+    decided are importable — same upsert shape as the single-entry /notes endpoints
+    elsewhere in this file, just looped. Never touches a row that wasn't in
+    `importable`, i.e. never touches a row the import JSON didn't actually carry
+    personal-layer data for."""
+    for anime_id, drop_reason, tags, notes, priority, al_override in importable:
+        db.execute(
+            """
+            INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, anime_id) DO UPDATE SET
+                drop_reason = EXCLUDED.drop_reason,
+                personal_tags = EXCLUDED.personal_tags,
+                notes = EXCLUDED.notes,
+                watch_next_priority = EXCLUDED.watch_next_priority,
+                anilist_id_override = EXCLUDED.anilist_id_override,
+                updated_at = now()
+            """,
+            (user_id, anime_id, drop_reason, json.dumps(tags), notes, priority, al_override),
+        )
+
+
+@app.post("/api/import")
+async def import_personal_data(request: Request):
+    """Issue #87 — the import/restore counterpart to GET /api/export above. Reads
+    the exact same JSON shape back in and upserts personal_notes for the
+    requesting user. Self-service only, matching export already being
+    self-service: a user can only ever import into their own account, matching
+    the current session's user, never someone else's.
+
+    Deliberately personal_notes-only — library_entries is AniList-sourced and
+    rebuildable by the sync job (see CLAUDE.md); #87's acceptance criteria only
+    call for restoring the personal layer, so that's exactly what this does and
+    nothing more.
+
+    Two-phase confirm: if any matched entry would overwrite an existing
+    personal_notes row, nothing is written and the response instead reports how
+    many rows would be overwritten, for the caller to show a confirmation prompt
+    and retry with confirm=true. A fresh account (no existing personal_notes at
+    all) never hits this gate — the import is written in a single call.
+    """
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    entries = body.get("entries")
+    confirm = bool(body.get("confirm", False))
+    if not isinstance(entries, list):
+        return JSONResponse({"error": "entries must be a list"}, status_code=400)
+
+    analysis = _analyze_personal_notes_import(user["id"], entries)
+
+    if _import_requires_confirmation(analysis, confirm):
+        return JSONResponse({
+            "ok": False,
+            "requires_confirmation": True,
+            "overwrite_count": analysis["overwrite_count"],
+            "matched_count": len(analysis["importable"]),
+            "unmatched_count": analysis["unmatched_count"],
+        })
+
+    _apply_personal_notes_import(user["id"], analysis["importable"])
+    return JSONResponse({
+        "ok": True,
+        "imported": len(analysis["importable"]),
+        "overwritten": analysis["overwrite_count"],
+        "unmatched_count": analysis["unmatched_count"],
+    })
+
+
 @app.get("/admin/export-all")
 def admin_export_all(request: Request):
     """Admin-only full-instance backup: zips every user's export (same query as
