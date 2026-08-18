@@ -28,6 +28,7 @@ CREATE TABLE users (
     display_name          TEXT,
     avatar_url            TEXT,
     is_admin              BOOLEAN NOT NULL DEFAULT false,
+    is_active             BOOLEAN NOT NULL DEFAULT true,   -- soft deactivation (#85); false blocks login and drops any existing session
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_login_at         TIMESTAMPTZ,
     failed_login_attempts INTEGER NOT NULL DEFAULT 0,  -- local login only; resets on success
