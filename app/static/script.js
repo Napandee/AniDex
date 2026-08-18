@@ -1,3 +1,53 @@
+// ── Shared date formatting for <time datetime="..."> elements ──────────────────
+// Used by both settings.html (sync-ts) and admin.html (next-daily-ts, next-rec-ts,
+// moved there by #96) — kept here since both pages need the exact same formatting.
+function fmtDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+function formatTimeElements(ids) {
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = fmtDate(el.getAttribute('datetime'));
+  });
+}
+
+// ── Settings/Admin page tabs (#95, #96) ─────────────────────────────────────────
+// Shared client-side tab switching for any page using .settings-tabs/.settings-tab-panel
+// (Settings, Admin) — no reload, no per-tab route. Reflects the active tab in the URL
+// (?tab=) via replaceState so a reload or bookmark preserves it. A page can pass a
+// resolveInitialTab(params) callback to map its own redirect params (e.g. settings.html's
+// saved=credentials, admin.html's saved=schedule) to the tab that shows that message;
+// an explicit ?tab= always wins over that.
+//
+// This file loads via <script defer>, so it executes after the document is parsed —
+// after any inline <script> in the page body. A caller must invoke this from a
+// DOMContentLoaded listener, not directly at the bottom of an inline block, or
+// initSettingsTabs won't be defined yet when that inline code runs.
+function initSettingsTabs(resolveInitialTab) {
+  const tabs = Array.from(document.querySelectorAll('.settings-tabs .tab'));
+  const panels = Array.from(document.querySelectorAll('.settings-tab-panel'));
+  if (!tabs.length) return;
+  const validTabs = tabs.map(t => t.dataset.tab);
+
+  function activate(tab, pushState) {
+    if (!validTabs.includes(tab)) tab = validTabs[0];
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    panels.forEach(p => { p.hidden = p.dataset.tabPanel !== tab; });
+    if (pushState) {
+      const url = new URL(window.location);
+      url.searchParams.set('tab', tab);
+      history.replaceState(null, '', url);
+    }
+  }
+
+  tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.tab, true)));
+
+  const params = new URLSearchParams(window.location.search);
+  const initial = params.get('tab') || (resolveInitialTab && resolveInitialTab(params)) || validTabs[0];
+  activate(initial, false);
+}
+
 // ── Library search ────────────────────────────────────────────────────────────
 const librarySearch = document.getElementById('library-search');
 if (librarySearch) {

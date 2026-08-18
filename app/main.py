@@ -401,6 +401,24 @@ def _apply_schedule() -> None:
         CronTrigger(day_of_week="mon", hour=7, minute=0, timezone="UTC"),
         id="weekly_digest", replace_existing=True,
     )
+
+
+def _next_run_time(job_id: str) -> str | None:
+    """Next scheduled run for an APScheduler job, as an ISO string for the template.
+
+    Shared by the Settings page (Sync & Credentials tab shows last-synced) and the
+    Admin page (Instance Config tab's Sync Schedule form, since #96 moved it there) —
+    both need the same daily_sync/weekly_recommender next-run times.
+    """
+    try:
+        job = _scheduler.get_job(job_id)
+        if job and job.next_run_time:
+            return job.next_run_time.isoformat()
+    except Exception:
+        pass
+    return None
+
+
 ANILIST_API = "https://graphql.anilist.co"
 
 # Dev/testing only — skips the live AniList push in rating/status/progress below so
@@ -1174,12 +1192,20 @@ def _instance_health() -> dict:
 
 
 @app.get("/admin", response_class=HTMLResponse)
-def admin_page(request: Request):
+def admin_page(request: Request, saved: str = ""):
     denied = _require_admin(request)
     if denied:
         return denied
 
     instance_health = _instance_health()
+
+    # Sync schedule (issue #96) — moved here from Settings since it's instance-wide,
+    # not per-user. Same instance_config fields _apply_schedule() reads.
+    schedule = {
+        "sync_daily_time": _instance_config_get("sync_daily_time") or "04:30",
+        "sync_recommender_day": _instance_config_get("sync_recommender_day") or "sun",
+        "sync_recommender_time": _instance_config_get("sync_recommender_time") or "05:00",
+    }
 
     invites = db.fetchall("SELECT * FROM invites ORDER BY created_at DESC")
 
@@ -1255,6 +1281,12 @@ def admin_page(request: Request):
             "discord_status": _provider_status("discord"),
             "default_hidden_tags": ", ".join(default_hidden_tags),
             "audit_log": audit_log,
+            "schedule": schedule,
+            "days_of_week": DAYS_OF_WEEK,
+            "day_labels": DAY_LABELS,
+            "next_daily_sync": _next_run_time("daily_sync"),
+            "next_recommender": _next_run_time("weekly_recommender"),
+            "saved": saved,
         },
     )
 
@@ -1960,28 +1992,11 @@ def settings_page(
         return denied
 
     current = config.get_all(user["id"])
-    # Schedule fields are instance-wide (one cron trigger regardless of user count),
-    # not per-user — merge them in from instance_config so the template can show them
-    # alongside the genuinely per-user settings without the template needing to know
-    # which table each field actually lives in.
-    current["sync_daily_time"] = _instance_config_get("sync_daily_time") or "04:30"
-    current["sync_recommender_day"] = _instance_config_get("sync_recommender_day") or "sun"
-    current["sync_recommender_time"] = _instance_config_get("sync_recommender_time") or "05:00"
 
     row = db.fetchone(
         "SELECT MAX(synced_at) AS ts FROM library_entries WHERE user_id = %s", (user["id"],)
     )
     last_synced = row["ts"].isoformat() if row and row["ts"] else None
-
-    # Next run times from scheduler
-    def _next(job_id: str) -> str | None:
-        try:
-            job = _scheduler.get_job(job_id)
-            if job and job.next_run_time:
-                return job.next_run_time.isoformat()
-        except Exception:
-            pass
-        return None
 
     return templates.TemplateResponse(
         request,
@@ -1989,11 +2004,7 @@ def settings_page(
         {
             "settings": current,
             "timezones": COMMON_TIMEZONES,
-            "days_of_week": DAYS_OF_WEEK,
-            "day_labels": DAY_LABELS,
             "last_synced": last_synced,
-            "next_daily_sync": _next("daily_sync"),
-            "next_recommender": _next("weekly_recommender"),
             "account": {
                 "has_password": bool(user["password_hash"]),
                 "google_linked": bool(user["google_id"]),
@@ -2239,7 +2250,8 @@ def settings_save_schedule(
     # Apply new schedule immediately — no restart needed
     _apply_schedule()
 
-    return RedirectResponse(url="/settings?saved=schedule", status_code=303)
+    # Issue #96 — this form now lives on Admin → Instance Config, not Settings.
+    return RedirectResponse(url="/admin?tab=instance-config&saved=schedule", status_code=303)
 
 
 @app.post("/settings/privacy")

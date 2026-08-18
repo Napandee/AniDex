@@ -441,41 +441,21 @@
 </div>
 
 <script>
-// ── Tab switching ─────────────────────────────────────────────────────────────
-// Client-side only — no reload, no new routes. Reflects the active tab in the
-// URL (?tab=) via replaceState so a reload or bookmark preserves it, and maps
-// each existing `saved=`/`*_error=` redirect param to the tab that holds the
-// message it belongs to, so the various POST handlers' redirects still land
-// the user on a tab that actually shows their confirmation/error.
-(function () {
-  const tabs = Array.from(document.querySelectorAll('.settings-tabs .tab'));
-  const panels = Array.from(document.querySelectorAll('.settings-tab-panel'));
-  const validTabs = tabs.map(t => t.dataset.tab);
-
-  function activate(tab, pushState) {
-    if (!validTabs.includes(tab)) tab = validTabs[0];
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-    panels.forEach(p => { p.hidden = p.dataset.tabPanel !== tab; });
-    if (pushState) {
-      const url = new URL(window.location);
-      url.searchParams.set('tab', tab);
-      history.replaceState(null, '', url);
-    }
-  }
-
-  tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.tab, true)));
-
-  const params = new URLSearchParams(window.location.search);
-  const savedTabMap = { display: 'preferences', credentials: 'sync', netflix_csv_import: 'sync', notifications: 'notifications', privacy: 'privacy' };
-  let initialTab = params.get('tab');
-  if (!initialTab) {
+// ── Tab switching (issue #96 — shared with admin.html via initSettingsTabs in
+// script.js) ─────────────────────────────────────────────────────────────────
+// Maps each existing `saved=`/`*_error=` redirect param to the tab that holds the
+// message it belongs to, so the various POST handlers' redirects still land the
+// user on a tab that actually shows their confirmation/error.
+document.addEventListener('DOMContentLoaded', function () {
+  initSettingsTabs(function (params) {
+    const savedTabMap = { display: 'preferences', credentials: 'sync', netflix_csv_import: 'sync', notifications: 'notifications', privacy: 'privacy' };
     const saved = params.get('saved');
-    if (saved && savedTabMap[saved]) initialTab = savedTabMap[saved];
-    else if (params.get('csv_import_error')) initialTab = 'sync';
-    else if (params.get('password_error') || params.get('link_error')) initialTab = 'account';
-  }
-  activate(initialTab || validTabs[0], false);
-}());
+    if (saved && savedTabMap[saved]) return savedTabMap[saved];
+    if (params.get('csv_import_error')) return 'sync';
+    if (params.get('password_error') || params.get('link_error')) return 'account';
+    return null;
+  });
+});
 
 // ── Reveal toggle for secret fields ──────────────────────────────────────────
 document.querySelectorAll('.btn-reveal').forEach(btn => {
@@ -491,15 +471,8 @@ document.querySelectorAll('.btn-reveal').forEach(btn => {
   });
 });
 
-// ── Format next-run timestamps ───────────────────────────────────────────────
-function fmtDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
-['next-daily-ts', 'next-rec-ts', 'sync-ts'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.textContent = fmtDate(el.getAttribute('datetime'));
-});
+// ── Format sync-ts (fmtDate/formatTimeElements shared via script.js) ─────────
+document.addEventListener('DOMContentLoaded', function () { formatTimeElements(['sync-ts']); });
 
 // ── Per-service status chips (shared by the live banner and the history table) ──
 // Kept in sync manually with scripts/run_full_sync.py's step order — extend when
