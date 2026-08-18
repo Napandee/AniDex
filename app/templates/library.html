@@ -1,49 +1,49 @@
 {% extends "base.html" %}
-{% block title %}Library — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_library') }}{% endblock %}
 
 {% block content %}
 <div class="status-tabs">
   {% for s in statuses %}
   <a href="/?status={{ s }}" class="tab {% if s == active_status %}active{% endif %}">
-    {{ s.title() }}
+    {{ t('status_' + s.lower()) }}
   </a>
   {% endfor %}
 </div>
 
 <div class="library-toolbar">
-  <input id="library-search" class="library-search" type="search" placeholder="Filter by title, genre or tag…" autocomplete="off">
+  <input id="library-search" class="library-search" type="search" placeholder="{{ t('lib_search_placeholder') }}" autocomplete="off">
 
   <div class="toolbar-right">
     <div class="filter-group">
-      <button class="filter-btn active" data-format="">All</button>
+      <button class="filter-btn active" data-format="">{{ t('status_all') }}</button>
       <button class="filter-btn" data-format="TV">TV</button>
-      <button class="filter-btn" data-format="MOVIE">Movie</button>
+      <button class="filter-btn" data-format="MOVIE">{{ t('queue_ep_movie') }}</button>
       <button class="filter-btn" data-format="OVA">OVA</button>
       <button class="filter-btn" data-format="ONA">ONA</button>
     </div>
 
     <div class="sort-group">
-      <span class="sort-label">Sort</span>
-      <button class="sort-btn active" data-sort="score">Score</button>
-      <button class="sort-btn" data-sort="title">Title</button>
-      <button class="sort-btn" data-sort="progress">Progress</button>
-      <button class="sort-btn" data-sort="updated">Updated</button>
+      <span class="sort-label">{{ t('lib_sort_label') }}</span>
+      <button class="sort-btn active" data-sort="score">{{ t('lib_sort_score') }}</button>
+      <button class="sort-btn" data-sort="title">{{ t('lib_sort_title') }}</button>
+      <button class="sort-btn" data-sort="progress">{{ t('lib_sort_progress') }}</button>
+      <button class="sort-btn" data-sort="updated">{{ t('lib_sort_updated') }}</button>
     </div>
 
     <div class="season-filter-group">
       <select id="season-filter" class="season-filter-select">
-        <option value="">All seasons</option>
+        <option value="">{{ t('lib_all_seasons') }}</option>
       </select>
     </div>
 
     <div class="tag-filter-group">
       <select id="tag-filter" class="tag-filter-select">
-        <option value="">All tags</option>
+        <option value="">{{ t('queue_tag_filter_all') }}</option>
       </select>
     </div>
 
     <div class="filter-group score-filter-group">
-      <button class="filter-btn active" data-score-filter="">All ★</button>
+      <button class="filter-btn active" data-score-filter="">{{ t('lib_all_stars') }}</button>
       {% for s in [1,2,3,4,5] %}
       <button class="filter-btn" data-score-filter="{{ s }}">{{ '★' * s }}</button>
       {% endfor %}
@@ -58,16 +58,16 @@
   <div class="bulk-bar-group">
     <select id="bulk-status-select" class="form-input form-input--narrow bulk-status-select">
       {% for s in ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'] %}
-      <option value="{{ s }}">{{ s.title() }}</option>
+      <option value="{{ s }}">{{ t('status_' + s.lower()) }}</option>
       {% endfor %}
     </select>
     <button id="bulk-apply" class="btn-save">Apply status</button>
   </div>
   <div class="bulk-bar-group">
-    <input id="bulk-tags-input" class="form-input" type="text" placeholder="Add tags (comma-separated)">
+    <input id="bulk-tags-input" class="form-input" type="text" placeholder="{{ t('lib_add_tags_placeholder') }}">
     <button id="bulk-apply-tags" class="btn-save">Add tags</button>
   </div>
-  <button id="bulk-clear" class="filter-btn">Clear</button>
+  <button id="bulk-clear" class="filter-btn">{{ t('lib_clear_btn') }}</button>
 </div>
 
 {% if entries %}
@@ -113,13 +113,13 @@
           <span class="prog-val">{{ e.progress or 0 }}</span>
           <button class="prog-btn" data-delta="1">+</button>
           {% if e.episodes %}<span class="prog-total">/{{ e.episodes }}</span>{% endif %}
-          <span class="prog-unit">ep</span>
+          <span class="prog-unit">{{ t('lib_ep_unit') }}</span>
         </div>
         {% if e.format %}
         <span class="format">{{ e.format }}</span>
         {% endif %}
         {% if e.average_score %}
-        <span class="avg-score" title="AniList average">{{ e.average_score }}%</span>
+        <span class="avg-score" title="{{ t('lib_avg_score_title') }}">{{ e.average_score }}%</span>
         {% endif %}
       </div>
 
@@ -134,13 +134,13 @@
       {% if e.personal_tags or e.is_stale or e.repeat_count or e.next_airing_label %}
       <div class="genres">
         {% if e.next_airing_label %}
-        <span class="airing-badge" title="Ep {{ e.next_episode }} airs {{ e.next_airing_label }}">▶ Ep {{ e.next_episode }} {{ e.next_airing_label }}</span>
+        <span class="airing-badge" title="{{ t('lib_airing_badge_title', ep=e.next_episode, label=e.next_airing_label) }}">{{ t('lib_airing_badge_text', ep=e.next_episode, label=e.next_airing_label) }}</span>
         {% endif %}
         {% if e.is_stale %}
-        <span class="stale-tag">Stale</span>
+        <span class="stale-tag">{{ t('lib_stale_tag') }}</span>
         {% endif %}
         {% if e.repeat_count %}
-        <span class="rewatch-badge" title="Rewatched {{ e.repeat_count }} time{{ 's' if e.repeat_count > 1 else '' }}">↺ {{ e.repeat_count }}×</span>
+        <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
         {% endif %}
         {% for t in e.personal_tags or [] %}
         <span class="personal-tag">{{ t }}</span>
@@ -165,15 +165,15 @@
       <div class="card-footer">
         <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}">
           {% for s in ['WATCHING', 'COMPLETED', 'DROPPED', 'PLANNING', 'PAUSED', 'REPEATING'] %}
-          <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ s.title() }}</option>
+          <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ t('status_' + s.lower()) }}</option>
           {% endfor %}
         </select>
         <div class="card-footer-actions">
           {% if e.status == 'WATCHING' %}
-          <button class="btn-drop" data-anime-id="{{ e.id }}">Drop</button>
+          <button class="btn-drop" data-anime-id="{{ e.id }}">{{ t('lib_drop_btn') }}</button>
           {% endif %}
-          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="View on AniList">↗</a>
-          <button class="btn-delete-sm" data-anime-id="{{ e.id }}" title="Remove from library and AniList">✗</button>
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+          <button class="btn-delete-sm" data-anime-id="{{ e.id }}" title="{{ t('lib_remove_title') }}">✗</button>
         </div>
       </div>
     </div>
@@ -181,20 +181,20 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="empty">No entries in this list.</p>
+<p class="empty">{{ t('lib_empty') }}</p>
 {% endif %}
-<p class="empty" id="no-filter-results" style="display:none">No matches.</p>
+<p class="empty" id="no-filter-results" style="display:none">{{ t('queue_no_matches') }}</p>
 
-<button id="add-anime-fab" class="add-anime-fab" title="Add anime">+</button>
+<button id="add-anime-fab" class="add-anime-fab" title="{{ t('lib_add_anime_fab_title') }}">+</button>
 
 <div id="add-anime-backdrop" class="add-anime-backdrop" hidden>
-  <div class="add-anime-modal" role="dialog" aria-modal="true" aria-label="Add anime">
+  <div class="add-anime-modal" role="dialog" aria-modal="true" aria-label="{{ t('lib_add_anime_fab_title') }}">
     <div class="add-anime-header">
-      <h3 class="add-anime-title">Add Anime</h3>
-      <button class="add-anime-close" id="add-anime-close" aria-label="Close">✕</button>
+      <h3 class="add-anime-title">{{ t('lib_add_anime_modal_title') }}</h3>
+      <button class="add-anime-close" id="add-anime-close" aria-label="{{ t('lib_add_anime_close_label') }}">✕</button>
     </div>
     <input id="add-anime-search" class="add-anime-search" type="search"
-           placeholder="Search AniList by title…" autocomplete="off">
+           placeholder="{{ t('lib_add_anime_search_placeholder') }}" autocomplete="off">
     <div id="add-anime-status" class="add-anime-status"></div>
     <div id="add-anime-results" class="add-anime-results"></div>
   </div>
@@ -203,22 +203,22 @@
 <div id="notes-modal" class="modal-backdrop" hidden>
   <div class="modal" role="dialog" aria-modal="true">
     <h3 class="modal-title" id="modal-title"></h3>
-    <p class="modal-drop-hint" id="modal-drop-hint" hidden>Add a reason below, then confirm to drop.</p>
-    <label class="notes-field-label">Drop reason
-      <input class="notes-field" id="modal-drop" type="text" placeholder="Why did you drop it?">
+    <p class="modal-drop-hint" id="modal-drop-hint" hidden>{{ t('lib_notes_drop_hint') }}</p>
+    <label class="notes-field-label">{{ t('notes_drop_reason_label') }}
+      <input class="notes-field" id="modal-drop" type="text" placeholder="{{ t('lib_notes_drop_placeholder') }}">
     </label>
-    <label class="notes-field-label">Tags (comma-separated)
-      <input class="notes-field" id="modal-tags" type="text" placeholder="e.g. isekai, rewatch">
+    <label class="notes-field-label">{{ t('lib_notes_tags_label') }}
+      <input class="notes-field" id="modal-tags" type="text" placeholder="{{ t('lib_notes_tags_placeholder') }}">
     </label>
-    <label class="notes-field-label">Notes
-      <textarea class="notes-field" id="modal-notes" rows="3" placeholder="Freeform notes…"></textarea>
+    <label class="notes-field-label">{{ t('notes_notes_label') }}
+      <textarea class="notes-field" id="modal-notes" rows="3" placeholder="{{ t('lib_notes_notes_placeholder') }}"></textarea>
     </label>
-    <label class="notes-field-label">Queue priority
-      <input class="notes-field" id="modal-priority" type="number" min="1" placeholder="1 = top of queue">
+    <label class="notes-field-label">{{ t('notes_queue_priority_label') }}
+      <input class="notes-field" id="modal-priority" type="number" min="1" placeholder="{{ t('lib_notes_priority_placeholder') }}">
     </label>
     <div class="modal-actions">
-      <button id="modal-save">Save</button>
-      <button id="modal-cancel">Cancel</button>
+      <button id="modal-save">{{ t('settings_save_button') }}</button>
+      <button id="modal-cancel">{{ t('notes_cancel_btn') }}</button>
     </div>
   </div>
 </div>

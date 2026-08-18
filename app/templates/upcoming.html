@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Upcoming — Anime Tracker{% endblock %}
+{% block title %}{{ t('title_upcoming') }}{% endblock %}
 
 {% macro entry_card(e) %}
     <li class="upcoming-item">
@@ -12,35 +12,35 @@
         <div class="upcoming-sub">{{ e.title_romaji }}</div>
         {% endif %}
         <div class="upcoming-episode">
-          Episode {{ e.episode }}
-          {% if e.episodes %}of {{ e.episodes }}{% endif %}
+          {{ t('upcoming_episode_label', num=e.episode) }}
+          {% if e.episodes %}{{ t('upcoming_episode_of', total=e.episodes) }}{% endif %}
         </div>
         <div class="upcoming-time">
           {{ e.airing_local.strftime('%a %d %b, %H:%M') }} {{ e.tz_abbr }}
           <span class="upcoming-relative">— {{ e.relative }}</span>
         </div>
         {% if e.progress %}
-        <div class="upcoming-progress">You're at episode {{ e.progress }}</div>
+        <div class="upcoming-progress">{{ t('upcoming_progress', num=e.progress) }}</div>
         {% endif %}
       </div>
       <button class="btn-mark-seen"
               data-anime-id="{{ e.id }}"
-              data-progress="{{ e.progress or 0 }}">+1 ep</button>
+              data-progress="{{ e.progress or 0 }}">{{ t('upcoming_mark_seen_btn') }}</button>
     </li>
 {% endmacro %}
 
 {% block content %}
 <div class="page-header">
-  <h1 class="page-title">Upcoming Episodes</h1>
-  <p class="page-sub">New episodes for your watching &amp; planning list.</p>
+  <h1 class="page-title">{{ t('upcoming_page_title') }}</h1>
+  <p class="page-sub">{{ t('upcoming_page_sub') }}</p>
 </div>
 
 {% if entries %}
   <div class="library-toolbar">
     <div class="toolbar-right">
-      <div class="view-toggle-group" role="group" aria-label="Upcoming view">
-        <button type="button" id="upcoming-view-list-btn" class="filter-btn active" data-view="list">List</button>
-        <button type="button" id="upcoming-view-grid-btn" class="filter-btn" data-view="grid">Weekly grid</button>
+      <div class="view-toggle-group" role="group" aria-label="{{ t('upcoming_view_group_label') }}">
+        <button type="button" id="upcoming-view-list-btn" class="filter-btn active" data-view="list">{{ t('upcoming_view_list_btn') }}</button>
+        <button type="button" id="upcoming-view-grid-btn" class="filter-btn" data-view="grid">{{ t('upcoming_view_grid_btn') }}</button>
       </div>
     </div>
   </div>
@@ -70,12 +70,12 @@
         {% endfor %}
       </ul>
       {% else %}
-      <p class="upcoming-grid-empty">Nothing airing</p>
+      <p class="upcoming-grid-empty">{{ t('upcoming_grid_empty') }}</p>
       {% endif %}
     </div>
     {% endfor %}
   </div>
 {% else %}
-<p class="empty">No upcoming episodes — nothing currently airing in your list.</p>
+<p class="empty">{{ t('upcoming_empty') }}</p>
 {% endif %}
 {% endblock %}
