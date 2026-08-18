@@ -1043,6 +1043,56 @@ body.auth-page main {
 
 .upcoming-progress { font-size: 0.72rem; color: #555; margin-top: 0.1rem; }
 
+.view-toggle-group { display: flex; gap: 0.4rem; }
+
+.upcoming-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+/* .upcoming-grid's `display: grid` is an author-stylesheet rule, which the cascade
+   ranks above the browser's default `[hidden] { display: none }` UA rule regardless
+   of selector specificity — so the bare class alone would never actually hide this
+   element. This higher-specificity attribute-selector override restores it. */
+#upcoming-grid-view[hidden] { display: none; }
+
+.upcoming-grid-day {
+  background: #141414;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  padding: 0.6rem;
+  min-width: 0;
+}
+.upcoming-grid-day.is-today { border-color: #2563eb; }
+
+.upcoming-grid-day-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin: 0 0 0.6rem;
+}
+.upcoming-grid-day.is-today .upcoming-grid-day-header { color: #93c5fd; }
+
+.upcoming-grid-day-list { gap: 0.5rem; }
+
+.upcoming-grid-day-list .upcoming-item {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0.5rem;
+  gap: 0.4rem;
+}
+.upcoming-grid-day-list .upcoming-cover { width: 100%; height: auto; }
+.upcoming-grid-day-list .btn-mark-seen { align-self: flex-end; }
+
+.upcoming-grid-empty {
+  font-size: 0.75rem;
+  color: #444;
+  margin: 0;
+}
+
 /* ── Stats page ──────────────────────────────────────────────────────────── */
 /* .stats body class no longer used — page now uses normal layout */
 .stats-page { max-width: 960px; margin: 0 auto; }
@@ -1971,6 +2021,10 @@ body.auth-page main {
   .upcoming-list { gap: 0.5rem; }
   .upcoming-item { gap: 0.6rem; padding: 0.6rem 0.75rem; }
   .upcoming-cover { width: 40px; }
+
+  /* ── Upcoming — weekly grid stacks to one column per day ────────────────── */
+  .upcoming-grid { grid-template-columns: 1fr; }
+  .upcoming-grid-day-list .upcoming-cover { width: 40px; height: auto; }
 
   /* ── Bulk select bar — edge-to-edge, groups stack full-width ─────────── */
   .bulk-bar {

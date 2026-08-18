@@ -1845,10 +1845,23 @@ def upcoming(request: Request):
             entry["group"] = f"In {weeks} week{'s' if weeks > 1 else ''}"
         entries.append(entry)
 
+    # Weekly Mon-Sun broadcast-calendar grid — groups the same entries by
+    # broadcast day of week (local time), reusing airing_schedule_cache data
+    # already fetched above. No change to how that data is synced/cached.
+    week_grid = [
+        {"name": name, "entries": []}
+        for name in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    ]
+    for entry in entries:
+        week_grid[entry["airing_local"].weekday()]["entries"].append(entry)
+    today_weekday = now.astimezone(tz).weekday()
+    for idx, day in enumerate(week_grid):
+        day["is_today"] = idx == today_weekday
+
     return templates.TemplateResponse(
         request,
         "upcoming.html",
-        {"entries": entries},
+        {"entries": entries, "week_grid": week_grid},
     )
 
 

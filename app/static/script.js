@@ -325,6 +325,37 @@ if (recFilterEl) {
   }
 }
 
+// ── Upcoming — list / weekly grid view toggle ──────────────────────────────────
+(function () {
+  const listBtn = document.getElementById('upcoming-view-list-btn');
+  const gridBtn = document.getElementById('upcoming-view-grid-btn');
+  const listView = document.getElementById('upcoming-list-view');
+  const gridView = document.getElementById('upcoming-grid-view');
+  if (!listBtn || !gridBtn || !listView || !gridView) return;
+
+  const STORAGE_KEY = 'upcoming-view';
+
+  function setView(view) {
+    const isGrid = view === 'grid';
+    listView.hidden = isGrid;
+    gridView.hidden = !isGrid;
+    listBtn.classList.toggle('active', !isGrid);
+    gridBtn.classList.toggle('active', isGrid);
+  }
+
+  listBtn.addEventListener('click', () => {
+    setView('list');
+    localStorage.setItem(STORAGE_KEY, 'list');
+  });
+  gridBtn.addEventListener('click', () => {
+    setView('grid');
+    localStorage.setItem(STORAGE_KEY, 'grid');
+  });
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  setView(saved === 'grid' ? 'grid' : 'list');
+})();
+
 // ── Upcoming — mark episode seen ──────────────────────────────────────────────
 document.querySelectorAll('.btn-mark-seen').forEach(btn => {
   btn.addEventListener('click', async () => {
