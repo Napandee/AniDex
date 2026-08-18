@@ -55,6 +55,8 @@
     {% endfor %}
   </select>
   <button id="bulk-apply" class="btn-save">Apply status</button>
+  <input id="bulk-tags-input" class="form-input" type="text" placeholder="Add tags (comma-separated)">
+  <button id="bulk-apply-tags" class="btn-save">Add tags</button>
   <button id="bulk-clear" class="filter-btn">Clear</button>
 </div>
 
@@ -242,6 +244,8 @@
   const applyBtn = document.getElementById('bulk-apply');
   const clearBtn = document.getElementById('bulk-clear');
   const statusSel = document.getElementById('bulk-status-select');
+  const tagsInput = document.getElementById('bulk-tags-input');
+  const tagsBtn = document.getElementById('bulk-apply-tags');
   let bulkMode = false;
 
   function getChecked() {
@@ -294,6 +298,30 @@
       return;
     }
     pollBulkStatus(animeIds);
+  });
+
+  tagsBtn.addEventListener('click', async () => {
+    const checked = getChecked();
+    const tags = tagsInput.value.trim();
+    if (!checked.length || !tags) return;
+    const animeIds = checked.map(cb => parseInt(cb.dataset.animeId, 10));
+    tagsBtn.disabled = true;
+    tagsBtn.textContent = `Adding to ${animeIds.length}…`;
+
+    const resp = await fetch('/api/anime/bulk-tags', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tags, anime_ids: animeIds}),
+    });
+
+    tagsBtn.disabled = false;
+    tagsBtn.textContent = 'Add tags';
+    if (!resp.ok) {
+      countEl.textContent = 'Failed to add tags.';
+      return;
+    }
+    tagsInput.value = '';
+    location.reload();
   });
 
   function pollBulkStatus(animeIds) {
