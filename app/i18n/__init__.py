@@ -57,3 +57,13 @@ def translator(locale: str):
         return text.format(**kwargs) if kwargs else text
 
     return t
+
+
+def all_strings(locale: str) -> dict[str, str]:
+    """The full key->string map for a locale, English-fallback already applied to
+    any key that locale hasn't translated — for embedding as `window.I18N` so
+    client-side JS (library.html/recommendations.html's runtime-built button and
+    status text, see #147) never needs its own fallback chain, just a key lookup."""
+    fallback = _TRANSLATIONS[DEFAULT_LOCALE]
+    strings = _TRANSLATIONS.get(locale, {})
+    return {**fallback, **strings}
