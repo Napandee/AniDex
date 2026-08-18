@@ -1534,7 +1534,8 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
     anime = db.fetchone(
         """
         SELECT a.id, a.title_english, a.title_romaji, a.cover_image_url, le.status,
-               a.trailer_yt_id, a.relations, a.genres, a.average_score, le.score
+               a.trailer_yt_id, a.relations, a.genres, a.average_score, le.score,
+               le.repeat_count
         FROM anime a
         LEFT JOIN library_entries le ON le.anime_id = a.id AND le.user_id = %s
         WHERE a.id = %s
@@ -1545,6 +1546,9 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
         "SELECT * FROM personal_notes WHERE anime_id = %s AND user_id = %s",
         (anime_id, user["id"]),
     )
+
+    current_repeat_count = anime["repeat_count"] if anime and anime["repeat_count"] else 0
+    rewatch_notes = _get_rewatch_notes(user["id"], anime_id, current_repeat_count)
 
     also_watching = _also_watching(anime_id, user["id"], anime["genres"] if anime else [])
 
@@ -1575,7 +1579,8 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
         request,
         "notes.html",
         {"anime": anime, "notes": notes, "back": back,
-         "trailer": trailer, "related": related, "also_watching": also_watching},
+         "trailer": trailer, "related": related, "also_watching": also_watching,
+         "rewatch_notes": rewatch_notes},
     )
 
 
@@ -1667,6 +1672,77 @@ async def save_notes_api(anime_id: int, request: Request):
         (user["id"], anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
     )
     return JSONResponse({"ok": True})
+
+
+def _get_rewatch_notes(user_id: int, anime_id: int, current_repeat_count: int) -> list:
+    """One entry per rewatch that's happened so far (repeat_count 1..N), pre-filled
+    with any existing note for that rewatch (blank if none yet). The original watch
+    (repeat_count 0) keeps using personal_notes.notes — not included here. Returns
+    [] for an anime with no rewatches, so existing single-note behavior is unaffected."""
+    rows = db.fetchall(
+        "SELECT repeat_count, note FROM rewatch_notes WHERE anime_id = %s AND user_id = %s ORDER BY repeat_count",
+        (anime_id, user_id),
+    )
+    by_count = {r["repeat_count"]: r["note"] for r in rows}
+    return [
+        {"repeat_count": n, "note": by_count.get(n, "")}
+        for n in range(1, current_repeat_count + 1)
+    ]
+
+
+def _save_rewatch_note(user_id: int, anime_id: int, repeat_count: int, note: str) -> bool:
+    """Attach a note to one specific rewatch (issue #14), separate from the
+    general/original note on personal_notes.notes. Only valid for a rewatch
+    that's actually happened — repeat_count must be between 1 and the user's
+    current library_entries.repeat_count for this anime, inclusive. Blank note
+    deletes any existing row for that rewatch (lets a note be cleared).
+    Returns True if the write was applied, False if repeat_count was out of range
+    (no library entry, or asking for a rewatch that hasn't happened yet)."""
+    if repeat_count < 1:
+        return False
+
+    entry = db.fetchone(
+        "SELECT repeat_count FROM library_entries WHERE anime_id = %s AND user_id = %s",
+        (anime_id, user_id),
+    )
+    if not entry or not entry["repeat_count"] or repeat_count > entry["repeat_count"]:
+        return False
+
+    note_val = note.strip()
+    if note_val:
+        db.execute(
+            """
+            INSERT INTO rewatch_notes (user_id, anime_id, repeat_count, note)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, anime_id, repeat_count) DO UPDATE SET
+                note = EXCLUDED.note,
+                updated_at = now()
+            """,
+            (user_id, anime_id, repeat_count, note_val),
+        )
+    else:
+        db.execute(
+            "DELETE FROM rewatch_notes WHERE user_id = %s AND anime_id = %s AND repeat_count = %s",
+            (user_id, anime_id, repeat_count),
+        )
+    return True
+
+
+@app.post("/anime/{anime_id}/rewatch-notes/{repeat_count}")
+def save_rewatch_note(
+    request: Request,
+    anime_id: int,
+    repeat_count: int,
+    note: str = Form(""),
+    back: str = Form("WATCHING"),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    _save_rewatch_note(user["id"], anime_id, repeat_count, note)
+
+    return RedirectResponse(url=f"/anime/{anime_id}/notes?back={back}", status_code=303)
 
 
 _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",

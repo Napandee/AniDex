@@ -146,6 +146,33 @@
     </div>
   </form>
 
+  {# ── Rewatch-specific notes ───────────────────────────────────────── #}
+  {% if rewatch_notes %}
+  <div class="extra-section" style="margin-top:1.25rem;">
+    <div>
+      <h2 class="extra-heading">Rewatch notes</h2>
+      <p class="form-label-hint" style="margin-bottom:0.75rem;">
+        Separate from the general note above — one note per rewatch, so "this rewatch
+        hit different" doesn't overwrite or blend into the original watch's note.
+      </p>
+      {% for rw in rewatch_notes %}
+      <form method="post" action="/anime/{{ anime.id }}/rewatch-notes/{{ rw.repeat_count }}"
+            class="notes-form" style="margin-bottom:0.75rem;">
+        <input type="hidden" name="back" value="{{ back }}">
+        <div class="form-field">
+          <label class="form-label" for="rewatch_note_{{ rw.repeat_count }}">Rewatch #{{ rw.repeat_count }}</label>
+          <textarea class="form-textarea" id="rewatch_note_{{ rw.repeat_count }}" name="note" rows="3"
+                    placeholder="Anything different this time around…">{{ rw.note }}</textarea>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save rewatch #{{ rw.repeat_count }} note</button>
+        </div>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 
 {% endblock %}
