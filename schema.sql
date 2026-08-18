@@ -151,6 +151,18 @@ CREATE TABLE airing_schedule_cache (
     UNIQUE (anime_id, episode)
 );
 
+-- Persistent AniList title-search cache (issue #115). find_anilist_id() falls back to
+-- AniList's live search API for any watched title not in a user's pre-built title
+-- index — for accounts with a lot of non-anime watch history this dominates sync time,
+-- and without persistence a retry re-searches the same permanently-non-matching titles
+-- from scratch. Global like `anime`/airing_schedule_cache — a search result for a given
+-- title string is the same regardless of which user or provider is asking.
+CREATE TABLE anilist_title_search_cache (
+    title      TEXT PRIMARY KEY,
+    media_id   INTEGER,  -- NULL means "confirmed no AniList match"
+    cached_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Per-user record of which episodes have already been notified about. Notification
 -- state can't live on airing_schedule_cache itself (that table is global/shared — two
 -- users watching the same currently-airing show would otherwise race on one flag and

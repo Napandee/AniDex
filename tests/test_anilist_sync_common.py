@@ -1,4 +1,26 @@
-from anilist_sync_common import is_plausible_match
+import anilist_sync_common as common
+from anilist_sync_common import is_plausible_match, seed_search_cache, search_cache_snapshot
+
+
+# ── Persistent title-search cache seeding (issue #115) ──────────────────────────
+
+def test_seed_search_cache_populates_snapshot(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {})
+    seed_search_cache({"Some Western Show": None, "Attack on Titan": 16498})
+    assert search_cache_snapshot() == {"Some Western Show": None, "Attack on Titan": 16498}
+
+
+def test_seed_search_cache_merges_without_clobbering_existing_entries(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {"Already Resolved": 123})
+    seed_search_cache({"New Title": None})
+    assert search_cache_snapshot() == {"Already Resolved": 123, "New Title": None}
+
+
+def test_search_cache_snapshot_returns_a_copy_not_a_live_reference(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {"Title": 1})
+    snapshot = search_cache_snapshot()
+    snapshot["Title"] = 999
+    assert common._search_cache["Title"] == 1  # mutating the snapshot didn't affect the real cache
 
 
 def test_movie_watch_against_tv_entry_is_implausible():

@@ -150,6 +150,58 @@ def test_set_walk_complete_persists_and_commits():
     assert conn.value == "false"
 
 
+# ── Persistent title-search cache (issue #115) ───────────────────────────────
+# Minimal in-memory stand-in for a psycopg2 connection, just for
+# load_title_search_cache/save_title_search_cache_entry's title->media_id SQL.
+class _FakeSearchCacheConn:
+    def __init__(self, initial=None):
+        self.store = dict(initial or {})  # {title: media_id}
+        self.committed = False
+        self._rows = []
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params=None):
+        q = query.strip()
+        if q.startswith("SELECT"):
+            self._rows = [{"title": t, "media_id": m} for t, m in self.store.items()]
+        elif q.startswith("INSERT"):
+            title, media_id = params
+            self.store[title] = media_id
+
+    def fetchall(self):
+        return self._rows
+
+    def commit(self):
+        self.committed = True
+
+
+def test_load_title_search_cache_returns_all_rows():
+    conn = _FakeSearchCacheConn(initial={"Frieren": 154587, "Some Western Show": None})
+    assert cr.load_title_search_cache(conn) == {"Frieren": 154587, "Some Western Show": None}
+
+
+def test_load_title_search_cache_empty_when_no_rows():
+    assert cr.load_title_search_cache(_FakeSearchCacheConn()) == {}
+
+
+def test_save_title_search_cache_entry_persists_and_commits():
+    conn = _FakeSearchCacheConn()
+    cr.save_title_search_cache_entry(conn, "Some Western Show", None)
+    assert conn.store == {"Some Western Show": None}
+    assert conn.committed is True
+
+    cr.save_title_search_cache_entry(conn, "Frieren", 154587)
+    assert conn.store == {"Some Western Show": None, "Frieren": 154587}
+
+
 # ── CrunchyrollHistory.fetch_since — the actual incremental-fetch fix (#45) ───
 # _fetch_page is monkeypatched per test so these never touch the network — same
 # discipline as _capture()'s AniList/DB monkeypatching below.
