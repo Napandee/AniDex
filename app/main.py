@@ -1,11 +1,14 @@
 import html
+import io
 import json
 import logging
 import os
+import re
 import secrets
 import subprocess
 import sys
 import threading
+import zipfile
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
@@ -2130,12 +2133,9 @@ def stats(request: Request):
     return templates.TemplateResponse(request, "stats.html")
 
 
-@app.get("/api/export")
-def export_library(request: Request):
-    user, denied = _require_user_api(request)
-    if denied:
-        return denied
-
+def _export_user_library(user_id: int) -> list:
+    """Shared by /api/export (self-service, one user) and /admin/export-all
+    (admin, loops this over every user) — see issue #90."""
     rows = db.fetchall(
         """
         SELECT
@@ -2166,7 +2166,7 @@ def export_library(request: Request):
         WHERE le.user_id = %s
         ORDER BY le.status, a.title_romaji
         """,
-        (user["id"],),
+        (user_id,),
     )
     export = []
     for r in rows:
@@ -2177,12 +2177,48 @@ def export_library(request: Request):
         if entry.get("anilist_updated_at"):
             entry["anilist_updated_at"] = entry["anilist_updated_at"].isoformat()
         export.append(entry)
-    from fastapi.responses import Response as _Response
-    import json as _json
-    return _Response(
-        content=_json.dumps(export, default=str, ensure_ascii=False, indent=2),
+    return export
+
+
+@app.get("/api/export")
+def export_library(request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    export = _export_user_library(user["id"])
+    return Response(
+        content=json.dumps(export, default=str, ensure_ascii=False, indent=2),
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=anime_library_export.json"},
+    )
+
+
+@app.get("/admin/export-all")
+def admin_export_all(request: Request):
+    """Admin-only full-instance backup: zips every user's export (same query as
+    /api/export, looped) into one download. Manual trigger only — see issue #90;
+    deliberately not scheduled, unlike sync/recommender."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    users = db.fetchall("SELECT id, email FROM users ORDER BY email")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for u in users:
+            export = _export_user_library(u["id"])
+            safe_email = re.sub(r"[^A-Za-z0-9_.@-]", "_", u["email"])
+            zf.writestr(
+                f"{u['id']}_{safe_email}.json",
+                json.dumps(export, default=str, ensure_ascii=False, indent=2),
+            )
+    buf.seek(0)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=anidex_export_all_{timestamp}.zip"},
     )
 
 
