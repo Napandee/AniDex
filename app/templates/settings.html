@@ -9,450 +9,474 @@
     <p class="page-sub">Preferences and credentials for this tracker.</p>
   </div>
 
-  {# ── Display ──────────────────────────────────────────────────────────── #}
-  <div class="settings-section settings-section--first">
-    <h2 class="settings-section-title">Display</h2>
-    {% if saved == 'display' %}<p class="settings-success">Saved.</p>{% endif %}
-
-    <form method="post" action="/settings/display">
-      <div class="form-field">
-        <label class="form-label" for="timezone">
-          Timezone
-          <span class="form-label-hint">— used for all date and time display</span>
-        </label>
-        <select class="form-input" id="timezone" name="timezone">
-          {% for tz in timezones %}
-          <option value="{{ tz }}" {% if tz == settings.timezone %}selected{% endif %}>{{ tz }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Save</button>
-      </div>
-    </form>
+  <div class="settings-tabs" role="tablist">
+    <button type="button" class="tab active" data-tab="account" role="tab">Account</button>
+    <button type="button" class="tab" data-tab="preferences" role="tab">Preferences</button>
+    <button type="button" class="tab" data-tab="sync" role="tab">Sync &amp; Credentials</button>
+    <button type="button" class="tab" data-tab="notifications" role="tab">Notifications</button>
+    <button type="button" class="tab" data-tab="privacy" role="tab">Privacy</button>
   </div>
 
-  {# ── Credentials ──────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Credentials</h2>
-    <p class="settings-section-desc">
-      Used by the sync pipeline. Leave a token field blank to keep the existing value.
-      Stored in Postgres — not in the container env file.
-    </p>
-    {% if saved == 'credentials' %}<p class="settings-success">Credentials saved.</p>{% endif %}
+  {# ══════════════════════════════════════════════════════════════════════
+     Account tab — password + linked accounts (future home for #82, #83)
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="account">
 
-    <form method="post" action="/settings/credentials">
-      <div class="settings-subsection">
-        <h3 class="settings-subsection-title">AniList</h3>
+    {# ── Linked accounts ──────────────────────────────────────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Linked accounts</h2>
+      <p class="settings-section-desc">
+        Connect Google or Discord to log in without a password. You always need at
+        least one working login method.
+      </p>
+      {% if link_error %}<p class="settings-error">{{ link_error }}</p>{% endif %}
 
-        <div class="form-field">
-          <label class="form-label" for="anilist_username">AniList username</label>
-          <input class="form-input" type="text" id="anilist_username" name="anilist_username"
-                 value="{{ settings.anilist_username or '' }}" autocomplete="off" spellcheck="false">
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="anilist_token">
-            AniList token
-            <span class="form-label-hint">— OAuth bearer token</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="anilist_token"
-                 name="anilist_token" placeholder="{% if settings.anilist_token %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="anilist_token">Show</button>
-        </div>
+      <div class="linked-account-row">
+        <span class="linked-account-name">Password</span>
+        <span class="linked-account-status">{% if account.has_password %}set{% else %}not set{% endif %}</span>
       </div>
-
-      <div class="settings-subsection">
-        <h3 class="settings-subsection-title">Crunchyroll</h3>
-
-        <div class="form-field">
-          <label class="form-label" for="cr_etp_rt">
-            ETP-RT token
-            <span class="form-label-hint">— etp_rt cookie value from your browser</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="cr_etp_rt"
-                 name="cr_etp_rt" placeholder="{% if settings.cr_etp_rt %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="cr_etp_rt">Show</button>
-        </div>
-      </div>
-
-      <div class="settings-subsection">
-        <h3 class="settings-subsection-title">Netflix</h3>
-
-        <div class="form-field">
-          <label class="form-label" for="netflix_cookie_header">
-            Cookie header
-            <span class="form-label-hint">— full "cookie" request header value from your browser's
-              devtools (Network tab, any netflix.com request, Request Headers → cookie). Needs the
-              whole thing, not just NetflixId/SecureNetflixId — Netflix's viewing-activity API
-              checks several of the other session cookies too.</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
-                 name="netflix_cookie_header" placeholder="{% if settings.netflix_cookie_header %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="netflix_cookie_header">Show</button>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="netflix_profile_guid">
-            Profile guid
-            <span class="form-label-hint">— from the same devtools capture: any
-              api/aui/pathEvaluator request's POST body decodes to {"guid": "..."}; that value</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="netflix_profile_guid"
-                 name="netflix_profile_guid" placeholder="{% if settings.netflix_profile_guid %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="netflix_profile_guid">Show</button>
-        </div>
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Save credentials</button>
-      </div>
-    </form>
-  </div>
-
-  {# ── Notifications ────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Notifications</h2>
-    <p class="settings-section-desc">
-      Where sync alerts, new-episode alerts, and the weekly digest get sent. Enable a
-      channel and fill in its details — leave secret fields blank to keep the existing
-      value.
-    </p>
-    {% if saved == 'notifications' %}<p class="settings-success">Notification settings saved.</p>{% endif %}
-
-    <form method="post" action="/settings/notifications">
-      <div class="settings-subsection">
-        <h3 class="settings-subsection-title">Telegram</h3>
-
-        <div class="form-field form-field--checkbox">
-          <label class="form-checkbox-label">
-            <input type="checkbox" name="telegram_enabled" {% if settings.telegram_enabled != 'false' %}checked{% endif %}>
-            Enable Telegram notifications
-          </label>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="telegram_bot_token">
-            Bot token
-            <span class="form-label-hint">— from @BotFather</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="telegram_bot_token"
-                 name="telegram_bot_token" placeholder="{% if settings.telegram_bot_token %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="telegram_bot_token">Show</button>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="telegram_chat_id">
-            Chat ID
-            <span class="form-label-hint">— your Telegram user or chat ID the bot should message</span>
-          </label>
-          <input class="form-input" type="text" id="telegram_chat_id" name="telegram_chat_id"
-                 value="{{ settings.telegram_chat_id or '' }}" autocomplete="off" spellcheck="false">
-        </div>
-      </div>
-
-      <div class="settings-subsection">
-        <h3 class="settings-subsection-title">Discord</h3>
-
-        <div class="form-field form-field--checkbox">
-          <label class="form-checkbox-label">
-            <input type="checkbox" name="discord_enabled" {% if settings.discord_enabled != 'false' %}checked{% endif %}>
-            Enable Discord notifications
-          </label>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="discord_webhook_url">
-            Webhook URL
-            <span class="form-label-hint">— from the target channel's Integrations → Webhooks settings in Discord</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="discord_webhook_url"
-                 name="discord_webhook_url" placeholder="{% if settings.discord_webhook_url %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="discord_webhook_url">Show</button>
-        </div>
-      </div>
-
-      <div class="settings-subsection">
-        <h3 class="settings-subsection-title">ntfy</h3>
-
-        <div class="form-field form-field--checkbox">
-          <label class="form-checkbox-label">
-            <input type="checkbox" name="ntfy_enabled" {% if settings.ntfy_enabled != 'false' %}checked{% endif %}>
-            Enable ntfy notifications
-          </label>
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="ntfy_topic">
-            Topic
-            <span class="form-label-hint">— pick a hard-to-guess name; anyone who knows it can subscribe on the public server</span>
-          </label>
-          <input class="form-input" type="text" id="ntfy_topic" name="ntfy_topic"
-                 value="{{ settings.ntfy_topic or '' }}" autocomplete="off" spellcheck="false">
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="ntfy_server_url">
-            Server URL
-            <span class="form-label-hint">— defaults to the public ntfy.sh; set your own for a self-hosted server</span>
-          </label>
-          <input class="form-input" type="text" id="ntfy_server_url" name="ntfy_server_url"
-                 value="{{ settings.ntfy_server_url or '' }}" placeholder="https://ntfy.sh" autocomplete="off" spellcheck="false">
-        </div>
-
-        <div class="form-field">
-          <label class="form-label" for="ntfy_auth_token">
-            Access token
-            <span class="form-label-hint">— optional, for a private topic or self-hosted server that requires auth</span>
-          </label>
-          <input class="form-input form-input--secret" type="password" id="ntfy_auth_token"
-                 name="ntfy_auth_token" placeholder="{% if settings.ntfy_auth_token %}set (leave blank to keep){% else %}not set{% endif %}"
-                 autocomplete="new-password">
-          <button type="button" class="btn-reveal" data-target="ntfy_auth_token">Show</button>
-        </div>
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Save notifications</button>
-      </div>
-    </form>
-  </div>
-
-  {# ── Privacy ───────────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Privacy</h2>
-    <p class="settings-section-desc">
-      Controls for any feature that shows your library to other users on this instance
-      (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
-      these are opt-in.
-    </p>
-    {% if saved == 'privacy' %}<p class="settings-success">Saved.</p>{% endif %}
-
-    <form method="post" action="/settings/privacy">
-      <div class="form-field">
-        <label class="form-label" for="hidden_tags">
-          Hidden tags/genres
-          <span class="form-label-hint">— entries matching any of these never appear to other users, comma-separated</span>
-        </label>
-        <input class="form-input" type="text" id="hidden_tags" name="hidden_tags"
-               value="{{ privacy.hidden_tags }}" placeholder="e.g. Ecchi, guilty pleasure" autocomplete="off">
-      </div>
-
-      <div class="form-field form-field--checkbox">
-        <label class="form-checkbox-label">
-          <input type="checkbox" name="anonymize_activity" {% if privacy.anonymize_activity %}checked{% endif %}>
-          Show my activity anonymously ("a user") instead of by name to other users
-        </label>
-      </div>
-
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Save</button>
-      </div>
-    </form>
-  </div>
-
-  {# ── Linked accounts ──────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Linked accounts</h2>
-    <p class="settings-section-desc">
-      Connect Google or Discord to log in without a password. You always need at
-      least one working login method.
-    </p>
-    {% if link_error %}<p class="settings-error">{{ link_error }}</p>{% endif %}
-
-    <div class="linked-account-row">
-      <span class="linked-account-name">Password</span>
-      <span class="linked-account-status">{% if account.has_password %}set{% else %}not set{% endif %}</span>
-    </div>
-    {% if password_error %}<p class="settings-error">{{ password_error }}</p>{% endif %}
-    <form method="post" action="/settings/password" class="password-form">
-      <input class="form-input" type="password" name="password" minlength="8" required
-             placeholder="{% if account.has_password %}new password (min 8 characters){% else %}set a password (min 8 characters){% endif %}">
-      <button type="submit" class="btn-save">{% if account.has_password %}Change{% else %}Set{% endif %} password</button>
-    </form>
-
-    <div class="linked-account-row">
-      <span class="linked-account-name">Google</span>
-      {% if account.google_linked %}
-      <span class="linked-account-status linked-account-status--on">linked</span>
-      <form method="post" action="/settings/unlink/google" class="linked-account-action">
-        <button type="submit" class="btn-unlink">Disconnect</button>
+      {% if password_error %}<p class="settings-error">{{ password_error }}</p>{% endif %}
+      <form method="post" action="/settings/password" class="password-form">
+        <input class="form-input" type="password" name="password" minlength="8" required
+               placeholder="{% if account.has_password %}new password (min 8 characters){% else %}set a password (min 8 characters){% endif %}">
+        <button type="submit" class="btn-save">{% if account.has_password %}Change{% else %}Set{% endif %} password</button>
       </form>
-      {% elif oauth_google_configured %}
-      <a href="/settings/link/google" class="btn-save">Connect</a>
-      {% else %}
-      <span class="linked-account-status">not configured on this instance</span>
-      {% endif %}
-    </div>
 
-    <div class="linked-account-row">
-      <span class="linked-account-name">Discord</span>
-      {% if account.discord_linked %}
-      <span class="linked-account-status linked-account-status--on">linked</span>
-      <form method="post" action="/settings/unlink/discord" class="linked-account-action">
-        <button type="submit" class="btn-unlink">Disconnect</button>
-      </form>
-      {% elif oauth_discord_configured %}
-      <a href="/settings/link/discord" class="btn-save">Connect</a>
-      {% else %}
-      <span class="linked-account-status">not configured on this instance</span>
-      {% endif %}
+      <div class="linked-account-row">
+        <span class="linked-account-name">Google</span>
+        {% if account.google_linked %}
+        <span class="linked-account-status linked-account-status--on">linked</span>
+        <form method="post" action="/settings/unlink/google" class="linked-account-action">
+          <button type="submit" class="btn-unlink">Disconnect</button>
+        </form>
+        {% elif oauth_google_configured %}
+        <a href="/settings/link/google" class="btn-save">Connect</a>
+        {% else %}
+        <span class="linked-account-status">not configured on this instance</span>
+        {% endif %}
+      </div>
+
+      <div class="linked-account-row">
+        <span class="linked-account-name">Discord</span>
+        {% if account.discord_linked %}
+        <span class="linked-account-status linked-account-status--on">linked</span>
+        <form method="post" action="/settings/unlink/discord" class="linked-account-action">
+          <button type="submit" class="btn-unlink">Disconnect</button>
+        </form>
+        {% elif oauth_discord_configured %}
+        <a href="/settings/link/discord" class="btn-save">Connect</a>
+        {% else %}
+        <span class="linked-account-status">not configured on this instance</span>
+        {% endif %}
+      </div>
     </div>
   </div>
 
-  {% if account.is_admin %}
-  {# ── Sync schedule ────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Sync schedule</h2>
-    <p class="settings-section-desc">
-      Times are UTC. Applies instance-wide, to every user's sync. The daily sync runs the
-      full pipeline (Crunchyroll/Netflix fetch → AniList → Postgres). The recommender scores
-      unwatched/planning titles weekly.
-    </p>
-    {% if saved == 'schedule' %}<p class="settings-success">Schedule saved.</p>{% endif %}
+  {# ══════════════════════════════════════════════════════════════════════
+     Preferences tab — display/timezone (future home for #81)
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="preferences" hidden>
 
-    <form method="post" action="/settings/schedule">
-      <div class="form-field">
-        <label class="form-label" for="sync_daily_time">
-          Daily sync time (HH:MM UTC)
-          {% if next_daily_sync %}
-          <span class="form-label-hint">— next run <time id="next-daily-ts" datetime="{{ next_daily_sync }}">{{ next_daily_sync }}</time></span>
-          {% endif %}
-        </label>
-        <input class="form-input form-input--narrow" type="time" id="sync_daily_time"
-               name="sync_daily_time" value="{{ settings.sync_daily_time or '04:30' }}">
-      </div>
+    {# ── Display ──────────────────────────────────────────────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Display</h2>
+      {% if saved == 'display' %}<p class="settings-success">Saved.</p>{% endif %}
 
-      <div class="form-field">
-        <label class="form-label">
-          Weekly recommender
-          {% if next_recommender %}
-          <span class="form-label-hint">— next run <time id="next-rec-ts" datetime="{{ next_recommender }}">{{ next_recommender }}</time></span>
-          {% endif %}
-        </label>
-        <div class="schedule-row">
-          <select class="form-input form-input--narrow" name="sync_recommender_day">
-            {% for d in days_of_week %}
-            <option value="{{ d }}" {% if d == settings.sync_recommender_day %}selected{% endif %}>{{ day_labels[d] }}</option>
+      <form method="post" action="/settings/display">
+        <div class="form-field">
+          <label class="form-label" for="timezone">
+            Timezone
+            <span class="form-label-hint">— used for all date and time display</span>
+          </label>
+          <select class="form-input" id="timezone" name="timezone">
+            {% for tz in timezones %}
+            <option value="{{ tz }}" {% if tz == settings.timezone %}selected{% endif %}>{{ tz }}</option>
             {% endfor %}
           </select>
-          <span class="schedule-at">at</span>
-          <input class="form-input form-input--narrow" type="time" name="sync_recommender_time"
-                 value="{{ settings.sync_recommender_time or '05:00' }}">
         </div>
-      </div>
 
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Save schedule</button>
-      </div>
-    </form>
-  </div>
-  {% endif %}
-
-  {# ── Manual sync trigger ──────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Manual sync</h2>
-    <p class="settings-section-desc">
-      Trigger the full sync pipeline on demand instead of waiting for the scheduled run.
-    </p>
-    <div class="sync-row">
-      <button id="sync-btn" class="btn-save" onclick="triggerSync()">Sync Now</button>
-      <button id="sync-full-btn" class="btn-save btn-warning" onclick="triggerSync(true)">Force Full Resync</button>
-      <span id="sync-status" class="sync-status-text">
-        {% if last_synced %}Last synced: <time id="sync-ts" datetime="{{ last_synced }}">{{ last_synced }}</time>{% else %}Never synced{% endif %}
-      </span>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save</button>
+        </div>
+      </form>
     </div>
-    <div id="sync-msg" class="sync-msg" hidden></div>
   </div>
 
-  {# ── AniList delivery queue ───────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">AniList delivery queue</h2>
-    <p class="settings-section-desc">
-      Status and progress updates — from bulk edits and from Crunchyroll/Netflix sync
-      alike — are written here immediately and delivered to AniList asynchronously in
-      the background, respecting AniList's rate limit collectively across every
-      source. A sync run finishing "ok" means the updates were staged correctly, not
-      necessarily that every one has reached AniList yet.
-    </p>
-    <div id="outbox-status" class="sync-status-text">Checking…</div>
-  </div>
+  {# ══════════════════════════════════════════════════════════════════════
+     Sync & Credentials tab — AniList/CR/Netflix credentials, manual sync,
+     outbox status, CSV import, sync history, data export/import
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="sync" hidden>
 
-  {# ── Netflix CSV import ───────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Netflix CSV import</h2>
-    <p class="settings-section-desc">
-      Bootstrap fallback for a large or first-time Netflix account whose full watch
-      history can't reliably complete within Force Full Resync's timeout budget.
-      Download your own export from Netflix (Account &rarr; Profile &amp; Parental
-      Controls &rarr; Viewing activity &rarr; Download all) and upload the CSV here —
-      it's matched against your AniList library the same way a live sync is, and
-      counts as a complete review of your Netflix history once imported.
-    </p>
-    {% if saved == 'netflix_csv_import' %}<p class="settings-success">Import complete — see Sync history below for details.</p>{% endif %}
-    {% if csv_import_error %}<p class="settings-error">{{ csv_import_error }}</p>{% endif %}
+    {# ── Credentials ──────────────────────────────────────────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Credentials</h2>
+      <p class="settings-section-desc">
+        Used by the sync pipeline. Leave a token field blank to keep the existing value.
+        Stored in Postgres — not in the container env file.
+      </p>
+      {% if saved == 'credentials' %}<p class="settings-success">Credentials saved.</p>{% endif %}
+      {% if csv_import_error %}<p class="settings-error">{{ csv_import_error }}</p>{% endif %}
 
-    <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
-      <div class="form-field">
-        <label class="form-label" for="netflix_csv">Netflix viewing activity CSV</label>
-        <input class="form-input" type="file" id="netflix_csv" name="netflix_csv" accept=".csv,text/csv" required>
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-save">Import</button>
-      </div>
-    </form>
-  </div>
+      <form method="post" action="/settings/credentials">
+        <div class="settings-subsection">
+          <h3 class="settings-subsection-title">AniList</h3>
 
-  {# ── Sync history ──────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Sync history</h2>
-    <table class="sync-log-table" id="sync-log-table">
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Type</th>
-          <th>Status</th>
-          <th>Entries touched</th>
-          <th>Error</th>
-        </tr>
-      </thead>
-      <tbody id="sync-log-body">
-        <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
+          <div class="form-field">
+            <label class="form-label" for="anilist_username">AniList username</label>
+            <input class="form-input" type="text" id="anilist_username" name="anilist_username"
+                   value="{{ settings.anilist_username or '' }}" autocomplete="off" spellcheck="false">
+          </div>
 
-  {# ── Data export ──────────────────────────────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Data export</h2>
-    <p class="settings-section-desc">Download your full library as JSON — includes AniList data, personal notes, tags, and scores.</p>
-    <a href="/api/export" class="btn-save" download>Download library.json</a>
-  </div>
+          <div class="form-field">
+            <label class="form-label" for="anilist_token">
+              AniList token
+              <span class="form-label-hint">— OAuth bearer token</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="anilist_token"
+                   name="anilist_token" placeholder="{% if settings.anilist_token %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="anilist_token">Show</button>
+          </div>
+        </div>
 
-  {# ── Data import (issue #87) — restores the personal layer from a previously
-     downloaded library.json. Self-contained block: its own markup here, its own
-     <script> at the end of the file, no shared state with any other section on
-     this page. #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">Data import</h2>
-    <p class="settings-section-desc">Restore drop reasons, notes, tags, and queue priority from a previously exported library.json. Matched by AniList id — only ever writes to your own account, and existing notes are only overwritten after you confirm.</p>
-    <input type="file" id="import-file-input" accept="application/json,.json" class="form-input" style="max-width: 320px;">
-    <div class="form-actions">
-      <button type="button" id="import-btn" class="btn-save" disabled>Import</button>
+        <div class="settings-subsection">
+          <h3 class="settings-subsection-title">Crunchyroll</h3>
+
+          <div class="form-field">
+            <label class="form-label" for="cr_etp_rt">
+              ETP-RT token
+              <span class="form-label-hint">— etp_rt cookie value from your browser</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="cr_etp_rt"
+                   name="cr_etp_rt" placeholder="{% if settings.cr_etp_rt %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="cr_etp_rt">Show</button>
+          </div>
+        </div>
+
+        <div class="settings-subsection">
+          <h3 class="settings-subsection-title">Netflix</h3>
+
+          <div class="form-field">
+            <label class="form-label" for="netflix_cookie_header">
+              Cookie header
+              <span class="form-label-hint">— full "cookie" request header value from your browser's
+                devtools (Network tab, any netflix.com request, Request Headers → cookie). Needs the
+                whole thing, not just NetflixId/SecureNetflixId — Netflix's viewing-activity API
+                checks several of the other session cookies too.</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
+                   name="netflix_cookie_header" placeholder="{% if settings.netflix_cookie_header %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="netflix_cookie_header">Show</button>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="netflix_profile_guid">
+              Profile guid
+              <span class="form-label-hint">— from the same devtools capture: any
+                api/aui/pathEvaluator request's POST body decodes to {"guid": "..."}; that value</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="netflix_profile_guid"
+                   name="netflix_profile_guid" placeholder="{% if settings.netflix_profile_guid %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="netflix_profile_guid">Show</button>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save credentials</button>
+        </div>
+      </form>
     </div>
-    <div id="import-msg" class="import-msg" hidden></div>
+
+    {# ── Manual sync trigger ──────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Manual sync</h2>
+      <p class="settings-section-desc">
+        Trigger the full sync pipeline on demand instead of waiting for the scheduled run.
+      </p>
+      <div class="sync-row">
+        <button id="sync-btn" class="btn-save" onclick="triggerSync()">Sync Now</button>
+        <button id="sync-full-btn" class="btn-save btn-warning" onclick="triggerSync(true)">Force Full Resync</button>
+        <span id="sync-status" class="sync-status-text">
+          {% if last_synced %}Last synced: <time id="sync-ts" datetime="{{ last_synced }}">{{ last_synced }}</time>{% else %}Never synced{% endif %}
+        </span>
+      </div>
+      <div id="sync-msg" class="sync-msg" hidden></div>
+    </div>
+
+    {# ── AniList delivery queue ───────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">AniList delivery queue</h2>
+      <p class="settings-section-desc">
+        Status and progress updates — from bulk edits and from Crunchyroll/Netflix sync
+        alike — are written here immediately and delivered to AniList asynchronously in
+        the background, respecting AniList's rate limit collectively across every
+        source. A sync run finishing "ok" means the updates were staged correctly, not
+        necessarily that every one has reached AniList yet.
+      </p>
+      <div id="outbox-status" class="sync-status-text">Checking…</div>
+    </div>
+
+    {# ── Netflix CSV import ───────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Netflix CSV import</h2>
+      <p class="settings-section-desc">
+        Bootstrap fallback for a large or first-time Netflix account whose full watch
+        history can't reliably complete within Force Full Resync's timeout budget.
+        Download your own export from Netflix (Account &rarr; Profile &amp; Parental
+        Controls &rarr; Viewing activity &rarr; Download all) and upload the CSV here —
+        it's matched against your AniList library the same way a live sync is, and
+        counts as a complete review of your Netflix history once imported.
+      </p>
+      {% if saved == 'netflix_csv_import' %}<p class="settings-success">Import complete — see Sync history below for details.</p>{% endif %}
+
+      <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
+        <div class="form-field">
+          <label class="form-label" for="netflix_csv">Netflix viewing activity CSV</label>
+          <input class="form-input" type="file" id="netflix_csv" name="netflix_csv" accept=".csv,text/csv" required>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Import</button>
+        </div>
+      </form>
+    </div>
+
+    {# ── Sync history ─────────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Sync history</h2>
+      <table class="sync-log-table" id="sync-log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Entries touched</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody id="sync-log-body">
+          <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    {# ── Data export ──────────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Data export</h2>
+      <p class="settings-section-desc">Download your full library as JSON — includes AniList data, personal notes, tags, and scores.</p>
+      <a href="/api/export" class="btn-save" download>Download library.json</a>
+    </div>
+
+    {# ── Data import (issue #87) — restores the personal layer from a previously
+       downloaded library.json. Self-contained block: its own markup here, its own
+       <script> at the end of the file, no shared state with any other section on
+       this page. #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">Data import</h2>
+      <p class="settings-section-desc">Restore drop reasons, notes, tags, and queue priority from a previously exported library.json. Matched by AniList id — only ever writes to your own account, and existing notes are only overwritten after you confirm.</p>
+      <input type="file" id="import-file-input" accept="application/json,.json" class="form-input" style="max-width: 320px;">
+      <div class="form-actions">
+        <button type="button" id="import-btn" class="btn-save" disabled>Import</button>
+      </div>
+      <div id="import-msg" class="import-msg" hidden></div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     Notifications tab
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="notifications" hidden>
+
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Notifications</h2>
+      <p class="settings-section-desc">
+        Where sync alerts, new-episode alerts, and the weekly digest get sent. Enable a
+        channel and fill in its details — leave secret fields blank to keep the existing
+        value.
+      </p>
+      {% if saved == 'notifications' %}<p class="settings-success">Notification settings saved.</p>{% endif %}
+
+      <form method="post" action="/settings/notifications">
+        <div class="settings-subsection">
+          <h3 class="settings-subsection-title">Telegram</h3>
+
+          <div class="form-field form-field--checkbox">
+            <label class="form-checkbox-label">
+              <input type="checkbox" name="telegram_enabled" {% if settings.telegram_enabled != 'false' %}checked{% endif %}>
+              Enable Telegram notifications
+            </label>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="telegram_bot_token">
+              Bot token
+              <span class="form-label-hint">— from @BotFather</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="telegram_bot_token"
+                   name="telegram_bot_token" placeholder="{% if settings.telegram_bot_token %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="telegram_bot_token">Show</button>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="telegram_chat_id">
+              Chat ID
+              <span class="form-label-hint">— your Telegram user or chat ID the bot should message</span>
+            </label>
+            <input class="form-input" type="text" id="telegram_chat_id" name="telegram_chat_id"
+                   value="{{ settings.telegram_chat_id or '' }}" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+
+        <div class="settings-subsection">
+          <h3 class="settings-subsection-title">Discord</h3>
+
+          <div class="form-field form-field--checkbox">
+            <label class="form-checkbox-label">
+              <input type="checkbox" name="discord_enabled" {% if settings.discord_enabled != 'false' %}checked{% endif %}>
+              Enable Discord notifications
+            </label>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="discord_webhook_url">
+              Webhook URL
+              <span class="form-label-hint">— from the target channel's Integrations → Webhooks settings in Discord</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="discord_webhook_url"
+                   name="discord_webhook_url" placeholder="{% if settings.discord_webhook_url %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="discord_webhook_url">Show</button>
+          </div>
+        </div>
+
+        <div class="settings-subsection">
+          <h3 class="settings-subsection-title">ntfy</h3>
+
+          <div class="form-field form-field--checkbox">
+            <label class="form-checkbox-label">
+              <input type="checkbox" name="ntfy_enabled" {% if settings.ntfy_enabled != 'false' %}checked{% endif %}>
+              Enable ntfy notifications
+            </label>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="ntfy_topic">
+              Topic
+              <span class="form-label-hint">— pick a hard-to-guess name; anyone who knows it can subscribe on the public server</span>
+            </label>
+            <input class="form-input" type="text" id="ntfy_topic" name="ntfy_topic"
+                   value="{{ settings.ntfy_topic or '' }}" autocomplete="off" spellcheck="false">
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="ntfy_server_url">
+              Server URL
+              <span class="form-label-hint">— defaults to the public ntfy.sh; set your own for a self-hosted server</span>
+            </label>
+            <input class="form-input" type="text" id="ntfy_server_url" name="ntfy_server_url"
+                   value="{{ settings.ntfy_server_url or '' }}" placeholder="https://ntfy.sh" autocomplete="off" spellcheck="false">
+          </div>
+
+          <div class="form-field">
+            <label class="form-label" for="ntfy_auth_token">
+              Access token
+              <span class="form-label-hint">— optional, for a private topic or self-hosted server that requires auth</span>
+            </label>
+            <input class="form-input form-input--secret" type="password" id="ntfy_auth_token"
+                   name="ntfy_auth_token" placeholder="{% if settings.ntfy_auth_token %}set (leave blank to keep){% else %}not set{% endif %}"
+                   autocomplete="new-password">
+            <button type="button" class="btn-reveal" data-target="ntfy_auth_token">Show</button>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save notifications</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     Privacy tab
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="privacy" hidden>
+
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">Privacy</h2>
+      <p class="settings-section-desc">
+        Controls for any feature that shows your library to other users on this instance
+        (e.g. an "also watching" indicator). Nothing is hidden or anonymized by default —
+        these are opt-in.
+      </p>
+      {% if saved == 'privacy' %}<p class="settings-success">Saved.</p>{% endif %}
+
+      <form method="post" action="/settings/privacy">
+        <div class="form-field">
+          <label class="form-label" for="hidden_tags">
+            Hidden tags/genres
+            <span class="form-label-hint">— entries matching any of these never appear to other users, comma-separated</span>
+          </label>
+          <input class="form-input" type="text" id="hidden_tags" name="hidden_tags"
+                 value="{{ privacy.hidden_tags }}" placeholder="e.g. Ecchi, guilty pleasure" autocomplete="off">
+        </div>
+
+        <div class="form-field form-field--checkbox">
+          <label class="form-checkbox-label">
+            <input type="checkbox" name="anonymize_activity" {% if privacy.anonymize_activity %}checked{% endif %}>
+            Show my activity anonymously ("a user") instead of by name to other users
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-save">Save</button>
+        </div>
+      </form>
+    </div>
   </div>
 
 </div>
 
 <script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+// Client-side only — no reload, no new routes. Reflects the active tab in the
+// URL (?tab=) via replaceState so a reload or bookmark preserves it, and maps
+// each existing `saved=`/`*_error=` redirect param to the tab that holds the
+// message it belongs to, so the various POST handlers' redirects still land
+// the user on a tab that actually shows their confirmation/error.
+(function () {
+  const tabs = Array.from(document.querySelectorAll('.settings-tabs .tab'));
+  const panels = Array.from(document.querySelectorAll('.settings-tab-panel'));
+  const validTabs = tabs.map(t => t.dataset.tab);
+
+  function activate(tab, pushState) {
+    if (!validTabs.includes(tab)) tab = validTabs[0];
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    panels.forEach(p => { p.hidden = p.dataset.tabPanel !== tab; });
+    if (pushState) {
+      const url = new URL(window.location);
+      url.searchParams.set('tab', tab);
+      history.replaceState(null, '', url);
+    }
+  }
+
+  tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.tab, true)));
+
+  const params = new URLSearchParams(window.location.search);
+  const savedTabMap = { display: 'preferences', credentials: 'sync', netflix_csv_import: 'sync', notifications: 'notifications', privacy: 'privacy' };
+  let initialTab = params.get('tab');
+  if (!initialTab) {
+    const saved = params.get('saved');
+    if (saved && savedTabMap[saved]) initialTab = savedTabMap[saved];
+    else if (params.get('csv_import_error')) initialTab = 'sync';
+    else if (params.get('password_error') || params.get('link_error')) initialTab = 'account';
+  }
+  activate(initialTab || validTabs[0], false);
+}());
+
 // ── Reveal toggle for secret fields ──────────────────────────────────────────
 document.querySelectorAll('.btn-reveal').forEach(btn => {
   btn.addEventListener('click', () => {
