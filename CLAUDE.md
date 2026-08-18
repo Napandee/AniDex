@@ -49,17 +49,20 @@ than presenting them as guaranteed-current.
 ## Data Model
 
 See `schema.sql` in repo root. Three categories, kept in separate tables on purpose:
-- **AniList-sourced** (`anime`, `library_entries`, `airing_schedule_cache`) — fully
-  rebuildable by the sync job. Never hand-edit rows in these tables.
-- **Personal layer** (`personal_notes`, `recommendation_scores`) — the actual reason this
-  app exists. Sync jobs must never write to `personal_notes`; `recommendation_scores` is
-  rebuilt by the recommender job but must preserve the `dismissed` flag across rebuilds.
+- **AniList-sourced** (`anime`, `library_entries`, `airing_schedule_cache`,
+  `anilist_title_search_cache`) — fully rebuildable by the sync job. Never hand-edit rows
+  in these tables.
+- **Personal layer** (`personal_notes`, `rewatch_notes`, `recommendation_scores`) — the
+  actual reason this app exists. Sync jobs must never write to `personal_notes` or
+  `rewatch_notes`; `recommendation_scores` is rebuilt by the recommender job but must
+  preserve the `dismissed` flag across rebuilds.
 - **Auth/instance** (`users`, `invites`, `instance_config`, `password_resets`,
-  `notified_episodes`) — added for multi-user (Aug 2026). Neither AniList-sourced nor
-  personal-layer; sync jobs never touch these either. `library_entries` /
-  `personal_notes` / `recommendation_scores` / `cr_sync_state` / `sync_log` /
-  `settings` / `notified_episodes` all carry a `user_id` scoping every row to one
-  account.
+  `notified_episodes`, `admin_audit_log`) — added for multi-user (Aug 2026). Neither
+  AniList-sourced nor personal-layer; sync jobs never touch these either. `library_entries`
+  / `personal_notes` / `recommendation_scores` / `cr_sync_state` / `netflix_sync_state` /
+  `sync_log` / `settings` / `notified_episodes` / `status_sync_outbox` all carry a
+  `user_id` scoping every row to one account. `admin_audit_log` is instance-wide, not
+  per-user — it records which admin took an action, not whose data it affected.
 
 ## Architecture
 
@@ -77,23 +80,38 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `netflix_sync_state.last_seen_watched_at`) so a routine sync only walks genuinely new
   activity. Upserts into `anime` / `library_entries` / `airing_schedule_cache` /
   `cr_sync_state` / `netflix_sync_state`, all scoped to that user except
-  `anime`/`airing_schedule_cache` which stay global. There is no separate sync container.
+  `anime`/`airing_schedule_cache` which stay global. Progress/status pushes back to
+  AniList are no longer synchronous `SaveMediaListEntry` calls made inline during the
+  sync — both scripts call `enqueue_outbox_update()` (`scripts/anilist_sync_common.py`)
+  to write a `status_sync_outbox` row instead, delivered by the app's single shared
+  outbox worker (`app/outbox.py`), unified with the UI's own bulk-edit outbox (#18) so
+  every AniList write source is decoupled and rate-limited together (#100). There is no
+  separate sync container. A fourth provider, Prime Video, is stubbed only
+  (`scripts/sync_primevideo.py` is a documented `NotImplementedError` placeholder, not
+  wired into `run_full_sync.py`) pending issue #17, gated on a manual capture of Amazon's
+  private API.
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.
 - **App**: reads all tables, scoped to the logged-in user; writes to `personal_notes`, the
   `dismissed` flag on `recommendation_scores`, and `library_entries.score` (via the rating
   endpoint). Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry`
-  in real-time.
+  — real-time for single-item edits, through the shared outbox above for bulk-status
+  edits.
 - **Built-in scheduler**: APScheduler runs inside the app container. Daily sync and weekly
   recommender fire automatically for every eligible user; schedule *time* is instance-wide
-  (one cron trigger regardless of user count), configurable via Settings, admin-only.
+  (one cron trigger regardless of user count), configurable via Admin → Instance Config
+  (moved there from Settings once Admin was split into tabs — see Epic #93).
 
 ## Deploy
 
 GitHub Actions CI/CD pipeline:
 1. Push to `main` → hosted runner builds the app image and pushes to GHCR
-2. Self-hosted runner pulls the new image, stops the old container, starts a new one
+2. Self-hosted runner pulls the new image **by digest** (not `:latest`), stops the old
+   container, starts a new one. Deploys are serialized rather than run concurrently —
+   pulling by a floating tag let two overlapping deploys race and non-deterministically
+   deploy the older of two pushes; pinning by digest plus serializing closed that gap
+   (issue #110).
 
 Image tag uses `github.repository_owner` so it works in any fork without config changes.
 The deploy job reads env and paths from `vars.APPDATA_PATH` (set as a GitHub repo variable).
@@ -194,7 +212,8 @@ file's own header comment before running it.
   route and sync script (`run_full_sync.py`,
   `sync_anilist.py`, `sync_crunchyroll.py`, `run_recommender.py`) is scoped to the
   logged-in/invoking user; the sync schedule *time* stays instance-wide (one cron
-  trigger regardless of user count), gated to admins in Settings. Account linking
+  trigger regardless of user count), gated to admins in Admin → Instance Config.
+  Account linking
   (attaching Google/Discord to an existing account) is explicit-only — never automatic
   by email match, since that would mean trusting a bare provider-supplied email as
   proof of identity. Linking only ever happens via `/settings/link/{provider}` while
