@@ -23,6 +23,75 @@ def test_search_cache_snapshot_returns_a_copy_not_a_live_reference(monkeypatch):
     assert common._search_cache["Title"] == 1  # mutating the snapshot didn't affect the real cache
 
 
+# ── load_user_list_from_db — local-mirror equivalent of fetch_user_list() (issue #99) ──
+# Minimal in-memory stand-in for a psycopg2 connection, just for this function's one
+# join query.
+class _FakeLibraryConn:
+    def __init__(self, rows):
+        self._rows = rows
+        self.closed = False
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params=None):
+        pass  # single fixed query — nothing to branch on
+
+    def fetchall(self):
+        return self._rows
+
+    def close(self):
+        self.closed = True
+
+
+def test_load_user_list_from_db_builds_entries_and_title_index(monkeypatch):
+    rows = [
+        {
+            "media_id": 154587, "status": "COMPLETED", "progress": 28, "repeat_count": 0,
+            "total_episodes": 28, "format": "TV",
+            "title_romaji": "Shingeki no Kyojin", "title_english": "Attack on Titan",
+        },
+        {
+            "media_id": 170068, "status": "CURRENT", "progress": 5, "repeat_count": 0,
+            "total_episodes": None, "format": "TV",
+            "title_romaji": "Sousou no Frieren", "title_english": None,
+        },
+    ]
+    monkeypatch.setattr(common.psycopg2, "connect", lambda *a, **kw: _FakeLibraryConn(rows))
+
+    entries, title_index = common.load_user_list_from_db()
+
+    assert entries[154587] == {
+        "status": "COMPLETED", "progress": 28, "repeat": 0,
+        "total_episodes": 28, "format": "TV", "title": "Attack on Titan",
+    }
+    # No english title — falls back to romaji, matching fetch_user_list()'s own rule.
+    assert entries[170068]["title"] == "Sousou no Frieren"
+    assert title_index["attack on titan"] == 154587
+    assert title_index["shingeki no kyojin"] == 154587
+    assert title_index["sousou no frieren"] == 170068
+
+
+def test_load_user_list_from_db_empty_library(monkeypatch):
+    monkeypatch.setattr(common.psycopg2, "connect", lambda *a, **kw: _FakeLibraryConn([]))
+    entries, title_index = common.load_user_list_from_db()
+    assert entries == {}
+    assert title_index == {}
+
+
+def test_load_user_list_from_db_closes_connection(monkeypatch):
+    conn = _FakeLibraryConn([])
+    monkeypatch.setattr(common.psycopg2, "connect", lambda *a, **kw: conn)
+    common.load_user_list_from_db()
+    assert conn.closed is True
+
+
 def test_movie_watch_against_tv_entry_is_implausible():
     # Live-action Death Note (movie) vs the anime (TV, 37 eps) — the collision
     # case is_plausible_match exists to catch.
