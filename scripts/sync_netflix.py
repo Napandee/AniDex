@@ -142,6 +142,19 @@ def log(msg):
     print(f"[netflixsync] user={USER_ID} {msg}", flush=True)
 
 
+def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
+    """Issue #46 — the only channel run_full_sync.py has for learning this step's real
+    entries-touched count back from the subprocess; it parses this exact prefix out of
+    captured stdout. Not emitted at all in DRY_RUN — that mode is a local investigation
+    tool, never invoked through run_full_sync.py."""
+    if DRY_RUN:
+        return
+    print(
+        f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
+        flush=True,
+    )
+
+
 def _parse_cookie_header(cookie_header: str) -> dict[str, str]:
     cookies = {}
     for part in cookie_header.split(";"):
@@ -612,6 +625,7 @@ def main():
         log("No new activity — nothing to do")
         if conn:
             conn.close()
+        _emit_result(0, len(raw_items), watermark is None)
         sys.exit(0)
 
     watched_by_series = aggregate_by_series(raw_items)
@@ -711,6 +725,7 @@ def main():
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
         f"({index_hits} index hits, {search_hits} API searches)"
         + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
+    _emit_result(updated, len(raw_items), watermark is None)
 
 
 if __name__ == "__main__":

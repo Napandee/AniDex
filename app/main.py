@@ -81,10 +81,16 @@ def _close_out_orphaned_log(user_id: int, log_type: str, message: str) -> None:
         log.error("Could not close out orphaned %s sync_log row for user %s: %s", log_type, user_id, db_e)
 
 
-def _run_sync_task(user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_resync: bool = False) -> None:
+def _run_sync_task(
+    user_id: int, script: str = _FULL_SYNC_SCRIPT, force_full_resync: bool = False, trigger: str = "manual"
+) -> None:
+    """trigger is 'manual' (Sync Now / Force Full Resync buttons) or 'scheduled' (the
+    daily APScheduler loop via _scheduled_full_sync) — issue #46, threaded through to
+    run_full_sync.py via the TRIGGER env var so sync_log can distinguish the two."""
     state = _get_sync_state(user_id)
     env = os.environ.copy()
     env["USER_ID"] = str(user_id)
+    env["TRIGGER"] = trigger
     if force_full_resync:
         env["FORCE_FULL_RESYNC"] = "1"
     run_started_at = datetime.now(timezone.utc)
@@ -284,7 +290,7 @@ def _scheduled_full_sync() -> None:
             state["running"] = True
             state["last_result"] = None
         try:
-            _run_sync_task(user_id, _FULL_SYNC_SCRIPT)
+            _run_sync_task(user_id, _FULL_SYNC_SCRIPT, trigger="scheduled")
         except Exception as e:
             log.error("Unhandled error syncing user %s: %s", user_id, e)
             state["running"] = False
@@ -2001,7 +2007,7 @@ def sync_log(request: Request):
         return denied
 
     rows = db.fetchall(
-        "SELECT run_at, type, status, entries_updated, error_msg, steps "
+        "SELECT run_at, type, status, entries_updated, error_msg, steps, trigger "
         "FROM sync_log WHERE user_id = %s AND run_at >= now() - interval '7 days' "
         "ORDER BY run_at DESC",
         (user["id"],),
@@ -2014,6 +2020,7 @@ def sync_log(request: Request):
             "entries_updated": r["entries_updated"],
             "error_msg": r["error_msg"],
             "steps": r["steps"] or [],
+            "trigger": r["trigger"],
         }
         for r in rows
     ])

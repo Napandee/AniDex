@@ -268,7 +268,18 @@ def upsert_anime(cur, media: dict) -> None:
 STATUS_MAP = {"CURRENT": "WATCHING"}
 
 
-def upsert_library_entry(cur, entry: dict) -> None:
+def upsert_library_entry(cur, entry: dict) -> bool:
+    """Returns True if this entry was actually inserted or changed a stored field,
+    False if it was a no-op (row already matched AniList exactly, or is outbox-pending
+    and skipped by the sync_status guard). cur.rowcount after this INSERT ... ON
+    CONFLICT ... WHERE reflects that directly: 1 for a fresh insert (no conflict, the
+    WHERE clause doesn't apply) or a conflict where the WHERE guard matched, 0 for a
+    conflict the WHERE guard rejected.
+
+    Issue #46 — before the IS DISTINCT FROM guard below, the UPDATE branch fired
+    unconditionally for every synced row every run, so "rows touched" was structurally
+    identical to "rows processed" — no signal callers could use as a real per-run
+    entries-changed count."""
     media_id = entry["media"]["id"]
     score = score_to_stars(entry.get("score"))
     status = STATUS_MAP.get(entry["status"], entry["status"])
@@ -294,7 +305,16 @@ def upsert_library_entry(cur, entry: dict) -> None:
             finish_date        = EXCLUDED.finish_date,
             anilist_updated_at = EXCLUDED.anilist_updated_at,
             synced_at          = now()
-        WHERE library_entries.sync_status = 'synced'
+        WHERE library_entries.sync_status = 'synced' AND (
+            library_entries.anilist_entry_id IS DISTINCT FROM EXCLUDED.anilist_entry_id OR
+            library_entries.status IS DISTINCT FROM EXCLUDED.status OR
+            (EXCLUDED.score IS NOT NULL AND library_entries.score IS DISTINCT FROM EXCLUDED.score) OR
+            library_entries.progress IS DISTINCT FROM EXCLUDED.progress OR
+            library_entries.repeat_count IS DISTINCT FROM EXCLUDED.repeat_count OR
+            library_entries.start_date IS DISTINCT FROM EXCLUDED.start_date OR
+            library_entries.finish_date IS DISTINCT FROM EXCLUDED.finish_date OR
+            library_entries.anilist_updated_at IS DISTINCT FROM EXCLUDED.anilist_updated_at
+        )
         """,
         (
             USER_ID,
@@ -309,6 +329,7 @@ def upsert_library_entry(cur, entry: dict) -> None:
             anilist_updated_at,
         ),
     )
+    return cur.rowcount > 0
 
 
 def main() -> None:
@@ -324,20 +345,29 @@ def main() -> None:
     print(f"  {len(entries)} list entries fetched")
 
     conn = psycopg2.connect(DATABASE_URL)
+    touched = 0
     try:
         with conn:
             with conn.cursor() as cur:
                 for i, entry in enumerate(entries, 1):
                     upsert_anime(cur, entry["media"])
-                    upsert_library_entry(cur, entry)
+                    if upsert_library_entry(cur, entry):
+                        touched += 1
                     if i % 100 == 0:
                         print(f"  {i}/{len(entries)} upserted...", flush=True)
-        print(f"Done — {len(entries)} entries synced successfully.")
+        print(f"Done — {len(entries)} entries synced successfully, {touched} actually changed.")
     except Exception as e:
         print(f"ERROR writing to database: {e}", file=sys.stderr)
         raise
     finally:
         conn.close()
+
+    # Issue #46 — the only channel run_full_sync.py has for learning a real per-run
+    # entries-touched count back from this subprocess; it parses this exact prefix out
+    # of captured stdout. full_pull is always true here: unlike Crunchyroll/Netflix,
+    # this step has no watermark — it re-reads the whole current AniList list every run
+    # (see module docstring).
+    print(f"SYNC_RESULT: {json.dumps({'entries_updated': touched, 'entries_fetched': len(entries), 'full_pull': True})}", flush=True)
 
 
 if __name__ == "__main__":

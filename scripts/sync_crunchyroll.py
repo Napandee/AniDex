@@ -43,6 +43,7 @@ Exit 0 = success, Exit 1 = fatal error.
 """
 
 import base64
+import json
 import os
 import sys
 import uuid
@@ -81,6 +82,16 @@ MAX_PAGES = 200  # safety cap — the fetch loop should always stop at the water
 
 def log(msg):
     print(f"[crunchysync] user={USER_ID} {msg}", flush=True)
+
+
+def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
+    """Issue #46 — the only channel run_full_sync.py has for learning this step's real
+    entries-touched count back from the subprocess; it parses this exact prefix out of
+    captured stdout."""
+    print(
+        f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
+        flush=True,
+    )
 
 
 # ── Crunchyroll API client ───────────────────────────────────────────────────
@@ -492,6 +503,7 @@ def main():
             log("Reached true end of Crunchyroll history — full walk marked complete")
         log("No new activity — nothing to do")
         conn.close()
+        _emit_result(0, len(raw_items), watermark is None)
         sys.exit(0)
 
     log("Fetching AniList library (one call)...")
@@ -563,6 +575,7 @@ def main():
     conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
         f"({index_hits} index hits, {search_hits} API searches)")
+    _emit_result(updated, len(raw_items), watermark is None)
 
 
 if __name__ == "__main__":
