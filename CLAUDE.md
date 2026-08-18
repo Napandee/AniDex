@@ -80,14 +80,24 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `netflix_sync_state.last_seen_watched_at`) so a routine sync only walks genuinely new
   activity. Upserts into `anime` / `library_entries` / `airing_schedule_cache` /
   `cr_sync_state` / `netflix_sync_state`, all scoped to that user except
-  `anime`/`airing_schedule_cache` which stay global. There is no separate sync container.
+  `anime`/`airing_schedule_cache` which stay global. Progress/status pushes back to
+  AniList are no longer synchronous `SaveMediaListEntry` calls made inline during the
+  sync — both scripts call `enqueue_outbox_update()` (`scripts/anilist_sync_common.py`)
+  to write a `status_sync_outbox` row instead, delivered by the app's single shared
+  outbox worker (`app/outbox.py`), unified with the UI's own bulk-edit outbox (#18) so
+  every AniList write source is decoupled and rate-limited together (#100). There is no
+  separate sync container. A fourth provider, Prime Video, is stubbed only
+  (`scripts/sync_primevideo.py` is a documented `NotImplementedError` placeholder, not
+  wired into `run_full_sync.py`) pending issue #17, gated on a manual capture of Amazon's
+  private API.
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.
 - **App**: reads all tables, scoped to the logged-in user; writes to `personal_notes`, the
   `dismissed` flag on `recommendation_scores`, and `library_entries.score` (via the rating
   endpoint). Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry`
-  in real-time.
+  — real-time for single-item edits, through the shared outbox above for bulk-status
+  edits.
 - **Built-in scheduler**: APScheduler runs inside the app container. Daily sync and weekly
   recommender fire automatically for every eligible user; schedule *time* is instance-wide
   (one cron trigger regardless of user count), configurable via Admin → Instance Config
