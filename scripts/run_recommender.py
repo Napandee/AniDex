@@ -129,6 +129,17 @@ query ($ids: [Int], $page: Int) {
       description(asHtml: false)
       externalLinks { site url }
       streamingEpisodes { title url site thumbnail }
+      relations {
+        edges {
+          relationType
+          node {
+            id
+            title { romaji english }
+            coverImage { large }
+            format
+          }
+        }
+      }
     }
   }
 }
@@ -248,6 +259,18 @@ def get_planning_ids(conn) -> set[int]:
         return {row[0] for row in cur.fetchall()}
 
 
+def get_library_statuses(conn) -> dict[int, str]:
+    """anime_id -> status for every one of the user's library entries — used at
+    scoring time (issue #158) to check a candidate's PREQUEL relation against an
+    already-owned earlier season's status."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT anime_id, status FROM library_entries WHERE user_id = %s",
+            (USER_ID,),
+        )
+        return {row[0]: row[1] for row in cur.fetchall()}
+
+
 def fetch_recommendation_candidates(
     top_show_ids: list[int],
     library_ids: set[int],
@@ -345,14 +368,30 @@ def _upsert_anime(cur, media: dict) -> None:
         {"title": s["title"], "url": s["url"], "site": s["site"], "thumbnail": s.get("thumbnail")}
         for s in (media.get("streamingEpisodes") or [])
     ]
+    # Mirrors sync_anilist.py's upsert_anime() relations handling (issue #158) — needed
+    # here so brand-new recommender candidates (not yet in any user's library, so
+    # sync_anilist.py has never touched them) still get relation data to check for an
+    # unwatched PREQUEL at scoring time.
+    relations = [
+        {
+            "id": edge["node"]["id"],
+            "title": (edge["node"].get("title") or {}).get("english")
+                     or (edge["node"].get("title") or {}).get("romaji", ""),
+            "cover": (edge["node"].get("coverImage") or {}).get("large"),
+            "format": edge["node"].get("format"),
+            "relation_type": edge.get("relationType", "OTHER"),
+        }
+        for edge in ((media.get("relations") or {}).get("edges") or [])
+        if edge.get("node")
+    ]
     cur.execute("""
         INSERT INTO anime (
             id, id_mal, title_romaji, title_english, title_native,
             format, status, episodes, season, season_year,
             genres, tags, studios, average_score,
             cover_image_url, banner_image_url, description,
-            external_links, streaming_episodes, last_synced_at
-        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
+            external_links, streaming_episodes, relations, last_synced_at
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
         ON CONFLICT (id) DO UPDATE SET
             title_english      = EXCLUDED.title_english,
             genres             = EXCLUDED.genres,
@@ -361,6 +400,7 @@ def _upsert_anime(cur, media: dict) -> None:
             average_score      = EXCLUDED.average_score,
             cover_image_url    = EXCLUDED.cover_image_url,
             banner_image_url   = EXCLUDED.banner_image_url,
+            relations          = EXCLUDED.relations,
             last_synced_at     = now()
     """, (
         media["id"], media.get("idMal"),
@@ -372,7 +412,7 @@ def _upsert_anime(cur, media: dict) -> None:
         media.get("averageScore"),
         (media.get("coverImage") or {}).get("large"),
         media.get("bannerImage"), media.get("description"),
-        json.dumps(ext_links), json.dumps(streaming),
+        json.dumps(ext_links), json.dumps(streaming), json.dumps(relations),
     ))
 
 
@@ -483,6 +523,28 @@ def score_candidate(media: dict, profile: dict, cross_user: dict | None = None) 
     return raw, reason
 
 
+# Statuses on an already-owned earlier season that mean "don't surface the sequel
+# yet" — the user hasn't finished that earlier season, so recommending a later one
+# is premature. COMPLETED is deliberately absent: finishing S1 with S2 not yet in
+# the library is exactly the "watch next" case this recommender should still
+# surface (issue #158).
+PREQUEL_HIDE_STATUSES = {"WATCHING", "PLANNING", "PAUSED", "DROPPED"}
+
+
+def _has_unwatched_prequel(media: dict, library_statuses: dict[int, str]) -> bool:
+    """True if `media` has a single-hop PREQUEL relation to an anime already in the
+    user's library whose status means the earlier season isn't finished yet (issue
+    #158). Single-hop only — no recursive chain-walking to older ancestor seasons,
+    that's explicitly out of scope for v1 (see the issue for why)."""
+    for rel in (media.get("relations") or []):
+        if rel.get("relation_type") != "PREQUEL":
+            continue
+        prequel_status = library_statuses.get(rel.get("id"))
+        if prequel_status in PREQUEL_HIDE_STATUSES:
+            return True
+    return False
+
+
 def score_and_store(
     conn,
     all_candidate_ids: set[int],
@@ -494,16 +556,23 @@ def score_and_store(
     backward-compatible with the original single-source call shape."""
     sources = sources or {}
     cross_user_signal = fetch_cross_user_signal(conn, all_candidate_ids, USER_ID)
+    library_statuses = get_library_statuses(conn)
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
-            SELECT id, genres, tags, studios
+            SELECT id, genres, tags, studios, relations
             FROM anime WHERE id = ANY(%s)
         """, (list(all_candidate_ids),))
         media_rows = {row["id"]: dict(row) for row in cur.fetchall()}
 
     scored: list[tuple[int, float, dict]] = []
     for anime_id, media in media_rows.items():
+        # issue #158 — skip candidates that are a sequel to an earlier season the
+        # user already owns but hasn't finished (WATCHING/PLANNING/PAUSED/DROPPED).
+        # COMPLETED earlier seasons are the legitimate "watch next" case and must
+        # still be scored normally.
+        if _has_unwatched_prequel(media, library_statuses):
+            continue
         raw, reason = score_candidate(media, profile, cross_user_signal.get(anime_id))
         scored.append((anime_id, raw, reason))
 
