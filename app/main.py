@@ -1,3 +1,4 @@
+import base64
 import html
 import io
 import json
@@ -15,6 +16,9 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
 import httpx
+import pyotp
+import qrcode
+import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
@@ -648,6 +652,82 @@ AUTH_PROVIDERS = {"google", "discord"}
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_LOCKOUT_MINUTES = 15
 
+# ── TOTP two-factor authentication (issue #83) ──────────────────────────────────
+# Local-account-only, deliberately unrelated to the OAuth login/callback routes above
+# (out of scope per the issue — Google/Discord already get the provider's own 2FA).
+#
+# A pending (not-yet-confirmed) setup secret is held ONLY in the signed session
+# cookie (the same SessionMiddleware/SESSION_SECRET_KEY-backed session already used
+# for login state) — never written to users.totp_secret until a real 6-digit code
+# from the user's authenticator app has been verified. That keeps an abandoned setup
+# from ever leaving an unconfirmed secret sitting in the database, and keeps the raw
+# secret off of any page except the one-time setup screen itself.
+_TOTP_ISSUER = "Anime Tracker"  # matches the brand name shown everywhere else in the
+                                # app's own UI (base.html's site-name/title suffix) —
+                                # not the repo/package name, which differs (see
+                                # CLAUDE.local.md), so an authenticator app entry
+                                # doesn't show the user something they don't recognize
+_TOTP_SETUP_SECRET_KEY = "totp_setup_secret"
+_TOTP_SETUP_STARTED_KEY = "totp_setup_started_at"
+_TOTP_SETUP_ATTEMPTS_KEY = "totp_setup_attempts"
+_TOTP_SETUP_TTL_MINUTES = 10
+_TOTP_SETUP_MAX_ATTEMPTS = 10
+_TOTP_RECOVERY_DISPLAY_KEY = "totp_recovery_codes_display"
+_TOTP_RECOVERY_CODE_COUNT = 8
+_PENDING_2FA_SESSION_KEY = "pending_2fa_user_id"
+
+
+def _generate_totp_recovery_codes() -> list[str]:
+    """8 one-time backup codes (issue #83's lost-authenticator recovery mechanism),
+    formatted like 'a1b2-c3d4' for readability. Only ever returned here for the
+    one-time display right after enabling — callers must hash before persisting,
+    see _hash_recovery_code."""
+    return [f"{secrets.token_hex(2)}-{secrets.token_hex(2)}" for _ in range(_TOTP_RECOVERY_CODE_COUNT)]
+
+
+def _hash_recovery_code(code: str) -> str:
+    """Same standard as users.password_hash — bcrypt, never stored plaintext."""
+    return bcrypt.hashpw(code.strip().lower().encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _consume_recovery_code_if_valid(user_id: int, code: str) -> int | None:
+    """Checks `code` against this user's unused recovery-code hashes (bcrypt compare,
+    since they're hashed at rest — no direct lookup possible). On a match, atomically
+    marks that row used (the `WHERE used_at IS NULL` guard on the UPDATE closes the
+    race window against a concurrent request replaying the same code) and returns its
+    id, or None if used_at was already set by whoever won that race. Returns None if
+    no row matches at all."""
+    code_norm = code.strip().lower().encode("utf-8")
+    rows = db.fetchall(
+        "SELECT id, code_hash FROM totp_recovery_codes WHERE user_id = %s AND used_at IS NULL",
+        (user_id,),
+    )
+    for row in rows:
+        if bcrypt.checkpw(code_norm, row["code_hash"].encode("utf-8")):
+            claimed = db.execute_returning(
+                "UPDATE totp_recovery_codes SET used_at = now() WHERE id = %s AND used_at IS NULL RETURNING id",
+                (row["id"],),
+            )
+            return claimed["id"] if claimed else None
+    return None
+
+
+def _totp_qr_data_uri(secret: str, email: str) -> str:
+    """Renders the QR code as an inline base64 SVG data: URI — never written to disk,
+    never served from a static/cacheable route, never passed as a URL query param that
+    could end up in an access log. It only ever exists embedded directly in the HTML of
+    the one-time setup screen's own HTTP response."""
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name=_TOTP_ISSUER)
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    return "data:image/svg+xml;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _clear_totp_setup_session(request: Request) -> None:
+    for key in (_TOTP_SETUP_SECRET_KEY, _TOTP_SETUP_STARTED_KEY, _TOTP_SETUP_ATTEMPTS_KEY):
+        request.session.pop(key, None)
+
 
 @app.on_event("startup")
 def startup() -> None:
@@ -935,10 +1015,83 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
             url="/auth/login?error=This+account+has+been+deactivated", status_code=303
         )
 
+    if user["totp_enabled"]:
+        # Issue #83 — hold off on last_login_at/failed_login_attempts/the real
+        # session until the second factor also succeeds. Deliberately do NOT reset
+        # failed_login_attempts here: a wrong TOTP/recovery code on the next step
+        # counts against the same lockout counter as a wrong password (see
+        # auth_login_2fa_submit below), so a correct-password-guessed-then-brute-
+        # force-the-code attack doesn't get a fresh set of attempts for free.
+        request.session[_PENDING_2FA_SESSION_KEY] = user["id"]
+        return RedirectResponse(url="/auth/login/2fa", status_code=303)
+
     db.execute(
         "UPDATE users SET last_login_at = now(), failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
         (user["id"],),
     )
+    request.session["user_id"] = user["id"]
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/auth/login/2fa", response_class=HTMLResponse)
+def auth_login_2fa_page(request: Request, error: str = ""):
+    """Second-factor prompt (issue #83) — only reachable via the pending_2fa_user_id
+    session key auth_login_submit sets after a correct password on an account with
+    TOTP enabled. Never sets request.session["user_id"] itself; that only happens on
+    a verified code/recovery code below."""
+    if not request.session.get(_PENDING_2FA_SESSION_KEY):
+        return RedirectResponse(url="/auth/login", status_code=303)
+    return templates.TemplateResponse(request, "auth_login_2fa.html", {"error": error})
+
+
+@app.post("/auth/login/2fa")
+def auth_login_2fa_submit(request: Request, code: str = Form(...)):
+    pending_id = request.session.get(_PENDING_2FA_SESSION_KEY)
+    if not pending_id:
+        return RedirectResponse(url="/auth/login", status_code=303)
+
+    user = db.fetchone("SELECT * FROM users WHERE id = %s", (pending_id,))
+    if not user or not user["totp_enabled"] or not user["is_active"]:
+        # Account state changed mid-flow (2FA disabled elsewhere, deactivated, or
+        # deleted) — no valid pending login to complete.
+        request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+        return RedirectResponse(url="/auth/login", status_code=303)
+
+    if user["locked_until"] and user["locked_until"] > datetime.now(timezone.utc):
+        request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+        minutes_left = max(1, int((user["locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+        return RedirectResponse(
+            url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
+            status_code=303,
+        )
+
+    code = code.strip()
+    valid = bool(code) and pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1)
+    if not valid and code:
+        # Falls back to a one-time recovery code (issue #83's lost-authenticator path)
+        # — only tried if the TOTP check itself failed, so a valid 6-digit code is
+        # never wasted second-guessing it against the recovery-code table.
+        valid = _consume_recovery_code_if_valid(user["id"], code) is not None
+
+    if not valid:
+        attempts = user["failed_login_attempts"] + 1
+        if attempts >= _LOGIN_MAX_ATTEMPTS:
+            db.execute(
+                "UPDATE users SET failed_login_attempts = %s, locked_until = now() + (%s * interval '1 minute') WHERE id = %s",
+                (attempts, _LOGIN_LOCKOUT_MINUTES, user["id"]),
+            )
+        else:
+            db.execute(
+                "UPDATE users SET failed_login_attempts = %s WHERE id = %s",
+                (attempts, user["id"]),
+            )
+        return RedirectResponse(url="/auth/login/2fa?error=Invalid+code", status_code=303)
+
+    db.execute(
+        "UPDATE users SET last_login_at = now(), failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
+        (user["id"],),
+    )
+    request.session.pop(_PENDING_2FA_SESSION_KEY, None)
     request.session["user_id"] = user["id"]
     return RedirectResponse(url="/", status_code=303)
 
@@ -2029,7 +2182,7 @@ def queue(request: Request, status: str = None):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request, link_error: str = "", password_error: str = "", saved: str = "",
-    csv_import_error: str = "", cr_override_error: str = "",
+    csv_import_error: str = "", cr_override_error: str = "", twofa_error: str = "",
 ):
     user, denied = _require_user(request)
     if denied:
@@ -2065,6 +2218,7 @@ def settings_page(
                 "google_linked": bool(user["google_id"]),
                 "discord_linked": bool(user["discord_id"]),
                 "is_admin": user["is_admin"],
+                "totp_enabled": user["totp_enabled"],
             },
             "oauth_google_configured": oauth_configured("google"),
             "oauth_discord_configured": oauth_configured("discord"),
@@ -2073,6 +2227,7 @@ def settings_page(
             "saved": saved,
             "csv_import_error": csv_import_error,
             "cr_override_error": cr_override_error,
+            "twofa_error": twofa_error,
             "cr_overrides": cr_overrides,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
@@ -2418,6 +2573,146 @@ def settings_set_password(request: Request, password: str = Form(...)):
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user["id"]))
     return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.get("/settings/2fa/setup", response_class=HTMLResponse)
+def settings_2fa_setup_page(request: Request, error: str = ""):
+    """Issue #83 — start (or resume) a pending TOTP setup. The secret is generated
+    once per setup attempt and held only in the session (see _TOTP_SETUP_SECRET_KEY's
+    comment above) — reloading this page mid-setup reuses the same pending secret
+    (so the QR code the user already scanned stays valid) rather than silently
+    generating a new one underneath them."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    if user["totp_enabled"]:
+        return RedirectResponse(url="/settings", status_code=303)
+    if not user["password_hash"]:
+        return RedirectResponse(
+            url="/settings?twofa_error=Set+a+password+first+-+two-factor+authentication+requires+a+local+password",
+            status_code=303,
+        )
+
+    secret = request.session.get(_TOTP_SETUP_SECRET_KEY)
+    if not secret:
+        secret = pyotp.random_base32()
+        request.session[_TOTP_SETUP_SECRET_KEY] = secret
+        request.session[_TOTP_SETUP_STARTED_KEY] = datetime.now(timezone.utc).isoformat()
+        request.session[_TOTP_SETUP_ATTEMPTS_KEY] = 0
+
+    return templates.TemplateResponse(
+        request,
+        "settings_2fa_setup.html",
+        {
+            "qr_data_uri": _totp_qr_data_uri(secret, user["email"]),
+            "secret": secret,
+            "error": error,
+        },
+    )
+
+
+@app.post("/settings/2fa/setup")
+def settings_2fa_setup_confirm(request: Request, code: str = Form(...)):
+    """Confirms setup by verifying a real code from the authenticator app before ever
+    writing totp_secret/totp_enabled — this is the acceptance-criteria requirement
+    that enabling 2FA can't just blind-save a secret nobody's proven they can produce
+    valid codes from. On success, also generates and stores this account's one-time
+    recovery codes (issue #83's lost-authenticator recovery mechanism) in the same
+    transaction as enabling, so 2FA is never left "on" without a working recovery
+    path."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    if user["totp_enabled"]:
+        return RedirectResponse(url="/settings", status_code=303)
+
+    secret = request.session.get(_TOTP_SETUP_SECRET_KEY)
+    started_at_raw = request.session.get(_TOTP_SETUP_STARTED_KEY)
+    if not secret or not started_at_raw:
+        return RedirectResponse(
+            url="/settings/2fa/setup?error=Setup+session+expired+-+start+again", status_code=303
+        )
+
+    started_at = datetime.fromisoformat(started_at_raw)
+    if datetime.now(timezone.utc) - started_at > timedelta(minutes=_TOTP_SETUP_TTL_MINUTES):
+        _clear_totp_setup_session(request)
+        return RedirectResponse(
+            url="/settings/2fa/setup?error=Setup+session+expired+-+start+again", status_code=303
+        )
+
+    attempts = request.session.get(_TOTP_SETUP_ATTEMPTS_KEY, 0) + 1
+    request.session[_TOTP_SETUP_ATTEMPTS_KEY] = attempts
+    if attempts > _TOTP_SETUP_MAX_ATTEMPTS:
+        _clear_totp_setup_session(request)
+        return RedirectResponse(
+            url="/settings/2fa/setup?error=Too+many+attempts+-+start+again", status_code=303
+        )
+
+    if not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
+        return RedirectResponse(url="/settings/2fa/setup?error=Incorrect+code+-+try+again", status_code=303)
+
+    recovery_codes = _generate_totp_recovery_codes()
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET totp_secret = %s, totp_enabled = true, totp_enabled_at = now() WHERE id = %s",
+                (secret, user["id"]),
+            )
+            for rc in recovery_codes:
+                cur.execute(
+                    "INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (%s, %s)",
+                    (user["id"], _hash_recovery_code(rc)),
+                )
+        conn.commit()
+
+    _clear_totp_setup_session(request)
+    # Shown exactly once, on the very next request only — settings_2fa_recovery_codes_page
+    # pops this session key on render, so a refresh/back-navigation can't re-display
+    # codes that have already been shown. Never written to the database in plaintext.
+    request.session[_TOTP_RECOVERY_DISPLAY_KEY] = recovery_codes
+    return RedirectResponse(url="/settings/2fa/recovery-codes", status_code=303)
+
+
+@app.get("/settings/2fa/recovery-codes", response_class=HTMLResponse)
+def settings_2fa_recovery_codes_page(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    codes = request.session.pop(_TOTP_RECOVERY_DISPLAY_KEY, None)
+    if not codes:
+        return RedirectResponse(url="/settings", status_code=303)
+    return templates.TemplateResponse(request, "settings_2fa_recovery_codes.html", {"codes": codes})
+
+
+@app.post("/settings/2fa/disable")
+def settings_2fa_disable(request: Request, password: str = Form(...)):
+    """Disabling requires re-entering the current account password first (issue #83's
+    explicit security requirement) — a hijacked session cookie alone can't silently
+    turn 2FA off, since it doesn't carry the password. Removes the secret and every
+    recovery code together so a later re-enable can't accidentally inherit stale
+    codes from a previous setup."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    if not user["totp_enabled"]:
+        return RedirectResponse(url="/settings", status_code=303)
+
+    valid = user["password_hash"] and bcrypt.checkpw(
+        password.encode("utf-8"), user["password_hash"].encode("utf-8")
+    )
+    if not valid:
+        return RedirectResponse(url="/settings?twofa_error=Incorrect+password", status_code=303)
+
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM totp_recovery_codes WHERE user_id = %s", (user["id"],))
+            cur.execute(
+                "UPDATE users SET totp_secret = NULL, totp_enabled = false, totp_enabled_at = NULL WHERE id = %s",
+                (user["id"],),
+            )
+        conn.commit()
+
+    return RedirectResponse(url="/settings?saved=twofa_disabled", status_code=303)
 
 
 @app.post("/api/sync")

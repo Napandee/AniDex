@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ t('title_2fa_recovery_codes') }}{% endblock %}
+
+{% block content %}
+<div class="notes-page">
+
+  <div class="page-header">
+    <h1 class="page-title">{{ t('twofa_recovery_heading') }}</h1>
+    <p class="page-sub">{{ t('twofa_recovery_desc') }}</p>
+  </div>
+
+  <div class="settings-section settings-section--first">
+    <p class="twofa-warning">{{ t('twofa_recovery_warning') }}</p>
+
+    <div class="twofa-recovery-codes">
+      {% for code in codes %}
+      <span>{{ code }}</span>
+      {% endfor %}
+    </div>
+
+    <div class="form-actions">
+      <a href="/settings" class="btn-save">{{ t('twofa_recovery_continue_btn') }}</a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
