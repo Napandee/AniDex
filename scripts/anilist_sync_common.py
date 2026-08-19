@@ -202,28 +202,97 @@ def search_cache_snapshot() -> dict[str, int | None]:
     return dict(_search_cache)
 
 
-def find_anilist_id(title: str, title_index: dict[str, int]) -> int | None:
+# AniList's own sequel-naming conventions (issue #159) — small enough to keep as a
+# plain lookup table rather than a general Roman-numeral algorithm; nothing this app
+# matches against needs season numbers past single digits.
+_ROMAN_NUMERALS = {2: "II", 3: "III", 4: "IV", 5: "V", 6: "VI", 7: "VII", 8: "VIII", 9: "IX", 10: "X"}
+
+
+def _ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def season_suffix_candidates(title: str, season_number: int) -> list[str]:
+    """AniList's own sequel-naming conventions to try when CR reports a season
+    number > 1 (issue #159). CR's series_title is franchise-level and identical
+    across seasons (e.g. "Kingdom" for both season 1 and season 2), while AniList
+    suffixes sequel entries with the season (e.g. "Kingdom 2nd Season"). Returned in
+    the order they should be tried — most common convention first — since
+    find_anilist_id() below stops at the first hit.
+
+    Deliberately does NOT walk AniList's relations graph (SEQUEL edges) to find the
+    real sequel title when none of these conventions match — see issue #159's "Out
+    of scope"; that gap is what the manual override table exists to cover instead.
+    """
+    if season_number <= 1:
+        return []
+    candidates = [
+        f"{title} {_ordinal(season_number)} Season",
+        f"{title} Season {season_number}",
+    ]
+    roman = _ROMAN_NUMERALS.get(season_number)
+    if roman:
+        candidates.append(f"{title} {roman}")
+    return candidates
+
+
+def _search_anilist(query: str) -> int | None:
+    """One AniList Media(search:) lookup for an exact query string, cached in
+    _search_cache — the same in-process/persisted cache find_anilist_id() always
+    used, just factored out so both the bare-title path and the season-suffix
+    candidate path below share one cache and one exception-handling shape."""
+    if query in _search_cache:
+        return _search_cache[query]
+    try:
+        data = gql(SEARCH_QUERY, {"search": query})
+        mid = data["Media"]["id"]
+    except Exception:
+        mid = None
+    _search_cache[query] = mid
+    return mid
+
+
+def find_anilist_id(title: str, title_index: dict[str, int], season_number: int = 1) -> int | None:
     """Return AniList media ID for a watched series title.
 
     Checks the pre-built title index first (zero API calls for exact matches),
     then falls back to the search endpoint for unrecognised titles.
+
+    season_number (issue #159): when > 1, CR's series_title is the franchise-level
+    name (identical across seasons) while AniList suffixes sequel entries (e.g.
+    "Kingdom 2nd Season"). In that case, try AniList's own sequel-naming
+    conventions (season_suffix_candidates) against the index, then search, before
+    falling back to the bare-title lookup below — same fallback ceiling as
+    pre-#159 behavior when none of the conventions match. Only sync_crunchyroll.py
+    passes season_number != 1 today; every sync_netflix.py call keeps defaulting to
+    1, per issue #159's explicit CR-only v1 scope — Netflix's matching path is
+    untouched.
     """
     normalized = title.lower()
+
+    if season_number > 1:
+        candidates = season_suffix_candidates(title, season_number)
+        for candidate in candidates:
+            cand_norm = candidate.lower()
+            if cand_norm in title_index:
+                return title_index[cand_norm]
+        for candidate in candidates:
+            mid = _search_anilist(candidate)
+            if mid:
+                title_index[candidate.lower()] = mid  # cache in index for any later duplicates
+                return mid
+
     if normalized in title_index:
         return title_index[normalized]
 
-    if title in _search_cache:
-        return _search_cache[title]
-
-    try:
-        data = gql(SEARCH_QUERY, {"search": title})
-        mid = data["Media"]["id"]
-        _search_cache[title] = mid
+    mid = _search_anilist(title)
+    if mid:
         title_index[normalized] = mid  # cache in index for any later duplicates
-        return mid
-    except Exception:
-        _search_cache[title] = None
-        return None
+    return mid
 
 
 def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None = None,

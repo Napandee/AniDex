@@ -56,6 +56,7 @@ from dotenv import load_dotenv
 
 from anilist_sync_common import (
     enqueue_outbox_update, find_anilist_id, load_user_list_from_db, seed_search_cache,
+    season_suffix_candidates,
 )
 
 load_dotenv()
@@ -200,15 +201,26 @@ def _parse_watched_at(raw: str | None) -> datetime | None:
         return None
 
 
-def parse_items(items: list[dict]) -> dict[str, dict]:
-    """Returns {series_title: {"episode": most_recently_watched_episode, "watched_at": iso_str}}.
+def parse_items(items: list[dict]) -> dict[tuple[str, int], dict]:
+    """Returns {(series_title, season_number): {"episode": most_recently_watched_episode, "watched_at": iso_str}}.
 
-    Uses date_played to pick the most recently watched episode per series, not the
-    highest episode number — same rule the old file-based history parsing used, so
-    rewatches (ep 12 watched months ago, ep 1 watched yesterday) still surface ep 1
-    as the current position and let process() detect the rewatch in progress.
+    Keyed by (series_title, season_number) rather than series_title alone (issue
+    #159): CR's episode_metadata carries season_number, and two seasons of the same
+    franchise watched within one sync window must not collapse into a single dict
+    entry — previously whichever season had the most recent date_played silently
+    won, discarding the other season's progress for that sync run entirely.
+
+    Uses date_played to pick the most recently watched episode per (series, season),
+    not the highest episode number — same rule the old file-based history parsing
+    used, so rewatches (ep 12 watched months ago, ep 1 watched yesterday) still
+    surface ep 1 as the current position and let process() detect the rewatch in
+    progress.
+
+    season_number defaults to 1 when CR's episode_metadata omits it or reports
+    something non-numeric — matching pre-#159 behavior for any title CR doesn't
+    report a season for.
     """
-    best: dict[str, dict] = {}
+    best: dict[tuple[str, int], dict] = {}
     for item in items:
         panel = item.get("panel") or {}
         ep_meta = panel.get("episode_metadata") or {}
@@ -221,9 +233,16 @@ def parse_items(items: list[dict]) -> dict[str, dict]:
             ep = 0
         if ep == 0:
             continue
+        try:
+            season = int(float(ep_meta.get("season_number") or 1))
+        except (ValueError, TypeError):
+            season = 1
+        if season < 1:
+            season = 1
+        key = (title, season)
         watched_at = item.get("date_played") or ""
-        if title not in best or watched_at > best[title]["watched_at"]:
-            best[title] = {"episode": ep, "watched_at": watched_at}
+        if key not in best or watched_at > best[key]["watched_at"]:
+            best[key] = {"episode": ep, "watched_at": watched_at}
 
     return best
 
@@ -368,6 +387,74 @@ def save_title_search_cache_entry(conn, title: str, media_id: int | None):
     conn.commit()
 
 
+def load_title_overrides(conn) -> dict[tuple[str, int], int]:
+    """Per-user manual title/season overrides (issue #159) — checked in main()'s
+    matching loop before the season-aware heuristic/search, so a title the
+    heuristic still gets wrong (or leaves unmatched entirely) only ever needs
+    correcting once, not every sync. Personal-layer table (cr_title_overrides, see
+    schema.sql) — this is the only place any sync job reads it; the web app owns
+    all writes (POST /settings/cr-overrides). Keyed by lowercased series_title to
+    match case-insensitively, same normalization find_anilist_id()/title_index
+    already use — series_title is stored lowercased by the app, but this also
+    lowercases at read time defensively in case a row is ever written another way."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT series_title, season_number, anilist_id FROM cr_title_overrides WHERE user_id = %s",
+            (USER_ID,),
+        )
+        return {
+            (row["series_title"].lower(), row["season_number"]): row["anilist_id"]
+            for row in cur.fetchall()
+        }
+
+
+def resolve_media_id(title: str, season: int, overrides: dict[tuple[str, int], int],
+                      title_index: dict[str, int]) -> dict:
+    """Resolve one (title, season) CR watch-history entry to an AniList media id, in
+    priority order (issue #159): manual override > season-aware heuristic
+    (title_index for a suffixed candidate, then AniList search for one) > bare-title
+    fallback (title_index, then AniList search) — the exact order find_anilist_id()
+    itself already applies once season_number > 1 is passed through.
+
+    Pulled out of main()'s loop specifically so the "override always wins, before
+    any network call" and "season-suffix candidates are tried before the bare
+    title" behaviors can be unit tested without a live DB/AniList connection.
+
+    Returns a dict rather than just the id, because main()'s stats counters (index
+    vs. search hits) and its anilist_title_search_cache persistence guard (issue
+    #115's cache is keyed on the bare title only — caching a season-suffix match's
+    id under that key would corrupt it for season-1 lookups later) both need to
+    know *how* the id was resolved, not just what it resolved to.
+    """
+    override_id = overrides.get((title.lower(), season))
+    if override_id is not None:
+        return {
+            "media_id": override_id,
+            "matched_via_override": True,
+            "in_index_before": False,
+            "bare_title_in_index_before": False,
+            "via_season_suffix": False,
+        }
+
+    normalized = title.lower()
+    bare_in_index_before = normalized in title_index
+    season_candidates = season_suffix_candidates(title, season) if season > 1 else []
+    in_index_before = bare_in_index_before or any(c.lower() in title_index for c in season_candidates)
+
+    media_id = find_anilist_id(title, title_index, season_number=season)
+
+    via_season_suffix = season > 1 and media_id is not None and any(
+        title_index.get(c.lower()) == media_id for c in season_candidates
+    )
+    return {
+        "media_id": media_id,
+        "matched_via_override": False,
+        "in_index_before": in_index_before,
+        "bare_title_in_index_before": bare_in_index_before,
+        "via_season_suffix": via_season_suffix,
+    }
+
+
 # ── Sync logic ────────────────────────────────────────────────────────────────
 
 def _update(conn, anilist_id: int, **kwargs):
@@ -501,7 +588,7 @@ def main():
     log(f"Fetched {len(raw_items)} new watch-history rows")
 
     history = parse_items(raw_items)
-    log(f"Parsed {len(history)} unique series from CR history")
+    log(f"Parsed {len(history)} unique (series, season) combinations from CR history")
 
     if not history:
         # Issue #104 — safe to mark complete here even though the processing loop
@@ -527,30 +614,47 @@ def main():
     seed_search_cache(title_search_cache)
     log(f"Loaded {len(title_search_cache)} cached AniList title-search results")
 
-    updated = skipped = no_change = index_hits = search_hits = 0
+    # Issue #159 — checked ahead of the season-aware heuristic/search below, so a
+    # title the heuristic still gets wrong (or leaves unmatched) only needs fixing
+    # once via /settings, not every sync.
+    overrides = load_title_overrides(conn)
+    log(f"Loaded {len(overrides)} manual title/season overrides")
 
-    for title, data in sorted(history.items()):
+    updated = skipped = no_change = index_hits = search_hits = override_hits = 0
+
+    for (title, season), data in sorted(history.items()):
         cr_ep = data["episode"]
-        normalized = title.lower()
-        in_index_before = normalized in title_index
-        media_id = find_anilist_id(title, title_index)
-        if not in_index_before and title not in title_search_cache:
-            # A genuinely new search result this run — persist immediately, not just
-            # at the end, so an interrupted run doesn't lose it (same durability
-            # principle as #104's walk_complete fix).
-            save_title_search_cache_entry(conn, title, media_id)
-            title_search_cache[title] = media_id
-        if in_index_before and media_id:
-            index_hits += 1
-        elif media_id:
-            search_hits += 1
+        # Season suffix only in logs/state's human-readable title — matching itself
+        # is keyed on (title, season) throughout, not this label.
+        label = title if season <= 1 else f"{title} (season {season})"
+
+        r = resolve_media_id(title, season, overrides, title_index)
+        media_id = r["media_id"]
+
+        if r["matched_via_override"]:
+            override_hits += 1
+        else:
+            if (not r["via_season_suffix"] and not r["bare_title_in_index_before"]
+                    and title not in title_search_cache):
+                # A genuinely new search result this run — persist immediately, not just
+                # at the end, so an interrupted run doesn't lose it (same durability
+                # principle as #104's walk_complete fix). Skipped for a season-suffix
+                # match (see resolve_media_id's docstring) — that would corrupt this
+                # bare-title-keyed cache for season-1 lookups later.
+                save_title_search_cache_entry(conn, title, media_id)
+                title_search_cache[title] = media_id
+            if r["in_index_before"] and media_id:
+                index_hits += 1
+            elif media_id:
+                search_hits += 1
+
         if not media_id:
-            log(f"  ✗ No AniList match: '{title}'")
+            log(f"  ✗ No AniList match: '{label}'")
             skipped += 1
             continue
 
         if media_id not in user_list:
-            log(f"  ✗ Not in your AniList: '{title}'")
+            log(f"  ✗ Not in your AniList: '{label}'")
             skipped += 1
             continue
 
@@ -563,14 +667,14 @@ def main():
         cr_state = cr_state_map.get(media_id)
 
         try:
-            result = process(title, cr_ep, entry, cr_state, conn)
-            log(f"  '{title}': {result}")
+            result = process(label, cr_ep, entry, cr_state, conn)
+            log(f"  '{label}': {result}")
             if "→" in result:
                 updated += 1
             else:
                 no_change += 1
         except Exception as e:
-            log(f"  ERROR processing '{title}': {e}")
+            log(f"  ERROR processing '{label}': {e}")
             skipped += 1
 
     # Issue #104 — only mark the walk complete once every fetched title has actually
@@ -584,7 +688,7 @@ def main():
 
     conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
-        f"({index_hits} index hits, {search_hits} API searches)")
+        f"({index_hits} index hits, {search_hits} API searches, {override_hits} manual overrides)")
     _emit_result(updated, len(raw_items), watermark is None)
 
 

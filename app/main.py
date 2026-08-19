@@ -2029,7 +2029,7 @@ def queue(request: Request, status: str = None):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request, link_error: str = "", password_error: str = "", saved: str = "",
-    csv_import_error: str = "",
+    csv_import_error: str = "", cr_override_error: str = "",
 ):
     user, denied = _require_user(request)
     if denied:
@@ -2041,6 +2041,15 @@ def settings_page(
         "SELECT MAX(synced_at) AS ts FROM library_entries WHERE user_id = %s", (user["id"],)
     )
     last_synced = row["ts"].isoformat() if row and row["ts"] else None
+
+    # Issue #159 — manual Crunchyroll title/season -> AniList id overrides, listed
+    # here for editing. Personal-layer table (cr_title_overrides); only the app
+    # writes to it, scripts/sync_crunchyroll.py only ever reads it.
+    cr_overrides = db.fetchall(
+        "SELECT id, series_title, season_number, anilist_id FROM cr_title_overrides "
+        "WHERE user_id = %s ORDER BY series_title, season_number",
+        (user["id"],),
+    )
 
     return templates.TemplateResponse(
         request,
@@ -2063,6 +2072,8 @@ def settings_page(
             "password_error": password_error,
             "saved": saved,
             "csv_import_error": csv_import_error,
+            "cr_override_error": cr_override_error,
+            "cr_overrides": cr_overrides,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
@@ -2130,6 +2141,61 @@ def settings_save_credentials(
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
     return RedirectResponse(url="/settings?saved=credentials", status_code=303)
+
+
+@app.post("/settings/cr-overrides")
+def settings_add_cr_override(
+    request: Request,
+    series_title: str = Form(...),
+    season_number: int = Form(...),
+    anilist_id: int = Form(...),
+):
+    """Issue #159 — manual per-user Crunchyroll (series_title, season_number) ->
+    AniList id override, for a title the season-suffix heuristic still gets wrong
+    (or leaves unmatched). Personal-layer table (cr_title_overrides) — only this
+    route and its delete counterpart below ever write to it; sync_crunchyroll.py
+    only reads it. Upserts on (user_id, series_title, season_number) so re-adding
+    the same title/season just corrects the anilist_id rather than erroring.
+
+    series_title is lowercased/trimmed before storing so it matches CR's raw
+    series_title.lower() exactly — the same normalization
+    find_anilist_id()/title_index already use, and what
+    sync_crunchyroll.load_title_overrides() looks up by."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    title = series_title.strip().lower()
+    if not title or season_number < 1 or anilist_id < 1:
+        return RedirectResponse(
+            url="/settings?cr_override_error=Series+title%2C+season%2C+and+AniList+ID+are+all+required",
+            status_code=303,
+        )
+
+    db.execute(
+        """
+        INSERT INTO cr_title_overrides (user_id, series_title, season_number, anilist_id)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id, series_title, season_number)
+        DO UPDATE SET anilist_id = EXCLUDED.anilist_id, updated_at = now()
+        """,
+        (user["id"], title, season_number, anilist_id),
+    )
+
+    return RedirectResponse(url="/settings?saved=cr_override", status_code=303)
+
+
+@app.post("/settings/cr-overrides/{override_id}/delete")
+def settings_delete_cr_override(request: Request, override_id: int):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    db.execute(
+        "DELETE FROM cr_title_overrides WHERE id = %s AND user_id = %s",
+        (override_id, user["id"]),
+    )
+    return RedirectResponse(url="/settings?saved=cr_override_deleted", status_code=303)
 
 
 def _parse_csv_import_summary(stdout: str) -> dict | None:

@@ -205,3 +205,99 @@ def test_enqueue_outbox_update_does_not_commit():
     conn = _FakeOutboxConn()
     common.enqueue_outbox_update(conn, 42, "netflix", status="CURRENT")
     assert conn.committed is False
+
+
+# ── Season-aware matching (issue #159) ───────────────────────────────────────
+
+def test_season_suffix_candidates_returns_empty_for_season_1_or_less():
+    assert common.season_suffix_candidates("Kingdom", 1) == []
+    assert common.season_suffix_candidates("Kingdom", 0) == []
+
+
+def test_season_suffix_candidates_ordinal_and_roman_for_season_2():
+    # Concrete #159 test case: Kingdom S2 is "Kingdom 2nd Season" on AniList.
+    assert common.season_suffix_candidates("Kingdom", 2) == [
+        "Kingdom 2nd Season", "Kingdom Season 2", "Kingdom II",
+    ]
+
+
+def test_season_suffix_candidates_ordinal_for_season_3_and_4():
+    assert common.season_suffix_candidates("Overlord", 3) == [
+        "Overlord 3rd Season", "Overlord Season 3", "Overlord III",
+    ]
+    assert common.season_suffix_candidates("Overlord", 4) == [
+        "Overlord 4th Season", "Overlord Season 4", "Overlord IV",
+    ]
+
+
+def test_season_suffix_candidates_ordinal_for_teens_uses_th_not_st_nd_rd():
+    assert common.season_suffix_candidates("Show", 11)[0] == "Show 11th Season"
+    assert common.season_suffix_candidates("Show", 12)[0] == "Show 12th Season"
+    assert common.season_suffix_candidates("Show", 13)[0] == "Show 13th Season"
+
+
+def test_season_suffix_candidates_no_roman_numeral_past_ten():
+    candidates = common.season_suffix_candidates("Show", 11)
+    assert len(candidates) == 2  # ordinal + "Season N" only, no roman-numeral entry
+
+
+def test_find_anilist_id_season_aware_matches_index_suffix_before_bare_title(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {})
+    # Both the franchise's bare title (season 1) and the season-2 suffixed title are
+    # already indexed — the season-2 CR entry must resolve to the season-2 id, not
+    # silently fall through to season 1's, the core #159 bug.
+    title_index = {"kingdom": 1, "kingdom 2nd season": 2}
+    assert common.find_anilist_id("Kingdom", title_index, season_number=2) == 2
+
+
+def test_find_anilist_id_season_1_ignores_suffix_heuristic_entirely(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {})
+    title_index = {"kingdom": 1, "kingdom 2nd season": 2}
+    assert common.find_anilist_id("Kingdom", title_index, season_number=1) == 1
+
+
+def test_find_anilist_id_season_aware_searches_suffix_candidates_in_order(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {})
+    title_index = {"kingdom": 1}  # only the bare title is pre-indexed
+    searched = []
+
+    def fake_gql(query, variables=None, token=None):
+        searched.append(variables["search"])
+        if variables["search"] == "Kingdom 2nd Season":
+            return {"Media": {"id": 2}}
+        raise RuntimeError("not found")
+
+    monkeypatch.setattr(common, "gql", fake_gql)
+    assert common.find_anilist_id("Kingdom", title_index, season_number=2) == 2
+    assert searched[0] == "Kingdom 2nd Season"  # tried before "Kingdom Season 2"/"Kingdom II"/bare title
+
+
+def test_find_anilist_id_season_aware_falls_back_to_bare_title_when_no_suffix_matches(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {})
+    title_index = {"kingdom": 1}  # bare title only, no suffix candidate anywhere
+
+    def fake_gql(query, variables=None, token=None):
+        raise RuntimeError("no match for any suffix")
+
+    monkeypatch.setattr(common, "gql", fake_gql)
+    # Falls all the way back to the bare-title index hit — same ceiling as
+    # pre-#159 behavior when the heuristic can't do better; the manual override
+    # table exists to cover exactly this case.
+    assert common.find_anilist_id("Kingdom", title_index, season_number=2) == 1
+
+
+def test_find_anilist_id_caches_season_suffix_search_result(monkeypatch):
+    monkeypatch.setattr(common, "_search_cache", {})
+    title_index = {}
+    calls = []
+
+    def fake_gql(query, variables=None, token=None):
+        calls.append(variables["search"])
+        return {"Media": {"id": 42}}
+
+    monkeypatch.setattr(common, "gql", fake_gql)
+    first = common.find_anilist_id("Saga of Tanya the Evil", title_index, season_number=2)
+    second = common.find_anilist_id("Saga of Tanya the Evil", title_index, season_number=2)
+    assert first == 42
+    assert second == 42
+    assert calls == ["Saga of Tanya the Evil 2nd Season"]  # only searched once — cached after
