@@ -1,3 +1,17 @@
+// ── PWA service worker registration (#12) ───────────────────────────────────
+// Minimal, no-op-fetch service worker — registered purely so browsers satisfy
+// their install-prompt criteria (Chrome/Edge require an active SW with a fetch
+// handler). Not used for offline caching, see service-worker.js's own comment.
+// Registered from /service-worker.js (a dedicated root-scoped route in
+// app/main.py), not /static/service-worker.js — a script served under /static/
+// can only ever get a default scope of /static/*, which doesn't cover the
+// app's actual pages and fails the installability check.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+  });
+}
+
 // ── i18n lookup (#147) ───────────────────────────────────────────────────────
 // window.I18N is set inline in base.html's <head>, before this deferred script
 // runs — the full key->string map for the request's locale, English-fallback

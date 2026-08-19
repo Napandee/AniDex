@@ -632,6 +632,19 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
+
+@app.get("/service-worker.js")
+def service_worker() -> Response:
+    # Served from the root path (not /static/service-worker.js) so its default
+    # scope is "/" and it actually controls the app's pages — a service worker
+    # registered from under /static/ can only ever control /static/* by default,
+    # which fails the "has a service worker controlling start_url" PWA
+    # installability check (#12). Minimal no-op-fetch worker, not for offline
+    # caching — see the file's own header comment.
+    with open("app/static/service-worker.js", "rb") as f:
+        body = f.read()
+    return Response(content=body, media_type="application/javascript")
+
 _SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY")
 if not _SESSION_SECRET_KEY:
     _SESSION_SECRET_KEY = secrets.token_hex(32)

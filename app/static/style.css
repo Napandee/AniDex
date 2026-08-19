@@ -1061,6 +1061,15 @@ main {
 .step-chip--skipped { background: var(--t7); }
 
 /* ── Admin page ───────────────────────────────────────────────────────────── */
+/* Wraps every .admin-table so a table wider than the viewport (common on the
+   Users/Invites/Operability tabs — many columns, nowrap headers) scrolls
+   inside itself instead of blowing out the whole page horizontally on phone
+   widths (#12). */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .admin-table {
   width: 100%;
   border-collapse: collapse;
@@ -1474,6 +1483,14 @@ body.auth-page main {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1.25rem;
+  /* Grid items default to a min-width of their content's min-content size —
+     for a <canvas>, that's whatever pixel width Chart.js last set on it. That
+     let a chart-card grow past its 1fr track (and blow out the whole page
+     horizontally on phone widths) instead of shrinking to fit, since Chart.js
+     measures the container *after* layout, creating a runaway feedback loop.
+     min-width: 0 lets the grid track win, matching the CSS rather than the
+     canvas's own inline size (#12). */
+  min-width: 0;
 }
 .chart-card--wide { grid-column: 1 / -1; }
 .chart-title {
@@ -2498,12 +2515,23 @@ body.auth-page main {
 
   /* ── Card body — tighten up ───────────────────────────────────────────── */
   .card-body { padding: 0.6rem; gap: 0.4rem; }
+
+  /* ── Star rating — bigger tap targets ─────────────────────────────────── */
+  /* Rendered at ~14x16px on phone widths otherwise — five adjacent stars that
+     small make mis-taps (rating the wrong score) likely on a touchscreen, for
+     one of the core "update score" flows (#12). */
+  .star-rating { gap: 5px; }
+  .star { font-size: 1.2rem; padding: 4px 2px; }
   .title { font-size: 0.8rem; }
   .title-sub { font-size: 0.7rem; }
   .meta { gap: 0.3rem; }
 
-  /* ── Progress stepper — compact ───────────────────────────────────────── */
-  .prog-btn { width: 20px; height: 20px; font-size: 0.8rem; }
+  /* ── Progress stepper ─────────────────────────────────────────────────── */
+  /* This used to shrink the +/- buttons to a fixed 20x20 on phones specifically
+     — smaller than their own desktop size — for one of the most-used controls
+     on the page (updating episode progress). Sized up to a real touch target
+     instead (#12). */
+  .prog-btn { width: 32px; height: 32px; font-size: 0.9rem; }
   .prog-val { font-size: 0.8rem; }
   .prog-total, .prog-unit { font-size: 0.75rem; }
 
