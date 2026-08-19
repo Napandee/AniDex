@@ -274,6 +274,24 @@ CREATE TABLE recommendation_scores (
     UNIQUE (user_id, anime_id)
 );
 
+-- Manual Crunchyroll title/season -> AniList id overrides (issue #159). Personal
+-- layer: never written to by sync_crunchyroll.py, only read by it (see
+-- load_title_overrides() there), checked ahead of the season-suffix heuristic and
+-- bare-title search. The web app owns all writes, via the "Crunchyroll title
+-- overrides" section on /settings. series_title is stored lowercased/trimmed so it
+-- matches CR's raw series_title.lower() exactly, the same normalization
+-- find_anilist_id()/title_index already use elsewhere.
+CREATE TABLE cr_title_overrides (
+    id             SERIAL PRIMARY KEY,
+    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    series_title   TEXT NOT NULL,
+    season_number  INTEGER NOT NULL DEFAULT 1,
+    anilist_id     INTEGER NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, series_title, season_number)
+);
+
 -- =========================================================================
 -- CRUNCHYROLL SYNC STATE (tracks last-known CR progress per user, per series)
 -- Owned by sync_crunchyroll.py — never written to by the web app.

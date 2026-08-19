@@ -65,8 +65,8 @@ def test_parse_items_picks_most_recently_watched_episode_not_highest():
     older = _episode_item(date_played="2026-08-01T00:00:00Z", episode_number=12)
     newer = _episode_item(date_played="2026-08-14T00:00:00Z", episode_number=1)
     result = cr.parse_items([older, newer])
-    assert result["Attack on Titan"]["episode"] == 1
-    assert result["Attack on Titan"]["watched_at"] == "2026-08-14T00:00:00Z"
+    assert result[("Attack on Titan", 1)]["episode"] == 1
+    assert result[("Attack on Titan", 1)]["watched_at"] == "2026-08-14T00:00:00Z"
 
 
 def test_parse_items_skips_items_with_zero_episode_number():
@@ -77,6 +77,142 @@ def test_parse_items_skips_items_with_zero_episode_number():
 def test_parse_items_skips_items_with_no_title():
     untitled = {"date_played": "2026-08-14T00:00:00Z", "panel": {"episode_metadata": {"episode_number": 1}}}
     assert cr.parse_items([untitled]) == {}
+
+
+# ── Season-aware keying (issue #159) ─────────────────────────────────────────
+
+def test_parse_items_keeps_two_seasons_of_same_franchise_separate():
+    # The core #159 bug: watching Saga of Tanya the Evil S2 in the same sync window
+    # as S1 activity must not collapse into a single dict entry that only keeps
+    # whichever has the most recent date_played — both seasons' progress needs to
+    # survive so both get written to their respective AniList entries.
+    season1 = _episode_item(
+        series_title="Youjo Senki", season_number=1, episode_number=12,
+        date_played="2026-08-10T00:00:00Z",
+    )
+    season2 = _episode_item(
+        series_title="Youjo Senki", season_number=2, episode_number=3,
+        date_played="2026-08-14T00:00:00Z",
+    )
+    result = cr.parse_items([season1, season2])
+    assert set(result.keys()) == {("Youjo Senki", 1), ("Youjo Senki", 2)}
+    assert result[("Youjo Senki", 1)]["episode"] == 12
+    assert result[("Youjo Senki", 2)]["episode"] == 3
+
+
+def test_parse_items_defaults_season_to_1_when_missing_or_invalid():
+    no_season = {
+        "date_played": "2026-08-14T00:00:00Z",
+        "panel": {"episode_metadata": {"series_title": "Frieren", "episode_number": 5}},
+    }
+    bad_season = _episode_item(series_title="Frieren", season_number="not-a-number", episode_number=5)
+    assert cr.parse_items([no_season]) == {("Frieren", 1): {"episode": 5, "watched_at": "2026-08-14T00:00:00Z"}}
+    assert cr.parse_items([bad_season]) == {("Frieren", 1): {"episode": 5, "watched_at": "2026-08-14T20:00:00Z"}}
+
+
+def test_parse_items_treats_season_zero_as_season_1():
+    # CR occasionally reports season_number 0 for specials/OVAs bundled with a main
+    # series — treat that the same as "no season info" rather than as a distinct key.
+    item = _episode_item(series_title="Frieren", season_number=0, episode_number=5)
+    assert list(cr.parse_items([item]).keys()) == [("Frieren", 1)]
+
+
+# ── Manual title/season overrides (issue #159) ───────────────────────────────
+class _FakeOverrideConn:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params=None):
+        pass
+
+    def fetchall(self):
+        return self._rows
+
+
+def test_load_title_overrides_keys_by_lowercased_title_and_season(monkeypatch):
+    monkeypatch.setattr(cr, "USER_ID", 1)
+    conn = _FakeOverrideConn(rows=[
+        {"series_title": "Kingdom", "season_number": 2, "anilist_id": 999},
+        {"series_title": "Youjo Senki", "season_number": 1, "anilist_id": 100},
+    ])
+    result = cr.load_title_overrides(conn)
+    assert result == {("kingdom", 2): 999, ("youjo senki", 1): 100}
+
+
+def test_load_title_overrides_empty_when_no_rows(monkeypatch):
+    monkeypatch.setattr(cr, "USER_ID", 1)
+    assert cr.load_title_overrides(_FakeOverrideConn()) == {}
+
+
+# ── resolve_media_id — override/heuristic priority (issue #159) ─────────────
+
+def test_resolve_media_id_override_wins_without_touching_anilist(monkeypatch):
+    # Acceptance criterion: once an override is set, a sync uses it without
+    # re-matching — no AniList search call should happen at all.
+    def fail_if_called(*a, **kw):
+        raise AssertionError("find_anilist_id should not be called when an override exists")
+
+    monkeypatch.setattr(cr, "find_anilist_id", fail_if_called)
+    overrides = {("kingdom", 2): 999}
+    result = cr.resolve_media_id("Kingdom", 2, overrides, title_index={"kingdom": 1})
+    assert result == {
+        "media_id": 999, "matched_via_override": True,
+        "in_index_before": False, "bare_title_in_index_before": False,
+        "via_season_suffix": False,
+    }
+
+
+def test_resolve_media_id_override_is_season_specific():
+    # An override for season 2 must not apply to a season-1 (or season-3) entry of
+    # the same franchise.
+    overrides = {("kingdom", 2): 999}
+    title_index = {"kingdom": 1}
+    result = cr.resolve_media_id("Kingdom", 1, overrides, title_index)
+    assert result["matched_via_override"] is False
+    assert result["media_id"] == 1
+
+
+def test_resolve_media_id_falls_through_to_heuristic_when_no_override(monkeypatch):
+    monkeypatch.setattr(cr, "find_anilist_id", lambda title, idx, season_number=1: 2)
+    result = cr.resolve_media_id("Kingdom", 2, overrides={}, title_index={"kingdom": 1})
+    assert result["matched_via_override"] is False
+    assert result["media_id"] == 2
+
+
+def test_resolve_media_id_flags_season_suffix_match_for_cache_guard(monkeypatch):
+    # Simulates find_anilist_id resolving via a season-suffix candidate: it would
+    # have populated title_index at the suffixed key, not the bare title's.
+    def fake_find(title, title_index, season_number=1):
+        title_index["kingdom 2nd season"] = 2
+        return 2
+
+    monkeypatch.setattr(cr, "find_anilist_id", fake_find)
+    result = cr.resolve_media_id("Kingdom", 2, overrides={}, title_index={})
+    assert result["via_season_suffix"] is True
+    assert result["media_id"] == 2
+
+
+def test_resolve_media_id_bare_title_fallback_not_flagged_as_season_suffix(monkeypatch):
+    # find_anilist_id resolving via the bare-title fallback (heuristic found
+    # nothing) must NOT be flagged as a season-suffix match, so main()'s cache
+    # persistence guard still lets it persist to the shared bare-title cache.
+    def fake_find(title, title_index, season_number=1):
+        title_index[title.lower()] = 1
+        return 1
+
+    monkeypatch.setattr(cr, "find_anilist_id", fake_find)
+    result = cr.resolve_media_id("Kingdom", 2, overrides={}, title_index={})
+    assert result["via_season_suffix"] is False
+    assert result["media_id"] == 1
 
 
 # ── Fetch-side watermark ──────────────────────────────────────────────────────
