@@ -60,7 +60,15 @@ CREATE TABLE invites (
     invited_by      INTEGER REFERENCES users(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     accepted_at     TIMESTAMPTZ,
-    accepted_by     INTEGER REFERENCES users(id)
+    accepted_by     INTEGER REFERENCES users(id),
+    -- Issue #231: expiry + revoke for the admin invite flow. expires_at
+    -- defaults to 7 days out (INVITE_EXPIRY_DAYS in app/main.py); a signup
+    -- only succeeds against a row with accepted_at IS NULL, revoked_at IS
+    -- NULL, AND expires_at > now() (see _resolve_or_create_user). See
+    -- migrations/022_invite_expiry.sql for the upgrade path on an
+    -- already-running instance.
+    expires_at      TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days'),
+    revoked_at      TIMESTAMPTZ
 );
 
 -- Admin-mediated password reset links (no email infrastructure — admin generates the
@@ -540,6 +548,6 @@ CREATE INDEX idx_airing_schedule_airing_at ON airing_schedule_cache(airing_at);
 CREATE INDEX idx_recommendation_scores_score ON recommendation_scores(user_id, score DESC) WHERE dismissed = false;
 CREATE INDEX idx_anime_genres ON anime USING GIN (genres);
 CREATE INDEX idx_anime_tags ON anime USING GIN (tags);
-CREATE INDEX idx_invites_email ON invites(email) WHERE accepted_at IS NULL;
+CREATE INDEX idx_invites_email ON invites(email) WHERE accepted_at IS NULL AND revoked_at IS NULL;
 CREATE INDEX idx_collections_user ON collections (user_id);
 CREATE INDEX idx_admin_audit_log_created_at ON admin_audit_log(created_at DESC);

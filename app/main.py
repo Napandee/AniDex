@@ -675,6 +675,15 @@ STREAMING_SITES = {
     "Niconico Video", "Funimation", "VRV",
 }
 
+
+# Issue #231 — invite expiry window. A fresh invite (POST /admin/invites) and a
+# resend (POST /admin/invites/{id}/resend) both push expires_at this far out from
+# now(); the DB column carries the same default (schema.sql / migration 022) as a
+# safety net for any direct INSERT that doesn't specify it. Not currently
+# configurable per-instance — a flat 7 days is the implementation-time call #231's
+# "Open questions" section left to whoever built it.
+INVITE_EXPIRY_DAYS = 7
+
 ANILIST_SEARCH_QUERY = """
 query ($search: String) {
   Page(perPage: 8) {
@@ -1346,15 +1355,21 @@ def _resolve_or_create_user(
 
     invite = None
     if not is_admin:
+        # Issue #231 — an invite row can exist but no longer be usable: already
+        # revoked by an admin, or past its expires_at window. Either case must be
+        # rejected exactly like "no invite at all", not silently accepted just
+        # because a row with this email happens to still be sitting in the table.
         invite = db.fetchone(
-            "SELECT * FROM invites WHERE email = %s AND accepted_at IS NULL",
+            "SELECT * FROM invites WHERE email = %s AND accepted_at IS NULL "
+            "AND revoked_at IS NULL AND expires_at > now()",
             (email,),
         )
         if not invite:
             return None, HTMLResponse(
                 "<h1>Not invited</h1>"
-                f"<p>{html.escape(email)} hasn't been invited to this instance. "
-                "Ask the admin to add you.</p>",
+                f"<p>{html.escape(email)} hasn't been invited to this instance, or "
+                "their invite has expired or been revoked. Ask the admin to "
+                "(re)invite you.</p>",
                 status_code=403,
             )
 
@@ -1378,6 +1393,21 @@ def _resolve_or_create_user(
             (user["id"], invite["id"]),
         )
     return user, None
+
+
+def _invite_status(invite: dict, now: datetime) -> str:
+    """Issue #231 — the real state of an invite row for Admin -> Invites display,
+    computed rather than stored: accepted always wins (once used, expiry/revocation
+    are moot), then revoked, then expired (expires_at in the past), else pending.
+    Order matters — an accepted invite can still have an expires_at in the past
+    (it was used before it expired) and must still read as "accepted", not "expired"."""
+    if invite["accepted_at"]:
+        return "accepted"
+    if invite["revoked_at"]:
+        return "revoked"
+    if invite["expires_at"] and invite["expires_at"] < now:
+        return "expired"
+    return "pending"
 
 
 def _no_users_exist() -> bool:
@@ -2025,9 +2055,11 @@ def admin_page(request: Request, saved: str = ""):
         "sync_recommender_time": _instance_config_get("sync_recommender_time") or "05:00",
     }
 
-    invites = db.fetchall("SELECT * FROM invites ORDER BY created_at DESC")
-
     now = datetime.now(timezone.utc)
+
+    invites = db.fetchall("SELECT * FROM invites ORDER BY created_at DESC")
+    invites_view = [{**i, "status": _invite_status(i, now)} for i in invites]
+
     users = db.fetchall("SELECT * FROM users ORDER BY created_at DESC")
 
     # Most recent full_sync row per user — operability visibility for the admin
@@ -2094,7 +2126,7 @@ def admin_page(request: Request, saved: str = ""):
         {
             "instance_health": instance_health,
             "data_quality": data_quality,
-            "invites": invites,
+            "invites": invites_view,
             "users": users_view,
             "google_status": _provider_status("google"),
             "discord_status": _provider_status("discord"),
@@ -2124,6 +2156,58 @@ def admin_invites_create(request: Request, email: str = Form(...)):
     )
     _log_admin_action(admin_user["id"], "invite_created", detail=f"email={email}")
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/invites/{invite_id}/resend")
+def admin_invites_resend(request: Request, invite_id: int):
+    """Issue #231 — reissue a fresh invite: pushes expires_at another
+    INVITE_EXPIRY_DAYS out and clears revoked_at, so this also works to
+    un-revoke an invite the admin changes their mind about. Guarded WHERE
+    accepted_at IS NULL, same defense-in-depth shape as pat.revoke_token /
+    sessions.revoke_session — resending an already-accepted invite doesn't mean
+    anything (that email is already a real account)."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    admin_user = get_current_user(request)
+    row = db.execute_returning(
+        "UPDATE invites SET expires_at = now() + make_interval(days => %s), revoked_at = NULL "
+        "WHERE id = %s AND accepted_at IS NULL RETURNING email",
+        (INVITE_EXPIRY_DAYS, invite_id),
+    )
+    if not row:
+        return HTMLResponse(
+            "<h1>Invite not found or already accepted</h1><p><a href=\"/admin\">Back to admin</a></p>",
+            status_code=404,
+        )
+    _log_admin_action(admin_user["id"], "invite_resent", detail=f"email={row['email']}")
+    return RedirectResponse(url="/admin?saved=invite_resent", status_code=303)
+
+
+@app.post("/admin/invites/{invite_id}/revoke")
+def admin_invites_revoke(request: Request, invite_id: int):
+    """Issue #231 — invalidate an outstanding invite before it's used. Guarded
+    WHERE accepted_at IS NULL AND revoked_at IS NULL: revoking an accepted invite
+    is meaningless (deactivate the account instead, via the Users tab), and
+    revoking an already-revoked one is just a no-op we don't need to re-log."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    admin_user = get_current_user(request)
+    row = db.execute_returning(
+        "UPDATE invites SET revoked_at = now() "
+        "WHERE id = %s AND accepted_at IS NULL AND revoked_at IS NULL RETURNING email",
+        (invite_id,),
+    )
+    if not row:
+        return HTMLResponse(
+            "<h1>Invite not found, already accepted, or already revoked</h1><p><a href=\"/admin\">Back to admin</a></p>",
+            status_code=404,
+        )
+    _log_admin_action(admin_user["id"], "invite_revoked", detail=f"email={row['email']}")
+    return RedirectResponse(url="/admin?saved=invite_revoked", status_code=303)
 
 
 @app.post("/admin/privacy-defaults")

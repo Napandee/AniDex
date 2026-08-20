@@ -107,6 +107,8 @@
   <div class="settings-tab-panel" data-tab-panel="invites" hidden>
     <div class="settings-section settings-section--first">
       <h2 class="settings-section-title">{{ t('admin_invites_title') }}</h2>
+      {% if saved == 'invite_resent' %}<p class="settings-success">{{ t('admin_invite_resent_msg') }}</p>{% endif %}
+      {% if saved == 'invite_revoked' %}<p class="settings-success">{{ t('admin_invite_revoked_msg') }}</p>{% endif %}
       <form method="post" action="/admin/invites" class="settings-form">
         <div class="form-field" style="max-width:320px;">
           <input class="form-input" type="email" name="email" placeholder="{{ t('email_placeholder') }}" required>
@@ -118,17 +120,40 @@
       <div class="table-scroll">
       <table class="admin-table">
         <thead>
-          <tr><th>{{ t('admin_col_email') }}</th><th>{{ t('admin_col_status') }}</th><th>{{ t('admin_col_created') }}</th></tr>
+          <tr>
+            <th>{{ t('admin_col_email') }}</th>
+            <th>{{ t('admin_col_status') }}</th>
+            <th>{{ t('admin_col_created') }}</th>
+            <th>{{ t('admin_col_expires') }}</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {% for i in invites %}
           <tr>
             <td>{{ i.email }}</td>
-            <td>{% if i.accepted_at %}<span class="status-ok">{{ t('admin_accepted') }}</span>{% else %}{{ t('admin_pending') }}{% endif %}</td>
+            <td>
+              {% if i.status == 'accepted' %}<span class="status-ok">{{ t('admin_accepted') }}</span>
+              {% elif i.status == 'revoked' %}<span class="status-error">{{ t('admin_revoked') }}</span>
+              {% elif i.status == 'expired' %}<span class="status-warn">{{ t('admin_expired') }}</span>
+              {% else %}{{ t('admin_pending') }}{% endif %}
+            </td>
             <td>{{ i.created_at.strftime('%Y-%m-%d') if i.created_at else '—' }}</td>
+            <td>{{ i.expires_at.strftime('%Y-%m-%d') if i.expires_at else '—' }}</td>
+            <td>
+              {% if i.status in ('expired', 'revoked') %}
+              <form method="post" action="/admin/invites/{{ i.id }}/resend" class="admin-inline-form">
+                <button type="submit" class="btn-save">{{ t('admin_invite_resend_btn') }}</button>
+              </form>
+              {% elif i.status == 'pending' %}
+              <form method="post" action="/admin/invites/{{ i.id }}/revoke" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_invite_revoke_confirm', email=i.email) }}');">
+                <button type="submit" class="btn-save btn-warning">{{ t('admin_invite_revoke_btn') }}</button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% else %}
-          <tr><td colspan="3" class="status-empty">{{ t('admin_no_invites') }}</td></tr>
+          <tr><td colspan="5" class="status-empty">{{ t('admin_no_invites') }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -531,6 +556,7 @@
 document.addEventListener('DOMContentLoaded', function () {
   initSettingsTabs(function (params) {
     if (params.get('saved') === 'schedule') return 'instance-config';
+    if (params.get('saved') === 'invite_resent' || params.get('saved') === 'invite_revoked') return 'invites';
     return null;
   });
   formatTimeElements(['next-daily-ts', 'next-rec-ts']);
