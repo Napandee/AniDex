@@ -1,4 +1,11 @@
--- Migration 022: add invites.expires_at + invites.revoked_at — issue #231.
+-- Migration 025: add invites.expires_at + invites.revoked_at — issue #231.
+--
+-- (Originally numbered 022 during development; renumbered to 024 after
+-- #229's and #219's migrations — 022_planning_availability_state.sql and
+-- 023_favorite_flag.sql — merged to main first and claimed 022/023; renumbered
+-- again to 025 after #220's migration — 024_episode_notes_memorable_quote.sql
+-- — merged first and claimed 024 too — see the sequential-numbering
+-- convention this repo follows for migrations/.)
 --
 -- The `invites` table had no expiry concept at all: a pending row created
 -- with ON CONFLICT (email) DO NOTHING lived forever, with no way to see its

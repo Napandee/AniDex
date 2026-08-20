@@ -65,7 +65,7 @@ CREATE TABLE invites (
     -- defaults to 7 days out (INVITE_EXPIRY_DAYS in app/main.py); a signup
     -- only succeeds against a row with accepted_at IS NULL, revoked_at IS
     -- NULL, AND expires_at > now() (see _resolve_or_create_user). See
-    -- migrations/022_invite_expiry.sql for the upgrade path on an
+    -- migrations/025_invite_expiry.sql for the upgrade path on an
     -- already-running instance.
     expires_at      TIMESTAMPTZ NOT NULL DEFAULT (now() + INTERVAL '7 days'),
     revoked_at      TIMESTAMPTZ
