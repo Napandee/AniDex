@@ -32,7 +32,7 @@
       <div class="rec-season-badge" title="{{ t('rec_season_badge_title') }}">{{ e.season_label }}</div>
       {% endif %}
       {% if not e.uninformative %}
-      <div class="rec-score-badge">{{ e.rec_score | int }}%</div>
+      <div class="rec-score-badge" title="{{ t('rec_score_badge_title') }}">{{ e.rec_score | int }}%</div>
       {% elif not e.season_label %}
       {# Issue #178 — cold-start/uninformative score with no seasonal badge to fall
          back on (e.g. non-seasonal candidate with zero taste-profile signal): show a
@@ -55,6 +55,9 @@
       </div>
 
       <div class="rec-matches">
+        {% if e.match_pct is not none %}
+        <div class="match-percent-chip" title="{{ t('rec_match_percent_title') }}">{{ t('rec_match_percent_label', pct=e.match_pct) }}</div>
+        {% endif %}
         <div class="match-row">
           <span class="match-label">{{ t('rec_match_genres') }}</span>
           <div class="genres">

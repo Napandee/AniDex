@@ -2200,6 +2200,25 @@ body.auth-page main {
   gap: 0.15rem;
 }
 
+/* Issue #227 — Netflix-style "% match" chip, a read-time min-max normalization
+   of rec_score across the currently-visible candidate set. Deliberately
+   distinct from .rec-score-badge (the recommender job's own write-time
+   normalization) — see _compute_match_percentages() in app/main.py for why
+   the two numbers are allowed to differ. Green like AniList's community
+   score/progress text, so it reads as a positive signal rather than a raw
+   figure. */
+.match-percent-chip {
+  align-self: flex-start;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--pill-success-text-strong);
+  background: var(--pill-success-bg);
+  border: 1px solid var(--pill-success-border);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  margin-bottom: 0.1rem;
+}
+
 .match-row {
   display: flex;
   align-items: flex-start;
