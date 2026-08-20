@@ -3296,6 +3296,62 @@ def _compute_drop_patterns(user_id: int) -> dict | None:
     }
 
 
+REWATCH_MOST_REWATCHED_LIMIT = 10
+
+
+def _compute_rewatch_stats(user_id: int) -> dict:
+    """Rewatch data for /stats (issue #189) — built entirely from the existing
+    library_entries.repeat_count column, already correctly populated from AniList's
+    `repeat` field by sync_anilist.py. Purely read-only presentation, no new data
+    collection and no schema changes.
+
+    Scoped to COMPLETED/REPEATING entries: repeat_count defaults to 0 for every
+    entry (including ones never actually watched, e.g. PLANNING), so counting the
+    full library would pad the "0 rewatches" bucket with titles that were never
+    finished even once. Restricting to titles that have actually been completed
+    at least once keeps "0 rewatches" meaning "finished once, never rewatched"
+    rather than "not watched at all". Unlike _compute_drop_patterns above, there's
+    no minimum-sample gate here — no privacy/small-sample-noise concern with a
+    user's own rewatch counts, so the section always renders (with an empty state
+    if they have no completed titles yet, or no rewatches yet)."""
+    dist_rows = db.fetchall(
+        """
+        SELECT
+            CASE WHEN le.repeat_count >= 3 THEN '3+' ELSE le.repeat_count::text END AS bucket,
+            COUNT(*) AS cnt
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status IN ('COMPLETED', 'REPEATING')
+        GROUP BY bucket
+        """,
+        (user_id,),
+    )
+    dist_by_bucket = {r["bucket"]: int(r["cnt"]) for r in dist_rows}
+    distribution = [
+        {"bucket": b, "count": dist_by_bucket.get(b, 0)} for b in ("0", "1", "2", "3+")
+    ]
+
+    most_rewatched_rows = db.fetchall(
+        """
+        SELECT COALESCE(a.title_english, a.title_romaji) AS title, le.repeat_count AS count
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.repeat_count > 0
+          AND le.status IN ('COMPLETED', 'REPEATING')
+        ORDER BY le.repeat_count DESC, title ASC
+        LIMIT %s
+        """,
+        (user_id, REWATCH_MOST_REWATCHED_LIMIT),
+    )
+
+    return {
+        "distribution": distribution,
+        "most_rewatched": [{"title": r["title"], "count": int(r["count"])} for r in most_rewatched_rows],
+        "total_completed_titles": sum(d["count"] for d in distribution),
+        "total_rewatched_titles": sum(d["count"] for d in distribution if d["bucket"] != "0"),
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -3406,6 +3462,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     watch_days = round(watch_minutes / 1440, 1)
     genres_out = [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows]
     drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
+    rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
@@ -3414,6 +3471,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
         "drop_patterns": drop_patterns,
+        "rewatch": rewatch_stats,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),

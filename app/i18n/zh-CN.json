@@ -324,6 +324,10 @@
   "stats_day_fri": "周五",
   "stats_heatmap_less": "较少",
   "stats_heatmap_more": "较多",
+  "stats_chart_most_rewatched": "重刷最多",
+  "stats_chart_rewatch_dist": "重刷次数分布",
+  "stats_rewatch_list_empty": "暂无重刷记录——再次观看的作品会显示在这里。",
+  "stats_rewatch_dist_empty": "完成一部作品后即可在此查看重刷统计。",
 
   "title_recommendations": "推荐 — Anime Tracker",
   "rec_page_title": "为你推荐",

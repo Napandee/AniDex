@@ -324,6 +324,10 @@
   "stats_day_fri": "金",
   "stats_heatmap_less": "少ない",
   "stats_heatmap_more": "多い",
+  "stats_chart_most_rewatched": "再視聴回数ランキング",
+  "stats_chart_rewatch_dist": "再視聴回数の分布",
+  "stats_rewatch_list_empty": "まだ再視聴した作品はありません。再視聴するとここに表示されます。",
+  "stats_rewatch_dist_empty": "作品を完走すると、ここに再視聴の統計が表示されます。",
 
   "title_recommendations": "おすすめ — Anime Tracker",
   "rec_page_title": "あなたへのおすすめ",
