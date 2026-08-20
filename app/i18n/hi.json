@@ -448,6 +448,11 @@
   "lib_notes_notes_placeholder": "कोई भी फ्रीफ़ॉर्म नोट्स…",
   "lib_notes_priority_placeholder": "1 = कतार में सबसे ऊपर",
   "lib_ep_unit": "एप",
+  "lib_ep_note_btn_title": "एपिसोड नोट",
+  "lib_ep_note_placeholder": "इस एपिसोड के लिए एक नोट लिखें…",
+  "lib_ep_note_delete_btn": "हटाएं",
+  "lib_ep_note_modal_title": "एपिसोड {ep} — {title}",
+  "lib_ep_note_prompt_text": "एपिसोड {ep} के लिए नोट जोड़ें?",
 
   "title_admin": "एडमिन — Anime Tracker",
   "admin_page_title": "एडमिन",

@@ -2533,6 +2533,86 @@ def save_rewatch_note(
     return RedirectResponse(url=f"/anime/{anime_id}/notes?back={back}", status_code=303)
 
 
+def _get_episode_note(user_id: int, anime_id: int, episode_number: int) -> str:
+    """Fetch the note text for one episode (issue #210), or '' if none exists yet.
+    Deliberately a single lookup rather than _get_rewatch_notes' whole-range list —
+    an anime can have hundreds of episodes, so the card only ever asks for the one
+    episode it currently needs (the progress-stepper's current value) instead of
+    pre-fetching a blank-filled row per episode."""
+    row = db.fetchone(
+        "SELECT note FROM episode_notes WHERE user_id = %s AND anime_id = %s AND episode_number = %s",
+        (user_id, anime_id, episode_number),
+    )
+    return row["note"] if row else ""
+
+
+def _save_episode_note(user_id: int, anime_id: int, episode_number: int, note: str) -> bool:
+    """Attach a note to one specific episode (issue #210) — same shape/rules as
+    _save_rewatch_note. Only valid for an episode that's actually been watched —
+    episode_number must be between 1 and the user's current library_entries.progress
+    for this anime, inclusive. Blank note deletes any existing row for that episode.
+    Returns True if the write was applied, False if episode_number was out of range
+    (no library entry, or noting an episode not yet reached)."""
+    if episode_number < 1:
+        return False
+
+    entry = db.fetchone(
+        "SELECT progress FROM library_entries WHERE anime_id = %s AND user_id = %s",
+        (anime_id, user_id),
+    )
+    if not entry or not entry["progress"] or episode_number > entry["progress"]:
+        return False
+
+    note_val = note.strip()
+    if note_val:
+        db.execute(
+            """
+            INSERT INTO episode_notes (user_id, anime_id, episode_number, note)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, anime_id, episode_number) DO UPDATE SET
+                note = EXCLUDED.note,
+                updated_at = now()
+            """,
+            (user_id, anime_id, episode_number, note_val),
+        )
+    else:
+        db.execute(
+            "DELETE FROM episode_notes WHERE user_id = %s AND anime_id = %s AND episode_number = %s",
+            (user_id, anime_id, episode_number),
+        )
+    return True
+
+
+@app.get("/api/anime/{anime_id}/episode-notes/{episode_number}")
+def get_episode_note_api(anime_id: int, episode_number: int, request: Request):
+    """Read-only lookup backing the note popover's prefill and the auto-suggest
+    prompt's "does this episode already have a note?" check (see script.js) —
+    inline, JSON, no page navigation, unlike rewatch notes' whole-page form."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+    return JSONResponse({"note": _get_episode_note(user["id"], anime_id, episode_number)})
+
+
+@app.post("/api/anime/{anime_id}/episode-notes/{episode_number}")
+async def save_episode_note_api(anime_id: int, episode_number: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    note = body.get("note")
+    if note is None:
+        note = ""
+    if not isinstance(note, str):
+        return JSONResponse({"error": "note must be a string"}, status_code=400)
+
+    applied = _save_episode_note(user["id"], anime_id, episode_number, note)
+    if not applied:
+        return JSONResponse({"error": "episode not yet watched"}, status_code=400)
+    return JSONResponse({"ok": True, "note": note.strip()})
+
+
 _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
                    "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
 
@@ -4814,7 +4894,8 @@ def library(request: Request, response: Response, status: str = None):
             pn.notes,
             pn.watch_next_priority,
             next_ep.episode AS next_episode,
-            next_ep.airing_at AS next_airing_at
+            next_ep.airing_at AS next_airing_at,
+            (en.note IS NOT NULL) AS has_episode_note
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
@@ -4825,6 +4906,8 @@ def library(request: Request, response: Response, status: str = None):
             ORDER BY airing_at
             LIMIT 1
         ) next_ep ON true
+        LEFT JOIN episode_notes en
+            ON en.anime_id = a.id AND en.user_id = le.user_id AND en.episode_number = le.progress
         WHERE le.status = %s AND le.user_id = %s
         ORDER BY le.score DESC NULLS LAST, a.title_romaji
         """,

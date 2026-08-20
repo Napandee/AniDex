@@ -291,6 +291,25 @@ CREATE TABLE rewatch_notes (
 
 CREATE INDEX idx_rewatch_notes_user_anime ON rewatch_notes (user_id, anime_id);
 
+-- A note attached to a specific episode (issue #210), surfaced next to the progress
+-- stepper. Same shape/rationale as rewatch_notes above — one-row-per-episode doesn't
+-- fit personal_notes' flat single-row-per-anime shape. Sync jobs must never write
+-- here, only the app's own episode-note routes.
+CREATE TABLE episode_notes (
+    id                  SERIAL PRIMARY KEY,
+    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anime_id            INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    -- Which episode this note is for, matching library_entries.progress. Only valid
+    -- for an episode already watched — see _save_episode_note()'s range check.
+    episode_number      INTEGER NOT NULL CHECK (episode_number >= 1),
+    note                TEXT NOT NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, anime_id, episode_number)
+);
+
+CREATE INDEX idx_episode_notes_user_anime ON episode_notes (user_id, anime_id);
+
 -- Output of the recommender job. Fully rebuildable, but kept as a table (not computed
 -- on every page load) so scores are stable and dismissals persist between runs.
 CREATE TABLE recommendation_scores (

@@ -448,6 +448,11 @@
   "lib_notes_notes_placeholder": "自由記述のノート…",
   "lib_notes_priority_placeholder": "1 = キューの最上位",
   "lib_ep_unit": "話",
+  "lib_ep_note_btn_title": "エピソードメモ",
+  "lib_ep_note_placeholder": "このエピソードのメモを書く…",
+  "lib_ep_note_delete_btn": "削除",
+  "lib_ep_note_modal_title": "第{ep}話 — {title}",
+  "lib_ep_note_prompt_text": "第{ep}話のメモを追加しますか?",
 
   "title_admin": "管理 — Anime Tracker",
   "admin_page_title": "管理",

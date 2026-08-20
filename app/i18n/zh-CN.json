@@ -448,6 +448,11 @@
   "lib_notes_notes_placeholder": "任意自由笔记…",
   "lib_notes_priority_placeholder": "1 = 队列置顶",
   "lib_ep_unit": "集",
+  "lib_ep_note_btn_title": "剧集笔记",
+  "lib_ep_note_placeholder": "为这一集写笔记…",
+  "lib_ep_note_delete_btn": "删除",
+  "lib_ep_note_modal_title": "第{ep}集 — {title}",
+  "lib_ep_note_prompt_text": "要为第{ep}集添加笔记吗?",
 
   "title_admin": "管理 — Anime Tracker",
   "admin_page_title": "管理",

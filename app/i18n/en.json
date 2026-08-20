@@ -448,6 +448,11 @@
   "lib_notes_notes_placeholder": "Freeform notes…",
   "lib_notes_priority_placeholder": "1 = top of queue",
   "lib_ep_unit": "ep",
+  "lib_ep_note_btn_title": "Episode note",
+  "lib_ep_note_placeholder": "Write a note for this episode…",
+  "lib_ep_note_delete_btn": "Delete",
+  "lib_ep_note_modal_title": "Episode {ep} — {title}",
+  "lib_ep_note_prompt_text": "Add a note for episode {ep}?",
 
   "title_admin": "Admin — Anime Tracker",
   "admin_page_title": "Admin",
