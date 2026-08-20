@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "対応付けを保存しました。",
   "sync_cr_override_deleted": "対応付けを削除しました。",
 
+  "streaming_services_title": "契約中の配信サービス",
+  "streaming_services_help": "ストリーミングカバレッジページの限界価値ランキングの計算に使用されます — 現在契約しているサービスをすべて選択してください。",
+  "streaming_services_saved": "配信サービスを保存しました。",
+  "streaming_services_save_btn": "サービスを保存",
+  "streaming_services_view_link": "ストリーミングカバレッジを見る →",
+
   "sync_history_title": "同期履歴",
   "sync_history_col_time": "時刻",
   "sync_history_col_type": "種類",
@@ -263,6 +269,12 @@
   "queue_no_matches": "該当なし。",
   "queue_rec_match": "マッチ度",
   "queue_resumed_at": "第{num}話から再開",
+  "queue_rewatch_heading": "再視聴の候補",
+  "queue_rewatch_sub": "{months}ヶ月以上前に完走した作品を、経過が長い順に表示しています。",
+  "queue_rewatch_empty": "現在、再視聴候補はありません。",
+  "queue_rewatch_finished_singular": "{months}ヶ月前に完走",
+  "queue_rewatch_finished_plural": "{months}ヶ月前に完走",
+  "queue_rewatch_start_btn": "↺ 再視聴する",
 
   "notes_title": "ノート — {title} — Anime Tracker",
   "notes_your_score": "自分の評価",
@@ -329,6 +341,17 @@
   "stats_wrapped_binge_fmt": "{episodes}話 ({start} – {end})",
   "stats_wrapped_score_shift": "前年比のスコア分布",
   "stats_wrapped_no_prior_year": "前年のデータはまだありません — AniDexで完了作品がある最初の年です。",
+  "stats_chart_most_rewatched": "再視聴回数ランキング",
+  "stats_chart_rewatch_dist": "再視聴回数の分布",
+  "stats_rewatch_list_empty": "まだ再視聴した作品はありません。再視聴するとここに表示されます。",
+  "stats_rewatch_dist_empty": "作品を完走すると、ここに再視聴の統計が表示されます。",
+
+  "stats_streaming_card_title": "ストリーミングカバレッジ",
+  "stats_streaming_no_owned": "契約中の配信サービスを設定すると、どのサービスがバックログを最も多く解放するかがわかります。",
+  "stats_streaming_covered": "視聴中/視聴予定のバックログは、すでに契約中のサービスでカバーされています。",
+  "stats_streaming_top_line_singular": "{service} を追加すると、バックログからさらに{count}話が視聴可能になります。",
+  "stats_streaming_top_line_plural": "{service} を追加すると、バックログからさらに{count}話が視聴可能になります。",
+  "stats_streaming_cta": "詳細を見る →",
 
   "title_recommendations": "おすすめ — Anime Tracker",
   "rec_page_title": "あなたへのおすすめ",
@@ -337,6 +360,8 @@
   "rec_scored_against": "あなたの視聴済み・視聴中の履歴に基づいてスコアリング",
   "rec_filter_new_season": "今シーズン新着（{count}）",
   "rec_season_badge_title": "今シーズン新着 — シーズナル発見ダイジェスト（issue #13）",
+  "rec_score_unavailable_badge": "新着ピック",
+  "rec_score_unavailable_title": "スコアを算出するための視聴履歴がまだ十分ではありません — 代わりにシーズナル発見のおすすめとして表示しています",
   "rec_community_score_title": "AniListコミュニティスコア",
   "rec_match_genres": "ジャンル",
   "rec_match_tags": "タグ",
@@ -364,8 +389,11 @@
   "lib_sort_title": "タイトル",
   "lib_sort_progress": "進捗",
   "lib_sort_updated": "更新日",
+  "lib_sort_rewatches": "再視聴",
   "lib_all_seasons": "すべてのシーズン",
   "lib_all_stars": "すべて ★",
+  "lib_all_rewatches": "すべて",
+  "lib_rewatched_filter": "再視聴済み",
   "lib_add_tags_placeholder": "タグを追加（カンマ区切り）",
   "lib_clear_btn": "クリア",
   "lib_empty": "このリストにはエントリがありません。",
@@ -493,5 +521,28 @@
   "season_spring": "春",
   "season_summer": "夏",
   "season_fall": "秋",
-  "js_season_label": "{year}年{season}"
+  "js_season_label": "{year}年{season}",
+
+  "streaming_page_title": "ストリーミングカバレッジ",
+  "streaming_page_sub": "契約していない配信サービスのうち、どれが視聴中/視聴予定のバックログを最も多く解放するかを、残話数順に表示します。",
+  "streaming_disclosure": "AniListの配信リンクはコミュニティによって管理されており、実際の配信状況と異なる場合があります — 目安として利用し、保証はされません。",
+
+  "streaming_owned_title": "契約中のサービス",
+  "streaming_owned_empty": "契約中の配信サービスがまだ設定されていません。",
+  "streaming_owned_manage_link": "設定で管理 →",
+
+  "streaming_ranked_title": "追加した場合…",
+  "streaming_ranked_empty_no_owned": "パーソナライズされたカバレッジを見るには、設定で契約中の配信サービスを設定してください。",
+  "streaming_ranked_empty_covered": "視聴中/視聴予定のバックログは、すでに契約中のサービスでカバーされています — 新たに解放できるものはありません。",
+  "streaming_already_covered_label": "契約中のサービスで既にカバー済み",
+  "streaming_backlog_remaining_label": "視聴中/視聴予定の残話数合計",
+
+  "streaming_episodes_singular": "{count}話",
+  "streaming_episodes_plural": "{count}話",
+  "streaming_titles_singular": "{count}作品",
+  "streaming_titles_plural": "{count}作品",
+
+  "streaming_footprint_title": "過去の実績（完了 / 中断）",
+  "streaming_footprint_desc": "参考情報のみ — 上記のランキングには影響しません。",
+  "streaming_footprint_empty": "配信リンクのある完了済み・中断した作品はまだありません。"
 }

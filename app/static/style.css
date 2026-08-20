@@ -1791,6 +1791,56 @@ body.auth-page main {
   .wrapped-detail-grid { grid-template-columns: 1fr; }
 }
 
+/* ── Streaming Coverage (issue #182) ─────────────────────────────────────── */
+
+.streaming-page { max-width: 720px; margin: 0 auto; }
+
+.streaming-disclosure {
+  font-size: 0.78rem;
+  color: var(--t7);
+  margin: -0.5rem 0 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+}
+.streaming-disclosure-ts { color: var(--t6); }
+
+.streaming-owned-list { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.4rem; }
+
+.streaming-services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0 1rem;
+}
+.streaming-service-checkbox { font-size: 0.82rem; }
+.streaming-manage-link { margin-top: 0.75rem; }
+.streaming-manage-link a { font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+.streaming-manage-link a:hover { text-decoration: underline; }
+
+.streaming-rank-list { margin-top: 0.5rem; }
+.streaming-rank-label { font-weight: 600; color: var(--t2); }
+.streaming-rank-bar-fill { background: var(--accent); }
+.streaming-rank-value { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; }
+
+.streaming-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--t6);
+}
+.streaming-summary-item strong { color: var(--t3); }
+
+/* ── Stats: Streaming Coverage summary card (issue #182) ─────────────────── */
+
+.streaming-card-line { font-size: 0.85rem; color: var(--t3); margin: 0 0 0.75rem; }
+.streaming-card-cta { font-size: 0.82rem; color: var(--accent); text-decoration: none; }
+.streaming-card-cta:hover { text-decoration: underline; }
+
 /* ── Recommendations ─────────────────────────────────────────────────────── */
 
 .page-header { margin-bottom: 2rem; }
@@ -1828,6 +1878,12 @@ body.auth-page main {
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
   backdrop-filter: blur(4px);
+}
+
+/* Issue #178 — cold-start/uninformative score, no numeric match confidence to show.
+   Neutral gray rather than the "real score" blue so it doesn't read as a low score. */
+.rec-score-badge--neutral {
+  background: rgba(100, 116, 139, 0.9);
 }
 
 /* Seasonal discovery digest badge (issue #13) — "Fall 2026" pill, top-left so it
@@ -1975,8 +2031,15 @@ body.auth-page main {
 .btn-mark-watched:hover { background: var(--pill-success-border); color: var(--pill-success-text); }
 .btn-mark-watched:disabled { opacity: 0.5; cursor: default; }
 
-/* ── Add to planning (used outside rec cards) ───────────────────────────── */
-.btn-add-planning {
+/* ── Add to planning (used outside rec cards) / Start rewatch (issue #191) ──
+   Same visual treatment, but kept as separate class names on purpose -- script.js
+   binds a click handler to every .btn-add-planning element by class selector, so
+   giving the rewatch button that class too (purely for style reuse) would silently
+   double-fire both handlers and let the "add to planning" one (status: PLANNING)
+   race the rewatch one (status: REPEATING) and clobber it. Confirmed live during
+   #191's manual verification -- caught only by clicking the real button, not by
+   reading the diff. */
+.btn-add-planning, .btn-start-rewatch {
   background: var(--pill-info-bg);
   border: 1px solid var(--pill-info-border);
   border-radius: 6px;
@@ -1986,8 +2049,8 @@ body.auth-page main {
   padding: 0.3rem 0.75rem;
   transition: background 0.15s, color 0.15s;
 }
-.btn-add-planning:hover { background: var(--pill-info-border); color: var(--pill-info-text-strong); }
-.btn-add-planning:disabled { opacity: 0.5; cursor: default; }
+.btn-add-planning:hover, .btn-start-rewatch:hover { background: var(--pill-info-border); color: var(--pill-info-text-strong); }
+.btn-add-planning:disabled, .btn-start-rewatch:disabled { opacity: 0.5; cursor: default; }
 
 /* ── btn-anilist (used on notes page and library) ───────────────────────── */
 .btn-anilist {

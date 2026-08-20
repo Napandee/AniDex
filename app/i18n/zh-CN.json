@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "覆盖已保存。",
   "sync_cr_override_deleted": "覆盖已移除。",
 
+  "streaming_services_title": "你已拥有的流媒体服务",
+  "streaming_services_help": "用于计算流媒体覆盖页面上的边际价值排名 — 请勾选你当前已订阅的每项服务。",
+  "streaming_services_saved": "流媒体服务已保存。",
+  "streaming_services_save_btn": "保存服务",
+  "streaming_services_view_link": "查看流媒体覆盖 →",
+
   "sync_history_title": "同步历史",
   "sync_history_col_time": "时间",
   "sync_history_col_type": "类型",
@@ -263,6 +269,12 @@
   "queue_no_matches": "没有匹配项。",
   "queue_rec_match": "匹配度",
   "queue_resumed_at": "从第 {num} 集继续观看",
+  "queue_rewatch_heading": "值得重看",
+  "queue_rewatch_sub": "{months}+ 个月前看完的作品，按间隔时长从长到短排序。",
+  "queue_rewatch_empty": "暂时没有值得重看的作品。",
+  "queue_rewatch_finished_singular": "{months} 个月前看完",
+  "queue_rewatch_finished_plural": "{months} 个月前看完",
+  "queue_rewatch_start_btn": "↺ 重看",
 
   "notes_title": "笔记 — {title} — Anime Tracker",
   "notes_your_score": "你的评分",
@@ -329,6 +341,17 @@
   "stats_wrapped_binge_fmt": "{episodes} 集 ({start} – {end})",
   "stats_wrapped_score_shift": "与去年相比的评分分布",
   "stats_wrapped_no_prior_year": "暂无去年的数据 — 这是你在 AniDex 上第一个有完成记录的年份。",
+  "stats_chart_most_rewatched": "重刷最多",
+  "stats_chart_rewatch_dist": "重刷次数分布",
+  "stats_rewatch_list_empty": "暂无重刷记录——再次观看的作品会显示在这里。",
+  "stats_rewatch_dist_empty": "完成一部作品后即可在此查看重刷统计。",
+
+  "stats_streaming_card_title": "流媒体覆盖",
+  "stats_streaming_no_owned": "设置你已拥有的流媒体服务，即可查看哪项服务能解锁你积压剧集中最多的内容。",
+  "stats_streaming_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖。",
+  "stats_streaming_top_line_singular": "添加 {service} 将从你的积压剧集中解锁 {count} 集。",
+  "stats_streaming_top_line_plural": "添加 {service} 将从你的积压剧集中解锁 {count} 集。",
+  "stats_streaming_cta": "查看完整明细 →",
 
   "title_recommendations": "推荐 — Anime Tracker",
   "rec_page_title": "为你推荐",
@@ -337,6 +360,8 @@
   "rec_scored_against": "根据你的已完成与观看中历史评分",
   "rec_filter_new_season": "本季新增（{count}）",
   "rec_season_badge_title": "本季新增——季度发现摘要（issue #13）",
+  "rec_score_unavailable_badge": "新发现",
+  "rec_score_unavailable_title": "观看历史尚不足以计算评分——改为显示为季度发现推荐",
   "rec_community_score_title": "AniList 社区评分",
   "rec_match_genres": "类型",
   "rec_match_tags": "标签",
@@ -364,8 +389,11 @@
   "lib_sort_title": "标题",
   "lib_sort_progress": "进度",
   "lib_sort_updated": "更新时间",
+  "lib_sort_rewatches": "重看次数",
   "lib_all_seasons": "所有季度",
   "lib_all_stars": "全部 ★",
+  "lib_all_rewatches": "全部",
+  "lib_rewatched_filter": "已重看",
   "lib_add_tags_placeholder": "添加标签（逗号分隔）",
   "lib_clear_btn": "清除",
   "lib_empty": "此列表中没有条目。",
@@ -493,5 +521,28 @@
   "season_spring": "春季",
   "season_summer": "夏季",
   "season_fall": "秋季",
-  "js_season_label": "{year}年{season}"
+  "js_season_label": "{year}年{season}",
+
+  "streaming_page_title": "流媒体覆盖",
+  "streaming_page_sub": "按剩余集数排序，显示哪项你尚未拥有的流媒体服务能解锁最多的“观看中/计划中”积压剧集。",
+  "streaming_disclosure": "AniList 的流媒体链接由社区维护，可能滞后于实际可用情况 — 请仅作参考，而非保证。",
+
+  "streaming_owned_title": "你拥有的服务",
+  "streaming_owned_empty": "你还没有设置自己拥有哪些流媒体服务。",
+  "streaming_owned_manage_link": "前往设置管理 →",
+
+  "streaming_ranked_title": "如果你添加…",
+  "streaming_ranked_empty_no_owned": "请在设置中填写你已拥有的流媒体服务，以查看个性化的覆盖情况。",
+  "streaming_ranked_empty_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖 — 没有可解锁的内容了。",
+  "streaming_already_covered_label": "已被你拥有的服务覆盖",
+  "streaming_backlog_remaining_label": "“观看中/计划中”剩余集数总计",
+
+  "streaming_episodes_singular": "{count} 集",
+  "streaming_episodes_plural": "{count} 集",
+  "streaming_titles_singular": "{count} 部作品",
+  "streaming_titles_plural": "{count} 部作品",
+
+  "streaming_footprint_title": "历史足迹（已完成 / 已弃坑）",
+  "streaming_footprint_desc": "仅供参考 — 不影响上方的排名。",
+  "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。"
 }

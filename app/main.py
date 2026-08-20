@@ -12,7 +12,7 @@ import tempfile
 import threading
 import zipfile
 from collections import Counter
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
 import httpx
@@ -491,6 +491,32 @@ query ($mediaId: Int!) {
 
 VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
 STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
+
+# Issue #191 -- rewatch queue/reminder surface. Time-based trigger: a completed show
+# whose most recent completion (`library_entries.finish_date`) is at least this many
+# months in the past is surfaced as a rewatch candidate. `finish_date` is synced
+# straight from AniList's own `completedAt` (see sync_anilist.py), which AniList
+# updates every time an entry is (re)marked COMPLETED -- including finishing a
+# rewatch -- so this single field already captures "time since last watched all the
+# way through", original watch or rewatch alike, with no separate rewatch-recency
+# check needed. Fixed threshold rather than a per-user setting, deliberately, to
+# keep v1 simple (see issue #191 / #162's scoping notes); 6 months balances "long
+# enough to plausibly want a rewatch" against "the section isn't dominated by every
+# show ever finished".
+REWATCH_REMINDER_MONTHS = 6
+
+
+def rewatch_due(finish_date, months=REWATCH_REMINDER_MONTHS, today=None):
+    """Pure trigger-logic helper for issue #191 -- kept separate from the /queue
+    route so it's unit-testable without a database. Returns True when `finish_date`
+    (a date or None) is far enough in the past to surface a rewatch reminder.
+    30-day months, matching the "N months ago" display the UI derives from the same
+    field -- deliberately approximate, not calendar-exact, consistent with how
+    `months_since` is computed for display in the /queue route below."""
+    if finish_date is None:
+        return False
+    today = today or date.today()
+    return (today - finish_date).days >= months * 30
 
 STREAMING_SITES = {
     "Crunchyroll", "Netflix", "Hulu", "Amazon Prime Video", "HIDIVE",
@@ -1916,6 +1942,23 @@ SNOOZE_DAYS = 30  # v1 fixed duration for "not now" (issue #75) — no picker ye
                   # revisit only if a fixed 30 days turns out to not be enough.
 
 
+def _is_uninformative_reason(reason: dict | None) -> bool:
+    """Issue #178: a cold-start user (empty taste profile) gets every seasonal-digest
+    candidate scored at exactly 0 with a fully-null `reason` — real, not broken, but
+    rendering that as a literal "0%" badge with match reasoning reads as a bug. This
+    flags rows where `reason` carries no actual signal (no genre/tag/studio match, no
+    cross-user corroboration) so recommendations() can swap the numeric score badge for
+    honest framing instead. Read/render-time only — never touches score_and_store()'s
+    scoring math or what gets written to recommendation_scores."""
+    reason = reason or {}
+    return (
+        not reason.get("matched_genres")
+        and not reason.get("matched_tags")
+        and not reason.get("matched_studio")
+        and not reason.get("cross_user_count")
+    )
+
+
 def _fetch_visible_recommendations(user_id: int) -> list[dict]:
     """Recommendation rows visible to `user_id`: not permanently dismissed, and not
     currently snoozed (issue #75). Broken out of recommendations() so the exclusion
@@ -1999,6 +2042,10 @@ def recommendations(request: Request):
             seasonal_count += 1
         else:
             entry["season_label"] = None
+        # Issue #178 — cold-start rows (empty taste profile, no library history)
+        # carry a real but uninformative score=0/reason=null pair. Flag it here so
+        # the template can swap the "0%" score badge for honest framing instead.
+        entry["uninformative"] = _is_uninformative_reason(entry.get("reason"))
         entries.append(entry)
 
     return templates.TemplateResponse(
@@ -2455,6 +2502,48 @@ def queue(request: Request, status: str = None):
         entry["matched"] = matched
         entries.append(entry)
 
+    # Issue #191 -- rewatch reminder section, independent of the PLANNING/PAUSED
+    # tabs above (it's driven by COMPLETED entries, a different slice of the
+    # library entirely). See rewatch_due() for the trigger-logic decision.
+    completed_rows = db.fetchall(
+        """
+        SELECT
+            a.id,
+            a.title_english,
+            a.title_romaji,
+            a.cover_image_url,
+            a.format,
+            a.episodes,
+            a.genres,
+            a.external_links,
+            a.average_score,
+            le.repeat_count,
+            le.finish_date,
+            pn.personal_tags
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
+        WHERE le.status = 'COMPLETED' AND le.user_id = %s AND le.finish_date IS NOT NULL
+        """,
+        (user["id"],),
+    )
+
+    today = date.today()
+    rewatch_entries = []
+    for row in completed_rows:
+        if not rewatch_due(row["finish_date"], today=today):
+            continue
+        entry = dict(row)
+        entry["months_since"] = (today - row["finish_date"]).days // 30
+        entry["streaming_links"] = [
+            lnk for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        ]
+        rewatch_entries.append(entry)
+
+    # Most overdue (oldest finish_date) first.
+    rewatch_entries.sort(key=lambda e: e["finish_date"])
+
     return templates.TemplateResponse(
         request,
         "queue.html",
@@ -2462,6 +2551,138 @@ def queue(request: Request, status: str = None):
             "entries": entries,
             "queue_statuses": queue_statuses,
             "active_status": active_status,
+            "rewatch_entries": rewatch_entries,
+            "rewatch_reminder_months": REWATCH_REMINDER_MONTHS,
+        },
+    )
+
+
+# ── Streaming Coverage (issue #182) ─────────────────────────────────────────────
+# V2 marginal-value framing chosen over a raw per-service % (see issue #22's
+# brainstorm, idea 3): for each service the user does NOT already own, how many
+# additional Watching/Planning episodes-remaining would become newly covered by
+# adding it. An entry already reachable via a service the user owns doesn't count
+# toward any other service's marginal total — it's already unlocked, so adding a
+# second service that also carries it wouldn't unlock anything new.
+#
+# Weighted by list status (issue #22 idea 4, carried into #182 as a hard
+# requirement): only WATCHING/PLANNING drive the marginal-value ranking.
+# COMPLETED/DROPPED entries are tallied separately as "historical footprint" —
+# informational only (which services carried what you've already watched/dropped),
+# never blended into the marginal-value numbers.
+_STREAMING_ACTIVE_STATUSES = {"WATCHING", "PLANNING"}
+
+
+def _episodes_remaining(progress, total_episodes) -> int:
+    """total_episodes is null for anything AniList doesn't have a final episode
+    count for yet (RELEASING with an unannounced order, e.g. One Piece). Treat that
+    case as "at least 1 episode at stake" rather than 0 — an ongoing show with an
+    unknown remaining count still represents real marginal value, and silently
+    scoring it 0 would make every currently-airing un-owned-service title
+    invisible to this ranking."""
+    progress = progress or 0
+    if total_episodes:
+        return max(total_episodes - progress, 0)
+    return 1
+
+
+def _compute_streaming_coverage(user_id: int) -> dict:
+    """Shared by GET /streaming and GET /stats (small summary card) — see
+    _export_user_library for the same one-function/two-callers precedent (#90)."""
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+
+    rows = db.fetchall(
+        """
+        SELECT le.status, le.progress, a.episodes, a.external_links
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status IN ('WATCHING', 'PLANNING', 'COMPLETED', 'DROPPED')
+        """,
+        (user_id,),
+    )
+
+    marginal: dict[str, dict] = {}
+    footprint: dict[str, dict] = {}
+    total_backlog_remaining = 0
+    already_covered_remaining = 0
+
+    for row in rows:
+        sites = {
+            lnk.get("site") for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        }
+
+        if row["status"] in _STREAMING_ACTIVE_STATUSES:
+            remaining = _episodes_remaining(row["progress"], row["episodes"])
+            total_backlog_remaining += remaining
+            if sites & owned:
+                already_covered_remaining += remaining
+            else:
+                for site in sites - owned:
+                    bucket = marginal.setdefault(site, {"episodes": 0, "titles": 0})
+                    bucket["episodes"] += remaining
+                    bucket["titles"] += 1
+        else:
+            # Historical footprint (COMPLETED/DROPPED) — title counts only, on every
+            # site the title is available on (owned or not). Not weighted by
+            # episodes-remaining (a completed show has ~0 remaining, which would
+            # make this section trivially empty) and never merged into `marginal`.
+            for site in sites:
+                bucket = footprint.setdefault(site, {"titles": 0})
+                bucket["titles"] += 1
+
+    ranked = sorted(
+        ({"service": s, **v} for s, v in marginal.items()),
+        key=lambda x: (-x["episodes"], -x["titles"], x["service"]),
+    )
+    footprint_ranked = sorted(
+        ({"service": s, **v} for s, v in footprint.items()),
+        key=lambda x: (-x["titles"], x["service"]),
+    )
+
+    ts_row = db.fetchone(
+        """
+        SELECT MAX(a.last_synced_at) AS ts
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+        """,
+        (user_id,),
+    )
+    last_synced = ts_row["ts"].isoformat() if ts_row and ts_row["ts"] else None
+
+    return {
+        "owned": sorted(owned),
+        "ranked": ranked,
+        "footprint": footprint_ranked,
+        "total_backlog_remaining": total_backlog_remaining,
+        "already_covered_remaining": already_covered_remaining,
+        "last_synced": last_synced,
+    }
+
+
+@app.get("/streaming", response_class=HTMLResponse)
+def streaming_page(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    coverage = _compute_streaming_coverage(user["id"])
+
+    return templates.TemplateResponse(
+        request,
+        "streaming.html",
+        {
+            "owned_services": coverage["owned"],
+            "ranked": coverage["ranked"],
+            "footprint": coverage["footprint"],
+            "total_backlog_remaining": coverage["total_backlog_remaining"],
+            "already_covered_remaining": coverage["already_covered_remaining"],
+            "last_synced": coverage["last_synced"],
         },
     )
 
@@ -2497,6 +2718,14 @@ def settings_page(
     # session token into the rendered page.
     active_sessions = sessions.list_active_sessions(user["id"], request.session.get("sid"))
 
+    # Issue #182 — "services I own", edited from this tab, scored against the
+    # library on the separate /streaming page.
+    owned_streaming_services = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user["id"],)
+        )
+    }
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2523,6 +2752,8 @@ def settings_page(
             "twofa_error": twofa_error,
             "cr_overrides": cr_overrides,
             "active_sessions": active_sessions,
+            "all_streaming_services": sorted(STREAMING_SITES),
+            "owned_streaming_services": owned_streaming_services,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
@@ -2675,6 +2906,37 @@ def settings_delete_cr_override(request: Request, override_id: int):
         (override_id, user["id"]),
     )
     return RedirectResponse(url="/settings?saved=cr_override_deleted", status_code=303)
+
+
+@app.post("/settings/streaming-services")
+async def settings_update_streaming_services(request: Request):
+    """Issue #182 — replaces this user's full "services I own" set in one submit
+    (a checkbox group over STREAMING_SITES, not a one-at-a-time add/delete flow like
+    cr-overrides above) — read via request.form().getlist() rather than a typed
+    FastAPI Form(list[str]) parameter, since the field name repeats once per checked
+    box and this sidesteps any FastAPI/Starlette version-specific behavior around
+    that. Silently drops any submitted value not in STREAMING_SITES (a tampered
+    request, or a site since removed from the allowlist) rather than erroring —
+    same allowlist enforcement point as every other STREAMING_SITES filter in this
+    file, just on write instead of read."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    form = await request.form()
+    selected = sorted({s for s in form.getlist("service") if s in STREAMING_SITES})
+
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM user_streaming_services WHERE user_id = %s", (user["id"],))
+            for service in selected:
+                cur.execute(
+                    "INSERT INTO user_streaming_services (user_id, service) VALUES (%s, %s)",
+                    (user["id"], service),
+                )
+        conn.commit()
+
+    return RedirectResponse(url="/settings?saved=streaming_services", status_code=303)
 
 
 def _parse_csv_import_summary(stdout: str) -> dict | None:
@@ -3427,6 +3689,62 @@ def _year_comparison_extras(user_id: int, year: int) -> dict:
     }
 
 
+REWATCH_MOST_REWATCHED_LIMIT = 10
+
+
+def _compute_rewatch_stats(user_id: int) -> dict:
+    """Rewatch data for /stats (issue #189) — built entirely from the existing
+    library_entries.repeat_count column, already correctly populated from AniList's
+    `repeat` field by sync_anilist.py. Purely read-only presentation, no new data
+    collection and no schema changes.
+
+    Scoped to COMPLETED/REPEATING entries: repeat_count defaults to 0 for every
+    entry (including ones never actually watched, e.g. PLANNING), so counting the
+    full library would pad the "0 rewatches" bucket with titles that were never
+    finished even once. Restricting to titles that have actually been completed
+    at least once keeps "0 rewatches" meaning "finished once, never rewatched"
+    rather than "not watched at all". Unlike _compute_drop_patterns above, there's
+    no minimum-sample gate here — no privacy/small-sample-noise concern with a
+    user's own rewatch counts, so the section always renders (with an empty state
+    if they have no completed titles yet, or no rewatches yet)."""
+    dist_rows = db.fetchall(
+        """
+        SELECT
+            CASE WHEN le.repeat_count >= 3 THEN '3+' ELSE le.repeat_count::text END AS bucket,
+            COUNT(*) AS cnt
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status IN ('COMPLETED', 'REPEATING')
+        GROUP BY bucket
+        """,
+        (user_id,),
+    )
+    dist_by_bucket = {r["bucket"]: int(r["cnt"]) for r in dist_rows}
+    distribution = [
+        {"bucket": b, "count": dist_by_bucket.get(b, 0)} for b in ("0", "1", "2", "3+")
+    ]
+
+    most_rewatched_rows = db.fetchall(
+        """
+        SELECT COALESCE(a.title_english, a.title_romaji) AS title, le.repeat_count AS count
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.repeat_count > 0
+          AND le.status IN ('COMPLETED', 'REPEATING')
+        ORDER BY le.repeat_count DESC, title ASC
+        LIMIT %s
+        """,
+        (user_id, REWATCH_MOST_REWATCHED_LIMIT),
+    )
+
+    return {
+        "distribution": distribution,
+        "most_rewatched": [{"title": r["title"], "count": int(r["count"])} for r in most_rewatched_rows],
+        "total_completed_titles": sum(d["count"] for d in distribution),
+        "total_rewatched_titles": sum(d["count"] for d in distribution if d["bucket"] != "0"),
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -3537,6 +3855,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     watch_days = round(watch_minutes / 1440, 1)
     genres_out = [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows]
     drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
+    rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
 
     # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
     # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
@@ -3556,6 +3875,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
         "drop_patterns": drop_patterns,
+        "rewatch": rewatch_stats,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),
@@ -3575,7 +3895,24 @@ def stats(request: Request):
     user, denied = _require_user(request)
     if denied:
         return denied
-    return templates.TemplateResponse(request, "stats.html")
+
+    # Issue #182 — small summary card only (top un-owned-service pick), not the
+    # full ranked list — that stays on the dedicated /streaming page. Computed
+    # server-side here rather than via its own fetch()/API endpoint like the rest
+    # of this page's charts: it's a single top-of-list lookup, not worth a second
+    # round trip, and unlike the chart data below it doesn't need client-side
+    # filtering (year/season pickers etc).
+    coverage = _compute_streaming_coverage(user["id"])
+    streaming_top = coverage["ranked"][0] if coverage["ranked"] else None
+
+    return templates.TemplateResponse(
+        request,
+        "stats.html",
+        {
+            "streaming_top": streaming_top,
+            "streaming_owned_count": len(coverage["owned"]),
+        },
+    )
 
 
 def _export_user_library(user_id: int) -> list:
