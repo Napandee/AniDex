@@ -256,11 +256,12 @@
   "link_go_to_library": "Go to library tab",
 
   "title_search": "Search — Anime Tracker",
-  "search_placeholder": "Search all titles…",
+  "search_placeholder": "Search titles and notes…",
   "search_submit_btn": "Search",
   "search_result_singular": "{count} result for",
   "search_result_plural": "{count} results for",
   "search_empty_result": "No results for",
+  "search_matched_notes": "Matched in your notes",
 
   "title_upcoming": "Upcoming — Anime Tracker",
   "upcoming_page_title": "Upcoming Episodes",
