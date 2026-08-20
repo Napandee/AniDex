@@ -386,6 +386,15 @@
   "stats_taste_drift_quarterly": "quarterly",
   "stats_taste_drift_yearly": "yearly",
 
+  "stats_studio_loyalty_title": "Studio loyalty",
+  "stats_studio_loyalty_sub": "Average score vs. completed titles per studio, for studios with at least {min_titles} completed and rated titles — showing {shown} of {total} studios ({excluded_low_volume} below the title threshold, {excluded_unscored} not yet rated).",
+  "stats_studio_loyalty_ranked_heading": "Ranked by average score",
+  "stats_studio_loyalty_x_axis": "Completed titles",
+  "stats_studio_loyalty_y_axis": "Average score",
+  "stats_studio_loyalty_tooltip_avg": "avg",
+  "stats_studio_loyalty_tooltip_titles": "titles",
+  "stats_studio_loyalty_tooltip_rated": "rated",
+
   "stats_streaming_card_title": "Streaming Coverage",
   "stats_streaming_no_owned": "Set which streaming services you already own to see which one would unlock the most of your backlog.",
   "stats_streaming_covered": "Your Watching/Planning backlog is already covered by the services you own.",

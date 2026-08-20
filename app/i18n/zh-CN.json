@@ -386,6 +386,15 @@
   "stats_taste_drift_quarterly": "按季度",
   "stats_taste_drift_yearly": "按年度",
 
+  "stats_studio_loyalty_title": "制作公司忠诚度",
+  "stats_studio_loyalty_sub": "各制作公司的平均评分与完成作品数对比，仅包含已完成且已评分作品数至少 {min_titles} 部的制作公司 — 共{total}家制作公司中显示{shown}家（{excluded_low_volume}家未达作品数门槛，{excluded_unscored}家尚未评分）。",
+  "stats_studio_loyalty_ranked_heading": "按平均评分排序",
+  "stats_studio_loyalty_x_axis": "已完成作品数",
+  "stats_studio_loyalty_y_axis": "平均评分",
+  "stats_studio_loyalty_tooltip_avg": "平均分",
+  "stats_studio_loyalty_tooltip_titles": "部作品",
+  "stats_studio_loyalty_tooltip_rated": "已评分",
+
   "stats_streaming_card_title": "流媒体覆盖",
   "stats_streaming_no_owned": "设置你已拥有的流媒体服务，即可查看哪项服务能解锁你积压剧集中最多的内容。",
   "stats_streaming_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖。",

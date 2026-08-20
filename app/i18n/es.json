@@ -386,6 +386,15 @@
   "stats_taste_drift_quarterly": "trimestralmente",
   "stats_taste_drift_yearly": "anualmente",
 
+  "stats_studio_loyalty_title": "Fidelidad por estudio",
+  "stats_studio_loyalty_sub": "Puntuación media frente a títulos completados por estudio, para estudios con al menos {min_titles} títulos completados y puntuados — mostrando {shown} de {total} estudios ({excluded_low_volume} por debajo del umbral de títulos, {excluded_unscored} aún sin puntuar).",
+  "stats_studio_loyalty_ranked_heading": "Clasificados por puntuación media",
+  "stats_studio_loyalty_x_axis": "Títulos completados",
+  "stats_studio_loyalty_y_axis": "Puntuación media",
+  "stats_studio_loyalty_tooltip_avg": "media",
+  "stats_studio_loyalty_tooltip_titles": "títulos",
+  "stats_studio_loyalty_tooltip_rated": "puntuados",
+
   "stats_streaming_card_title": "Cobertura de Streaming",
   "stats_streaming_no_owned": "Indica qué servicios de streaming ya tienes para ver cuál desbloquearía más de tu lista pendiente.",
   "stats_streaming_covered": "Tu lista de Viendo/Planeando ya está cubierta por los servicios que tienes.",
