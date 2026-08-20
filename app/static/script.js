@@ -505,9 +505,10 @@ function applyLibraryFilters() {
     const seasonOk  = !activeSeason || seasonKey === activeSeason;
     const scoreOk   = card.dataset.scoreHidden !== 'true';
     const rewatchOk = card.dataset.rewatchHidden !== 'true';
+    const favoriteOk = card.dataset.favoriteHidden !== 'true';
     const cardTags  = (card.dataset.tags || '').toLowerCase().split(',').map(t => t.trim());
     const tagOk     = !activeTag || cardTags.includes(activeTag);
-    const show    = textOk && fmtOk && seasonOk && scoreOk && rewatchOk && tagOk;
+    const show    = textOk && fmtOk && seasonOk && scoreOk && rewatchOk && favoriteOk && tagOk;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
@@ -574,6 +575,44 @@ document.querySelectorAll('.star-rating').forEach(widget => {
         setFilled(prevScore);
       }
     });
+  });
+});
+
+// ── Favorite toggle (heart) ─────────────────────────────────────────────────────
+// Letterboxd's heart-vs-star pattern (#219) — a nullable-boolean "liked" signal
+// independent of the star-rating widget above. Shared handler for both the
+// library card (.card) and notes.html's anime-detail page — the latter has no
+// .card ancestor, so the card-specific dataset/filter updates below are guarded
+// with a null check rather than assuming one exists.
+document.querySelectorAll('.favorite-toggle').forEach(btn => {
+  const animeId = btn.dataset.animeId;
+  let current = btn.dataset.favorite === 'true';
+
+  function render(fav) {
+    btn.classList.toggle('active', fav);
+    btn.setAttribute('aria-pressed', String(fav));
+    btn.dataset.favorite = String(fav);
+    const card = btn.closest('.card');
+    if (card) card.dataset.favorite = String(fav);
+  }
+
+  btn.addEventListener('click', async () => {
+    const newVal = !current;
+    const prev = current;
+    current = newVal;
+    render(newVal);
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/favorite`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({favorite: newVal}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+      if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
+    } catch {
+      current = prev;
+      render(prev);
+    }
   });
 });
 

@@ -25,6 +25,16 @@
           <span class="notes-score-label">{{ t('notes_anilist_average') }}</span>
           {% if anime.average_score %}{{ anime.average_score }}%{% else %}<span class="notes-score-empty">{{ t('notes_no_average') }}</span>{% endif %}
         </span>
+        <span class="notes-score">
+          <span class="notes-score-label">{{ t('notes_favorite_label') }}</span>
+          <button type="button"
+                  class="favorite-toggle{% if notes and notes.favorite %} active{% endif %}"
+                  data-anime-id="{{ anime.id }}"
+                  data-favorite="{{ 'true' if (notes and notes.favorite) else 'false' }}"
+                  title="{{ t('lib_favorite_toggle_title') }}"
+                  aria-label="{{ t('lib_favorite_toggle_title') }}"
+                  aria-pressed="{{ 'true' if (notes and notes.favorite) else 'false' }}">♥</button>
+        </span>
       </div>
       <a href="https://anilist.co/anime/{{ (notes.anilist_id_override if notes and notes.anilist_id_override else anime.id) }}"
          target="_blank" rel="noopener" class="btn-anilist" style="margin-top:0.5rem;display:inline-block">{{ t('notes_anilist_link') }}</a>

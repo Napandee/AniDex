@@ -312,6 +312,12 @@ CREATE TABLE personal_notes (
     notes                TEXT,                          -- general freeform notes
     watch_next_priority  INTEGER,                        -- manual override, lower = higher priority; null = no override
     anilist_id_override  INTEGER,                        -- if set, use this AniList ID for links and AniList-push ops
+    -- Letterboxd's heart-vs-star pattern (issue #219): a personal favorite signal
+    -- independent of library_entries.score, so "3-star guilty pleasure I loved" and
+    -- "5-star technically great but not for me" can both be expressed. Nullable —
+    -- NULL and FALSE both read as "not favorited"; never pushed to AniList (this
+    -- app's only AniList mutations are rating/status/progress, see CLAUDE.md).
+    favorite             BOOLEAN,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, anime_id)
