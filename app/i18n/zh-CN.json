@@ -456,6 +456,7 @@
   "admin_tab_invites": "邀请",
   "admin_tab_instance_config": "实例配置",
   "admin_tab_operability": "运维",
+  "admin_tab_data_quality": "数据质量",
 
   "admin_users_title": "用户",
   "admin_users_desc": "登录活动以及每个用户最近一次的同步运行情况。",
@@ -525,6 +526,39 @@
   "admin_backup_title": "备份",
   "admin_backup_desc": "将每个用户的库数据（与每个用户自己在设置 → 数据导出中使用的查询相同）导出为一个 zip 文件，每个用户一个 JSON 文件。仅手动触发——不进行计划任务。",
   "admin_export_all_btn": "导出所有用户",
+
+  "admin_col_updated": "更新时间",
+
+  "admin_dq_provider_sync_title": "各服务商最近一次成功同步",
+  "admin_dq_provider_sync_desc": "根据 sync_log 计算出的、各服务商步骤成功的最近一次完整同步 — 没有额外的按服务商跟踪。",
+  "admin_dq_not_configured": "未配置",
+  "admin_dq_last_attempt_failed": "上次尝试失败 — {when}",
+
+  "admin_dq_failure_history_title": "同步失败率与历史",
+  "admin_dq_failure_history_desc": "过去 {days} 天内每个用户的完整同步运行记录。",
+  "admin_dq_col_total_runs": "总运行次数",
+  "admin_dq_col_failed_runs": "失败次数",
+  "admin_dq_col_failure_rate": "失败率",
+  "admin_dq_recent_failures_label": "近期失败",
+  "admin_dq_no_failures": "无",
+  "admin_dq_no_runs": "过去 {days} 天内没有同步运行记录。",
+
+  "admin_dq_orphaned_notes_title": "孤立的个人笔记",
+  "admin_dq_orphaned_notes_desc": "没有匹配 library_entries 行的 personal_notes 行 — 正常情况下不应出现；通常意味着库条目已被删除，但对应笔记未一并清理。",
+  "admin_dq_col_user": "用户",
+  "admin_dq_col_anime": "动画",
+  "admin_dq_no_orphaned_notes": "未发现孤立的个人笔记。",
+
+  "admin_dq_stale_recs_title": "过时的推荐",
+  "admin_dq_stale_recs_desc": "已被加入用户库但未被清除的 recommendation_scores 候选项 — 这与字面上的“没有匹配库条目”检查正好相反，因为按照设计，每个推荐候选项生成时对应的动画都尚未在库中（参见 run_recommender.py）。这些正是本该被清除的记录。",
+  "admin_dq_col_library_status": "库状态",
+  "admin_dq_col_computed": "计算时间",
+  "admin_dq_no_stale_recs": "未发现过时的推荐。",
+
+  "admin_dq_drift_title": "漂移候选项",
+  "admin_dq_drift_desc": "状态为“观看中/重看中”的库条目中，其 AniList 端最后更新时间超过 {days} 天未变化 — 可能表示某个服务商的同步已悄然停止获取该番剧的进度。",
+  "admin_dq_col_last_updated": "AniList 最后更新",
+  "admin_dq_no_drift": "未发现漂移候选项。",
 
   "js_bulk_selected": "已选 {n} 项",
   "js_select": "选择",

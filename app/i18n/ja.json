@@ -456,6 +456,7 @@
   "admin_tab_invites": "招待",
   "admin_tab_instance_config": "インスタンス設定",
   "admin_tab_operability": "運用状況",
+  "admin_tab_data_quality": "データ品質",
 
   "admin_users_title": "ユーザー",
   "admin_users_desc": "ログイン活動と各ユーザーの直近の同期実行状況。",
@@ -525,6 +526,39 @@
   "admin_backup_title": "バックアップ",
   "admin_backup_desc": "全ユーザーのライブラリデータ（各ユーザー自身の設定 → データエクスポートと同じクエリ）を1つのzipとして、ユーザーごとに1つのJSONファイルでエクスポートします。手動トリガーのみ — スケジュール実行はされません。",
   "admin_export_all_btn": "全ユーザーをエクスポート",
+
+  "admin_col_updated": "更新日時",
+
+  "admin_dq_provider_sync_title": "プロバイダーごとの最終成功同期",
+  "admin_dq_provider_sync_desc": "sync_log から算出した、各プロバイダーのステップが成功した直近のフル同期実行。プロバイダーごとの個別トラッキングは追加していません。",
+  "admin_dq_not_configured": "未設定",
+  "admin_dq_last_attempt_failed": "直近の試行が失敗 — {when}",
+
+  "admin_dq_failure_history_title": "同期失敗率と履歴",
+  "admin_dq_failure_history_desc": "過去{days}日間のユーザーごとのフル同期実行。",
+  "admin_dq_col_total_runs": "総実行数",
+  "admin_dq_col_failed_runs": "失敗数",
+  "admin_dq_col_failure_rate": "失敗率",
+  "admin_dq_recent_failures_label": "直近の失敗",
+  "admin_dq_no_failures": "なし",
+  "admin_dq_no_runs": "過去{days}日間に同期の実行はありません。",
+
+  "admin_dq_orphaned_notes_title": "孤立した個人メモ",
+  "admin_dq_orphaned_notes_desc": "対応する library_entries 行が存在しない personal_notes 行 — 通常はあり得ないはずですが、ライブラリエントリが削除されてもメモが一緒に片付けられなかった場合に発生します。",
+  "admin_dq_col_user": "ユーザー",
+  "admin_dq_col_anime": "アニメ",
+  "admin_dq_no_orphaned_notes": "孤立した個人メモは見つかりませんでした。",
+
+  "admin_dq_stale_recs_title": "古くなったおすすめ",
+  "admin_dq_stale_recs_desc": "すでにユーザーのライブラリに追加されたのに削除されていない recommendation_scores の候補です。文字どおりの「一致する library_entries がない」チェックとは逆の意味です。おすすめ候補は設計上、まだライブラリにないアニメに対してのみ生成されるためです（run_recommender.py 参照）。これらは本来削除されているべきだったものです。",
+  "admin_dq_col_library_status": "ライブラリの状態",
+  "admin_dq_col_computed": "算出日時",
+  "admin_dq_no_stale_recs": "古くなったおすすめは見つかりませんでした。",
+
+  "admin_dq_drift_title": "ドリフト候補",
+  "admin_dq_drift_desc": "視聴中/再視聴中のライブラリエントリのうち、AniList側の最終更新タイムスタンプが{days}日以上更新されていないもの — プロバイダーの同期がその作品を検知しなくなった可能性を示します。",
+  "admin_dq_col_last_updated": "AniList最終更新",
+  "admin_dq_no_drift": "ドリフト候補は見つかりませんでした。",
 
   "js_bulk_selected": "{n}件選択中",
   "js_select": "選択",
