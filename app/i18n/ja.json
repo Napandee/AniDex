@@ -492,6 +492,9 @@
   "lib_ep_note_delete_btn": "削除",
   "lib_ep_note_modal_title": "第{ep}話 — {title}",
   "lib_ep_note_prompt_text": "第{ep}話のメモを追加しますか?",
+  "lib_ep_note_label": "メモ",
+  "lib_ep_note_quote_label": "お気に入りの台詞 / 印象に残ったシーン",
+  "lib_ep_note_quote_placeholder": "例: 心に残ったセリフやシーン…",
 
   "title_admin": "管理 — Anime Tracker",
   "admin_page_title": "管理",

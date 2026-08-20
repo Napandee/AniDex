@@ -492,6 +492,9 @@
   "lib_ep_note_delete_btn": "हटाएं",
   "lib_ep_note_modal_title": "एपिसोड {ep} — {title}",
   "lib_ep_note_prompt_text": "एपिसोड {ep} के लिए नोट जोड़ें?",
+  "lib_ep_note_label": "नोट",
+  "lib_ep_note_quote_label": "पसंदीदा उद्धरण / यादगार दृश्य",
+  "lib_ep_note_quote_placeholder": "जैसे, कोई संवाद पंक्ति या याद रह गया कोई दृश्य…",
 
   "title_admin": "एडमिन — Anime Tracker",
   "admin_page_title": "एडमिन",

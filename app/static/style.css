@@ -672,6 +672,17 @@ main {
 }
 .ep-note-hint[hidden] { display: none; }
 
+/* Labels above each of the two fields (freeform note, favorite-quote /
+   memorable-scene text — issue #220) so they read as distinct inputs rather
+   than one field bleeding into the next. */
+.ep-note-label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--t6);
+  margin: 0.5rem 0 0.2rem;
+}
+.ep-note-label:first-of-type { margin-top: 0; }
+
 .ep-note-field {
   background: var(--bg-inset);
   border: 1px solid var(--border);
