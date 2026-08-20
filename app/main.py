@@ -34,7 +34,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n, sessions
+from app import db, config, privacy, outbox, i18n, sessions, credential_check
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -1616,25 +1616,214 @@ def _log_admin_action(admin_user_id: int, action: str, target_user_id: int | Non
     )
 
 
+GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
+
+
+def _build_version() -> str | None:
+    """The short git SHA baked into the image via the Dockerfile's GIT_SHA build
+    arg (see Dockerfile), if any. Shared by the admin-only Operability tab
+    (_instance_health below) and the user-facing "currently deployed commit" link
+    on every user's own Settings page (issue #204) — one place reads GIT_SHA,
+    not two."""
+    git_sha = os.environ.get("GIT_SHA", "").strip()
+    return git_sha[:12] if git_sha else None
+
+
 def _instance_health() -> dict:
     """Read-only instance-health data for the admin panel (issue #86): running
     build version (if baked into the image via the Dockerfile's GIT_SHA build
     arg — see Dockerfile), Postgres database size, and row counts for a few key
     tables. Display only — deliberately no write/control actions here."""
-    git_sha = os.environ.get("GIT_SHA", "").strip()
-
     db_size_row = db.fetchone(
         "SELECT pg_size_pretty(pg_database_size(current_database())) AS size"
     )
 
     return {
-        "build_version": git_sha[:12] if git_sha else None,
+        "build_version": _build_version(),
         "db_size": db_size_row["size"] if db_size_row else None,
         "row_counts": {
             "library_entries": db.fetchone("SELECT COUNT(*) AS n FROM library_entries")["n"],
             "anime": db.fetchone("SELECT COUNT(*) AS n FROM anime")["n"],
             "users": db.fetchone("SELECT COUNT(*) AS n FROM users")["n"],
         },
+    }
+
+
+# Issue #202 — drift-detection threshold: how many days a WATCHING/REPEATING
+# library_entries row's anilist_updated_at can go without moving before it's flagged
+# as a drift candidate. The default full sync runs daily (see the Sync schedule
+# section of the Instance Config tab), so 30 days is roughly 30x that cadence —
+# comfortably longer than "hasn't watched anything for a couple of weeks" (which is
+# completely normal and shouldn't page anyone), but still tight enough to surface a
+# genuine multi-week sync gap well before a user notices and files a bug (the #159
+# CR season-mismatch bug — progress silently written to the wrong AniList entry
+# while the real one sat stalled — is exactly the shape of problem this is meant to
+# catch). Deliberately a single fixed threshold, not a per-user adaptive one — see
+# #202's scope note against over-engineering v1.
+DATA_QUALITY_DRIFT_DAYS = 30
+
+# Only actively-progressing statuses are checked for drift. COMPLETED/DROPPED/PAUSED/
+# PLANNING rows aren't expected to see anilist_updated_at move regardless of sync
+# health, so including them would just be noise.
+_DRIFT_STATUSES = ("WATCHING", "REPEATING")
+
+# sync_log.steps (full_sync/force_full_resync only — see schema.sql's column comment)
+# records one entry per provider; these are the provider names that appear there.
+_SYNC_PROVIDERS = ("crunchyroll", "netflix", "anilist_postgres")
+
+# Lookback window for the failure-rate/history section — long enough to show a real
+# pattern, short enough that a since-fixed problem ages out of view on its own.
+DATA_QUALITY_FAILURE_WINDOW_DAYS = 30
+
+
+def _data_quality_signals() -> dict:
+    """Read-only aggregation for issue #202's admin Data Quality tab. Every section
+    here is computed from tables/columns that already exist — sync_log,
+    library_entries, recommendation_scores, personal_notes — nothing here is new
+    tracking infrastructure, and nothing here writes anything back (display only,
+    same contract as _instance_health() above).
+
+    Four sections, matching #202's acceptance criteria:
+
+    1. last_sync_by_provider: per (user_id, provider), the most recent full_sync/
+       force_full_resync run at which that provider's step succeeded
+       (`last_ok_at`), plus the status/timestamp of the single most recent attempt
+       regardless of outcome (`last_attempt_at`/`last_attempt_status`). Providers
+       are read out of sync_log.steps rather than tracked in any new column — a
+       provider a user has never configured (no CR/Netflix credentials) only ever
+       shows up with a 'skipped' status, never 'ok'/'error', and the template
+       renders that as "not configured".
+
+    2. failure_history: for each user, sync_log rows of type full_sync/
+       force_full_resync from the last DATA_QUALITY_FAILURE_WINDOW_DAYS days,
+       aggregated into a total/failed run count and failure rate, plus the
+       individual failed runs (most recent 10) for drill-down.
+
+    3. orphaned_personal_notes: personal_notes rows with no matching
+       library_entries row for the same (user_id, anime_id). This should be
+       impossible in steady state — personal_notes is meant to always describe an
+       anime that's actually in the user's library, see every join against it
+       elsewhere in this file (e.g. the /notes and /library routes) — but nothing
+       at the DB level enforces it, so a library_entries row deleted out from
+       under it (an AniList-side removal synced locally) would leave exactly this
+       kind of orphan behind.
+
+    4. stale_recommendations: recommendation_scores rows (dismissed = false) for
+       an anime_id that NOW has a matching library_entries row. This is
+       deliberately the inverse of "no matching library_entries row" — unlike
+       personal_notes, recommendation_scores candidates are only ever generated
+       for anime NOT already in the user's library (see
+       scripts/run_recommender.py's fetch_recommendation_candidates/
+       get_library_ids, which explicitly excludes every anime_id already in
+       library_entries, any status, before scoring). So "no matching
+       library_entries row" is true of essentially every recommendation_scores
+       row by design and would be pure noise here — the actually-orphaned case is
+       the opposite: a candidate the user has since acted on (added to their
+       library) that score_and_store() never removes, since it only upserts on
+       each weekly re-run rather than reacting to library changes in between.
+       See the PR for #202 for this explicit interpretation note.
+    """
+    # ── 1. Last successful sync per provider ────────────────────────────────────
+    sync_step_rows = db.fetchall(
+        """
+        SELECT user_id, run_at, steps
+        FROM sync_log
+        WHERE type IN ('full_sync', 'force_full_resync') AND steps IS NOT NULL
+        ORDER BY user_id, run_at DESC
+        """
+    )
+    last_sync_by_provider: dict[int, dict[str, dict]] = {}
+    for row in sync_step_rows:
+        per_provider = last_sync_by_provider.setdefault(row["user_id"], {})
+        for step in row["steps"] or []:
+            provider = step.get("service")
+            if provider not in _SYNC_PROVIDERS:
+                continue
+            entry = per_provider.setdefault(provider, {})
+            # Rows arrive newest-first per user, so the first one seen for a given
+            # provider is that provider's most recent attempt.
+            if "last_attempt_at" not in entry:
+                entry["last_attempt_at"] = row["run_at"]
+                entry["last_attempt_status"] = step.get("status")
+            if step.get("status") == "ok" and "last_ok_at" not in entry:
+                entry["last_ok_at"] = row["run_at"]
+
+    # ── 2. Recent sync failure rate/history ─────────────────────────────────────
+    window_start = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_FAILURE_WINDOW_DAYS)
+    recent_runs = db.fetchall(
+        """
+        SELECT user_id, run_at, status, error_msg, type
+        FROM sync_log
+        WHERE type IN ('full_sync', 'force_full_resync') AND run_at >= %s
+        ORDER BY user_id, run_at DESC
+        """,
+        (window_start,),
+    )
+    failure_history: dict[int, dict] = {}
+    for row in recent_runs:
+        agg = failure_history.setdefault(row["user_id"], {"total": 0, "failed": 0, "failures": []})
+        agg["total"] += 1
+        if row["status"] == "error":
+            agg["failed"] += 1
+            agg["failures"].append(row)
+    for agg in failure_history.values():
+        agg["failure_rate"] = (agg["failed"] / agg["total"]) if agg["total"] else 0.0
+        agg["failures"] = agg["failures"][:10]
+
+    # ── 3. Orphaned personal_notes ───────────────────────────────────────────────
+    orphaned_personal_notes = db.fetchall(
+        """
+        SELECT pn.id, pn.user_id, u.email AS user_email, pn.anime_id,
+               a.title_romaji, pn.updated_at
+        FROM personal_notes pn
+        LEFT JOIN library_entries le ON le.user_id = pn.user_id AND le.anime_id = pn.anime_id
+        LEFT JOIN users u ON u.id = pn.user_id
+        LEFT JOIN anime a ON a.id = pn.anime_id
+        WHERE le.id IS NULL
+        ORDER BY pn.updated_at DESC
+        """
+    )
+
+    # ── 4. Stale recommendation_scores (see docstring for why this is inverted) ─
+    stale_recommendations = db.fetchall(
+        """
+        SELECT rs.id, rs.user_id, u.email AS user_email, rs.anime_id,
+               a.title_romaji, rs.computed_at, le.status AS library_status
+        FROM recommendation_scores rs
+        JOIN library_entries le ON le.user_id = rs.user_id AND le.anime_id = rs.anime_id
+        LEFT JOIN users u ON u.id = rs.user_id
+        LEFT JOIN anime a ON a.id = rs.anime_id
+        WHERE rs.dismissed = false
+        ORDER BY rs.computed_at DESC
+        """
+    )
+
+    # ── Drift candidates ─────────────────────────────────────────────────────────
+    drift_threshold = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_DRIFT_DAYS)
+    drift_candidates = db.fetchall(
+        """
+        SELECT le.id, le.user_id, u.email AS user_email, le.anime_id,
+               a.title_romaji, le.status, le.anilist_updated_at, le.synced_at
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN users u ON u.id = le.user_id
+        WHERE le.status = ANY(%s)
+          AND le.anilist_updated_at IS NOT NULL
+          AND le.anilist_updated_at < %s
+        ORDER BY le.anilist_updated_at ASC
+        """,
+        (list(_DRIFT_STATUSES), drift_threshold),
+    )
+
+    return {
+        "providers": _SYNC_PROVIDERS,
+        "last_sync_by_provider": last_sync_by_provider,
+        "failure_history": failure_history,
+        "failure_window_days": DATA_QUALITY_FAILURE_WINDOW_DAYS,
+        "orphaned_personal_notes": orphaned_personal_notes,
+        "stale_recommendations": stale_recommendations,
+        "drift_candidates": drift_candidates,
+        "drift_threshold_days": DATA_QUALITY_DRIFT_DAYS,
     }
 
 
@@ -1645,6 +1834,7 @@ def admin_page(request: Request, saved: str = ""):
         return denied
 
     instance_health = _instance_health()
+    data_quality = _data_quality_signals()
 
     # Sync schedule (issue #96) — moved here from Settings since it's instance-wide,
     # not per-user. Same instance_config fields _apply_schedule() reads.
@@ -1722,6 +1912,7 @@ def admin_page(request: Request, saved: str = ""):
         "admin.html",
         {
             "instance_health": instance_health,
+            "data_quality": data_quality,
             "invites": invites,
             "users": users_view,
             "google_status": _provider_status("google"),
@@ -2687,6 +2878,26 @@ def streaming_page(request: Request):
     )
 
 
+def _credential_connection_status(configured: bool, service: str, user_id: int) -> str:
+    """One of 'not_connected' / 'connected' / 'needs_attention' for a Settings →
+    Credentials status pill (#188). Mirrors /api/sync/status's own lookup of the
+    latest full_sync/force_full_resync row's steps[] — a credential that's set
+    but whose most recent sync step for that service came back 'error' is shown
+    as needing attention rather than a false-positive "Connected"."""
+    if not configured:
+        return "not_connected"
+    row = db.fetchone(
+        "SELECT steps FROM sync_log WHERE user_id = %s AND type IN ('full_sync', 'force_full_resync') "
+        "ORDER BY run_at DESC LIMIT 1",
+        (user_id,),
+    )
+    steps = (row["steps"] if row else None) or []
+    step = next((s for s in steps if s.get("service") == service), None)
+    if step and step.get("status") == "error":
+        return "needs_attention"
+    return "connected"
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request, link_error: str = "", password_error: str = "", saved: str = "",
@@ -2726,15 +2937,43 @@ def settings_page(
         )
     }
 
+    # Issue #188 — status pill per credential card. "not_connected" purely from
+    # whether the value is set; "needs_attention" layers in the most recent
+    # full_sync/force_full_resync run's per-service step, the same steps[] the
+    # sync-history table and step chips already read — so a card doesn't keep
+    # showing "Connected" after a credential has visibly started failing sync.
+    cred_status = {
+        "anilist": _credential_connection_status(
+            bool(current.get("anilist_username")) and bool(current.get("anilist_token")),
+            "anilist_postgres", user["id"],
+        ),
+        "crunchyroll": _credential_connection_status(
+            bool(current.get("cr_etp_rt")), "crunchyroll", user["id"],
+        ),
+        "netflix": _credential_connection_status(
+            bool(current.get("netflix_cookie_header")) and bool(current.get("netflix_profile_guid")),
+            "netflix", user["id"],
+        ),
+    }
+
+    # Issue #204 — same GIT_SHA value the admin-only Operability tab already
+    # surfaces as plain text (_instance_health's build_version), reused here as a
+    # real link to the commit on GitHub so every user, not just admins, can see
+    # exactly what's deployed.
+    build_version = _build_version()
+
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "settings": current,
+            "cred_status": cred_status,
             "timezones": COMMON_TIMEZONES,
             "languages": i18n.SUPPORTED_LOCALES,
             "language_labels": i18n.LOCALE_LABELS,
             "last_synced": last_synced,
+            "build_version": build_version,
+            "build_commit_url": f"{GITHUB_REPO_URL}/commit/{build_version}" if build_version else None,
             "account": {
                 "has_password": bool(user["password_hash"]),
                 "google_linked": bool(user["google_id"]),
@@ -2825,12 +3064,46 @@ def settings_save_display(
     return RedirectResponse(url="/settings?saved=display", status_code=303)
 
 
-@app.post("/settings/credentials")
-def settings_save_credentials(
+@app.post("/settings/credentials/anilist")
+def settings_save_credentials_anilist(
     request: Request,
     anilist_username: str = Form(""),
     anilist_token: str = Form(""),
+):
+    """Issue #188 — one endpoint per credential card, so each card's own Save
+    action only ever touches that card's fields. A single shared endpoint (the
+    pre-#188 shape) would need every field resubmitted on every save, or a
+    now-absent field would read as "user cleared this" and silently wipe out
+    a different card's already-saved value."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    config.set_value(user["id"], "anilist_username", anilist_username.strip())
+    if anilist_token.strip():
+        config.set_value(user["id"], "anilist_token", anilist_token.strip())
+
+    return RedirectResponse(url="/settings?saved=credentials_anilist", status_code=303)
+
+
+@app.post("/settings/credentials/crunchyroll")
+def settings_save_credentials_crunchyroll(
+    request: Request,
     cr_etp_rt: str = Form(""),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    if cr_etp_rt.strip():
+        config.set_value(user["id"], "cr_etp_rt", cr_etp_rt.strip())
+
+    return RedirectResponse(url="/settings?saved=credentials_crunchyroll", status_code=303)
+
+
+@app.post("/settings/credentials/netflix")
+def settings_save_credentials_netflix(
+    request: Request,
     netflix_cookie_header: str = Form(""),
     netflix_profile_guid: str = Form(""),
 ):
@@ -2838,19 +3111,47 @@ def settings_save_credentials(
     if denied:
         return denied
 
-    config.set_value(user["id"], "anilist_username", anilist_username.strip())
-
-    # Only overwrite token if a non-empty value was submitted (empty = leave unchanged)
-    if anilist_token.strip():
-        config.set_value(user["id"], "anilist_token", anilist_token.strip())
-    if cr_etp_rt.strip():
-        config.set_value(user["id"], "cr_etp_rt", cr_etp_rt.strip())
     if netflix_cookie_header.strip():
         config.set_value(user["id"], "netflix_cookie_header", netflix_cookie_header.strip())
     if netflix_profile_guid.strip():
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
-    return RedirectResponse(url="/settings?saved=credentials", status_code=303)
+    return RedirectResponse(url="/settings?saved=credentials_netflix", status_code=303)
+
+
+@app.post("/api/credentials/test/{provider}")
+async def test_credential(provider: str, request: Request):
+    """Issue #188 — "Test connection" per credential card. Validates whatever
+    value is currently in the form (falling back to the already-saved one for
+    any field left blank, matching the Save endpoints' own "blank = keep
+    existing" convention) against the live service, using the exact same
+    login/auth code the real sync scripts run — see app/credential_check.py's
+    module docstring for why. Read-only: never writes anything, whether the
+    check passes or fails."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    if provider not in ("anilist", "crunchyroll", "netflix"):
+        return JSONResponse({"ok": False, "message": "Unknown provider."}, status_code=404)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    def _field(name: str) -> str:
+        submitted = (payload.get(name) or "").strip()
+        return submitted or config.get(user["id"], name)
+
+    if provider == "anilist":
+        ok, detail = credential_check.check_anilist(_field("anilist_username"), _field("anilist_token"))
+    elif provider == "crunchyroll":
+        ok, detail = credential_check.check_crunchyroll(_field("cr_etp_rt"))
+    else:
+        ok, detail = credential_check.check_netflix(_field("netflix_cookie_header"), _field("netflix_profile_guid"))
+
+    return JSONResponse({"ok": ok, "detail": detail})
 
 
 @app.post("/settings/cr-overrides")
@@ -3558,6 +3859,246 @@ def _compute_drop_patterns(user_id: int) -> dict | None:
     }
 
 
+def _yearly_completion_rows(user_id: int, year: int) -> list[dict]:
+    """Every library_entries row whose finish_date falls in the given calendar year
+    (Jan 1 - Dec 31), joined with the anime row. This is the single source query
+    every year-comparison aggregation below is built from — issue #193 (extending
+    #wrapup-card, issue #78) and the "living page" issue it's held for (#196) are
+    both expected to call this directly rather than re-deriving their own row set,
+    so the two surfaces can't silently disagree on what counts as "in year Y".
+
+    Time-boundary choice: `finish_date`, per #163/#193's own decision — it's a live,
+    AniList-synced field (confirmed by #77/#176), not a one-off backfill. It's also
+    the *only* per-entry timestamp this schema has finer than "whenever the row was
+    last synced" — there is no per-episode watched-at log (see schema.sql), so
+    anything finer-grained than "which calendar year did this entry finish in" isn't
+    reconstructable from existing data without a new sync job, which is out of scope
+    per the issue.
+
+    Deliberately independent of #wrapup-card's own `a.season_year`/`a.season` filter:
+    that filter is release-year (when a show originally aired), a different concept
+    from completion-year (when *you* finished it) that this function scopes by. Both
+    happen to be driven by the same selected `year` value from the card's one
+    dropdown per the issue's explicit instruction not to add a second selector.
+    """
+    return db.fetchall(
+        """
+        SELECT le.anime_id, le.finish_date, le.progress, le.score,
+               a.title_english, a.title_romaji, a.genres, a.duration
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+          AND le.finish_date IS NOT NULL
+          AND le.finish_date >= %s AND le.finish_date <= %s
+        """,
+        (user_id, f"{year}-01-01", f"{year}-12-31"),
+    )
+
+
+def _biggest_binge_week(rows: list[dict]) -> dict | None:
+    """Reusable aggregation #1 (issue #193): most episodes credited to any 7-day
+    window within the year, using each entry's finish_date as a proxy for "when
+    those episodes were watched" (see _yearly_completion_rows' docstring for why
+    finish_date is the best available signal — there's no per-episode watched-at
+    timestamp in this schema). Takes the row set _yearly_completion_rows returns —
+    call that first, this is a pure function over its output.
+
+    Standard sliding-window-max argument: the maximizing window's left edge can
+    always be shifted right until it lands on an actual data point without
+    decreasing the window's sum, so it's sufficient (and exact) to only test
+    windows anchored at each distinct finish_date present, rather than every
+    possible day in the year.
+    """
+    by_date: dict = {}
+    for r in rows:
+        d = r["finish_date"]
+        by_date[d] = by_date.get(d, 0) + (r["progress"] or 0)
+    if not by_date:
+        return None
+    dates = sorted(by_date)
+    best_start, best_end, best_sum = None, None, -1
+    for start in dates:
+        end = start + timedelta(days=6)
+        total = sum(cnt for d, cnt in by_date.items() if start <= d <= end)
+        if total > best_sum:
+            best_start, best_end, best_sum = start, end, total
+    return {"start": best_start.isoformat(), "end": best_end.isoformat(), "episodes": best_sum}
+
+
+def _status_distribution_snapshot(rows: list[dict]) -> dict:
+    """Reusable aggregation #2 (issue #193): the "Planning -> Completed
+    status-distribution snapshot" for the year, per #163's own phrasing of what
+    that means — the count of entries that finished (reached a finish_date) in this
+    calendar year. Takes _yearly_completion_rows' output.
+
+    There's no status-transition history table (library_entries.status is
+    current-state-only, see schema.sql), so the count of entries whose finish_date
+    lands in this year is the closest reconstructable proxy for "how many moved
+    from Planning to Completed that year" — every completion necessarily passed
+    through a pre-completion state first. Returned as a dict (not a bare int) so
+    this can grow a real multi-status breakdown later without changing callers'
+    shape.
+    """
+    return {"planning_to_completed": len(rows)}
+
+
+def _score_distribution(rows: list[dict]) -> list[dict]:
+    """Low-level helper: {score: count} histogram (1-5) over any row set with a
+    `score` field. Used by _score_distribution_shift below for both the selected
+    year and the prior year, so the two sides are computed identically."""
+    counts: Counter = Counter()
+    for r in rows:
+        if r["score"] is not None and r["score"] > 0:
+            counts[int(r["score"])] += 1
+    return [{"score": s, "count": c} for s, c in sorted(counts.items())]
+
+
+def _score_distribution_shift(this_year_rows: list[dict], prior_year_rows: list[dict]) -> dict:
+    """Reusable aggregation #3 (issue #193): year-over-year score-distribution
+    shift. Takes two _yearly_completion_rows() results — the selected year's and
+    year-1's — so the caller controls exactly which two years are compared.
+
+    Graceful empty-prior-year handling (a user's first year on AniDex, or simply a
+    year with no scored completions the year before): `has_prior_year_data` is
+    False and `prior_year` is an empty list rather than an error, so callers render
+    an empty state instead of a broken chart.
+    """
+    prior_year_scores = _score_distribution(prior_year_rows)
+    return {
+        "this_year": _score_distribution(this_year_rows),
+        "prior_year": prior_year_scores,
+        "has_prior_year_data": bool(prior_year_scores),
+    }
+
+
+def _year_comparison_extras(user_id: int, year: int) -> dict:
+    """Orchestrates the three reusable aggregations above for #wrapup-card's
+    year-comparison extension (issue #193). `year` is whatever calendar year the
+    card's existing selector currently has picked; comparison is always against
+    year-1. Kept as a thin wrapper — #196 (the living "year so far" page, held
+    until this ships) can call this directly for the current year, or call the
+    three aggregation functions individually if it needs different inputs.
+    """
+    rows = _yearly_completion_rows(user_id, year)
+    prior_rows = _yearly_completion_rows(user_id, year - 1)
+    return {
+        "year": year,
+        "prior_year": year - 1,
+        "binge_week": _biggest_binge_week(rows),
+        "status_snapshot": _status_distribution_snapshot(rows),
+        "score_shift": _score_distribution_shift(rows, prior_rows),
+    }
+
+
+# ── Recommend -> outcome hit-rate + dismiss-reason distribution (issue #185) ────
+#
+# The recommender (scripts/run_recommender.py) has never had a feedback loop:
+# recommendation_scores.dismissed/dismiss_reason is captured but never aggregated,
+# and there's no positive signal linking "we recommended X" to "the user later
+# added/rated X". This is pure instrumentation — it reads recommendation_scores
+# and library_entries, computes a metric, and never writes to either table. It
+# does not touch build_taste_profile(), candidate discovery, or scoring weights;
+# see #146/#185 for the full audit and scope decision this is spun out of.
+#
+# "Hit" definition (documented here since it's the number every future
+# recommender-quality change gets judged against — see #185's acceptance
+# criteria):
+#   A non-dismissed recommendation is a HIT if the same (user, anime) shows up in
+#   library_entries with status WATCHING/PLANNING/COMPLETED, and the best
+#   available evidence of *when* that happened — COALESCE(anilist_updated_at,
+#   synced_at); AniList's own last-modified timestamp when we have it (most
+#   accurate — set by sync_anilist.py's upsert whenever a pull-sync detects a
+#   real change), falling back to our local synced_at (guaranteed non-null,
+#   defaults on INSERT, and per issue #46's IS DISTINCT FROM guard only ever
+#   advances on a genuine change, not a routine sync heartbeat) — falls within
+#   HIT_WINDOW_DAYS of recommendation_scores.first_shown_at (issue #185/migration
+#   017; NOT computed_at, which gets bumped to now() on every recommender rerun
+#   and would make a long-lived recommendation look "just recommended" forever).
+#   Optionally weighted by whether that entry was later rated >= 4 stars
+#   (hits_rated_highly), per the issue's "optionally weighted by whether it was
+#   later rated highly" suggestion.
+#
+#   Dismissed recommendations are excluded from both the numerator and the
+#   denominator — the user explicitly said "not for me", so whatever they did
+#   with the anime afterward (including a later independent add) isn't
+#   attributable to the recommendation having worked, and must not inflate the
+#   hit rate.
+#
+# HIT_WINDOW_DAYS = 30: the recommender's built-in scheduler reruns weekly, so a
+# 30-day window covers roughly four rescoring cycles of visibility on the
+# /recommendations page before an eventual add stops being reasonably
+# attributable to having been recommended at all.
+HIT_WINDOW_DAYS = 30
+
+
+def _compute_recommendation_outcomes(user_id: int) -> dict | None:
+    """Recommend->outcome hit-rate + dismiss-reason distribution for `user_id`.
+    Returns None if this user has no recommendation_scores rows at all yet (never
+    had a recommender run), so the stats-page card can stay hidden rather than
+    show an empty/zero panel for a brand-new instance."""
+    row = db.fetchone(
+        """
+        SELECT
+            COUNT(*)                          AS total,
+            COUNT(*) FILTER (WHERE NOT rs.dismissed) AS eligible,
+            COUNT(*) FILTER (WHERE rs.dismissed)     AS dismissed_total,
+            COUNT(*) FILTER (
+                WHERE NOT rs.dismissed
+                  AND le.status IN ('WATCHING', 'PLANNING', 'COMPLETED')
+                  AND COALESCE(le.anilist_updated_at, le.synced_at) >= rs.first_shown_at
+                  AND COALESCE(le.anilist_updated_at, le.synced_at)
+                      <= rs.first_shown_at + make_interval(days => %s)
+            ) AS hits,
+            COUNT(*) FILTER (
+                WHERE NOT rs.dismissed
+                  AND le.status IN ('WATCHING', 'PLANNING', 'COMPLETED')
+                  AND COALESCE(le.anilist_updated_at, le.synced_at) >= rs.first_shown_at
+                  AND COALESCE(le.anilist_updated_at, le.synced_at)
+                      <= rs.first_shown_at + make_interval(days => %s)
+                  AND le.score >= 4
+            ) AS hits_rated_highly
+        FROM recommendation_scores rs
+        LEFT JOIN library_entries le
+               ON le.user_id = rs.user_id AND le.anime_id = rs.anime_id
+        WHERE rs.user_id = %s
+        """,
+        (HIT_WINDOW_DAYS, HIT_WINDOW_DAYS, user_id),
+    )
+    total = int(row["total"])
+    if total == 0:
+        return None
+
+    eligible = int(row["eligible"])
+    hits = int(row["hits"])
+
+    # NOTE: the output alias here deliberately isn't "reason" — recommendation_scores
+    # already has a real `reason` column (the JSONB genre/tag/studio match reason from
+    # scoring), which takes precedence over an output alias of the same name in a
+    # GROUP BY clause. Naming it "reason" here silently grouped by that unrelated JSONB
+    # column instead of dismiss_reason, collapsing every dismissed row into one bucket.
+    dismiss_rows = db.fetchall(
+        """
+        SELECT COALESCE(NULLIF(btrim(dismiss_reason), ''), 'no_reason') AS dismiss_bucket,
+               COUNT(*) AS cnt
+        FROM recommendation_scores
+        WHERE user_id = %s AND dismissed = true
+        GROUP BY dismiss_bucket
+        ORDER BY cnt DESC
+        """,
+        (user_id,),
+    )
+
+    return {
+        "window_days": HIT_WINDOW_DAYS,
+        "eligible": eligible,
+        "hits": hits,
+        "hit_rate": round(hits / eligible * 100) if eligible else None,
+        "hits_rated_highly": int(row["hits_rated_highly"]),
+        "dismissed_total": int(row["dismissed_total"]),
+        "dismiss_reasons": [{"reason": r["dismiss_bucket"], "count": int(r["cnt"])} for r in dismiss_rows],
+    }
+
+
 REWATCH_MOST_REWATCHED_LIMIT = 10
 
 
@@ -3724,7 +4265,19 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     watch_days = round(watch_minutes / 1440, 1)
     genres_out = [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows]
     drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
+    recommendation_outcomes = _compute_recommendation_outcomes(user["id"])  # issue #185, None if never recommended anything
     rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
+
+    # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
+    # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
+    # selector value rather than adding a second one; only computed when that
+    # selector actually has a year picked (same gate `year is not None` already
+    # uses above for the release-year filter). Deliberately completion-year
+    # (finish_date) scoped, not release-year (a.season_year) scoped, per #163's
+    # time-boundary decision — see _yearly_completion_rows' docstring for why the
+    # two concepts differ despite sharing this one input value.
+    wrap_extras = _year_comparison_extras(user["id"], year) if year is not None else None
+
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
@@ -3733,6 +4286,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
         "drop_patterns": drop_patterns,
+        "recommendation_outcomes": recommendation_outcomes,
         "rewatch": rewatch_stats,
         "totals": {
             "completed": completed,
@@ -3744,6 +4298,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
             "mean_score": float(totals["mean_score"]) if totals["mean_score"] else None,
         },
         "wrap_filter": {"year": year, "season": applied_season},
+        "wrap_extras": wrap_extras,
     })
 
 

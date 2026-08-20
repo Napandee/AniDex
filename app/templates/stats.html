@@ -20,7 +20,14 @@
   <!-- "Year in anime" wrap-up (issue #78) — combines existing /api/stats aggregates
        (watch time, top genre, completion count) into a single filterable summary,
        rather than a new data pipeline. Self-contained block: its own fetch, its own
-       DOM, no changes to the charts/headlines above. -->
+       DOM, no changes to the charts/headlines above.
+
+       Extended by issue #193 with three year-comparison aggregations (biggest binge
+       week, Planning->Completed status snapshot, year-over-year score-distribution
+       shift) — see wrap_extras in /api/stats. Those three are completion-year
+       (finish_date) scoped rather than the release-year (a.season_year) scope the
+       four stats above use, but deliberately reuse this same #wrapup-year selector
+       rather than adding a second one, per #193's explicit instruction. -->
   <div class="chart-card chart-card--wide wrapup-card" id="wrapup-card">
     <div class="wrapup-header">
       <h2 class="chart-title">Year in anime</h2>
@@ -42,6 +49,27 @@
       <div class="wrapup-stat"><span class="stat-num" id="wrapup-rate">—</span><span class="stat-label">Completion rate</span></div>
     </div>
     <p class="wrapup-empty" id="wrapup-empty" hidden>Nothing completed for this year yet.</p>
+
+    <!-- Issue #193's three additions. Shown/hidden together with wrapup-body above
+         (same emptiness gate), but as their own sub-block since they're scoped by
+         finish_date, not a.season_year/a.season like the four stats above. -->
+    <div class="wrapup-extras" id="wrapup-extras">
+      <div class="wrapped-detail-grid">
+        <div class="wrapped-detail">
+          <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_binge') }}</h3>
+          <p id="wrapup-binge">—</p>
+        </div>
+        <div class="wrapped-detail">
+          <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_planning_completed') }}</h3>
+          <p id="wrapup-planning-completed">—</p>
+        </div>
+        <div class="wrapped-detail wrapped-detail--wide">
+          <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_score_shift') }}</h3>
+          <canvas id="chart-wrapup-shift" height="120"></canvas>
+          <p class="wrapup-empty" id="wrapup-no-prior-year" hidden>{{ t('stats_wrapped_no_prior_year') }}</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   {# Issue #182 — small summary card only, linking out to the dedicated /streaming
@@ -141,6 +169,30 @@
         <div class="drop-patterns-col">
           <h3 class="drop-patterns-subhead">Common tags on dropped shows</h3>
           <div id="drop-tag-list" class="drop-tag-cloud"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recommendation performance panel (issue #185) — hidden entirely unless
+       /api/stats returns a non-null recommendation_outcomes, i.e. the user has at
+       least one recommendation_scores row (the recommender has run for them at
+       least once). See app/main.py's _compute_recommendation_outcomes for the
+       "hit" definition and the HIT_WINDOW_DAYS reasoning. -->
+  <div class="stats-grid" id="rec-outcomes-section" hidden>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">{{ t('stats_rec_card_title') }}</h2>
+      <p class="drop-patterns-sub" id="rec-outcomes-sub"></p>
+      <div class="stats-headlines" id="rec-outcomes-headlines">
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-hitrate">—</span><span class="stat-label">{{ t('stats_rec_hit_rate_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-hits">—</span><span class="stat-label">{{ t('stats_rec_hits_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-eligible">—</span><span class="stat-label">{{ t('stats_rec_eligible_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-dismissed">—</span><span class="stat-label">{{ t('stats_rec_dismissed_label') }}</span></div>
+      </div>
+      <div class="drop-patterns-body">
+        <div class="drop-patterns-col">
+          <h3 class="drop-patterns-subhead">{{ t('stats_rec_dismiss_heading') }}</h3>
+          <div id="rec-dismiss-reason-list" class="drop-rate-list"></div>
         </div>
       </div>
     </div>
@@ -329,6 +381,8 @@
     yearSelect.innerHTML = sortedYears.map(y => `<option value="${y}">${y}</option>`).join('');
     yearSelect.value = String(sortedYears[0]);
 
+    let shiftChart = null;
+
     async function loadWrapup() {
       const y = yearSelect.value;
       const s = seasonSelect.value;
@@ -337,9 +391,11 @@
       const wrap = await fetch(`/api/stats?${params}`).then(r => r.json());
 
       const body = document.getElementById('wrapup-body');
+      const extras = document.getElementById('wrapup-extras');
       const empty = document.getElementById('wrapup-empty');
       if (!wrap.totals.completed) {
         body.hidden = true;
+        extras.hidden = true;
         empty.hidden = false;
         return;
       }
@@ -353,6 +409,60 @@
       document.getElementById('wrapup-genre').textContent = wrap.top_genre || '—';
       document.getElementById('wrapup-rate').textContent =
         wrap.totals.completion_rate != null ? `${wrap.totals.completion_rate}%` : '—';
+
+      // Issue #193's three additions — completion-year (finish_date) scoped, driven
+      // by this same `y` selector value. Absent (null) if the backend somehow didn't
+      // compute it (shouldn't happen once `year` is set, but guard anyway).
+      const extrasData = wrap.wrap_extras;
+      if (!extrasData) {
+        extras.hidden = true;
+        return;
+      }
+      extras.hidden = false;
+
+      document.getElementById('wrapup-binge').textContent = extrasData.binge_week
+        ? t('stats_wrapped_binge_fmt', {
+            episodes: extrasData.binge_week.episodes,
+            start: extrasData.binge_week.start,
+            end: extrasData.binge_week.end,
+          })
+        : '—';
+
+      document.getElementById('wrapup-planning-completed').textContent =
+        extrasData.status_snapshot.planning_to_completed;
+
+      // Year-over-year score-distribution shift (grouped bar), graceful empty state
+      // when the user has no prior-year data yet (e.g. their first year on AniDex).
+      const shift = extrasData.score_shift;
+      const noPrior = document.getElementById('wrapup-no-prior-year');
+      const canvas = document.getElementById('chart-wrapup-shift');
+      if (shiftChart) { shiftChart.destroy(); shiftChart = null; }
+      if (!shift.has_prior_year_data) {
+        canvas.hidden = true;
+        noPrior.hidden = false;
+      } else {
+        canvas.hidden = false;
+        noPrior.hidden = true;
+        const thisYearMap = Object.fromEntries(shift.this_year.map(d => [d.score, d.count]));
+        const priorYearMap = Object.fromEntries(shift.prior_year.map(d => [d.score, d.count]));
+        shiftChart = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: [1, 2, 3, 4, 5].map(s => STAR_LABELS[s]),
+            datasets: [
+              { label: String(extrasData.prior_year), data: [1, 2, 3, 4, 5].map(s => priorYearMap[s] || 0), backgroundColor: '#64748b', borderRadius: 4 },
+              { label: String(extrasData.year), data: [1, 2, 3, 4, 5].map(s => thisYearMap[s] || 0), backgroundColor: '#2563eb', borderRadius: 4 },
+            ],
+          },
+          options: {
+            ...baseOpts,
+            scales: {
+              x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+              y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+            },
+          },
+        });
+      }
     }
 
     yearSelect.addEventListener('change', loadWrapup);
@@ -461,6 +571,58 @@
       tagList.innerHTML = '<p class="drop-patterns-empty">No personal tags on dropped shows yet.</p>';
     }
   })(data.drop_patterns);
+
+  // Recommendation performance panel (issue #185) — hidden entirely unless
+  // data.recommendation_outcomes is non-null (the recommender has run at least
+  // once for this user). "Hit" definition and window lives in app/main.py's
+  // _compute_recommendation_outcomes docstring, not duplicated here.
+  //
+  // Dismiss-reason labels reuse the same rec_dismiss_* i18n keys the
+  // /recommendations dismiss chips already use, mapped from the raw
+  // dismiss_reason DB value — 'no_reason' (dismissed via the no-JSON-body
+  // fallback in POST /recommendations/{id}/dismiss, or a blank string) is the
+  // one bucket that isn't a chip value, so it gets its own stats-only key.
+  (function renderRecommendationOutcomes(ro) {
+    const section = document.getElementById('rec-outcomes-section');
+    if (!ro) return; // no recommendation_scores rows for this user yet
+    section.hidden = false;
+
+    document.getElementById('rec-hl-hitrate').textContent =
+      ro.hit_rate != null ? `${ro.hit_rate}%` : '—';
+    document.getElementById('rec-hl-hits').textContent = ro.hits;
+    document.getElementById('rec-hl-eligible').textContent = ro.eligible;
+    document.getElementById('rec-hl-dismissed').textContent = ro.dismissed_total;
+
+    document.getElementById('rec-outcomes-sub').textContent = t('stats_rec_sub', {
+      hits: ro.hits, eligible: ro.eligible, window: ro.window_days,
+    });
+
+    const REASON_KEYS = {
+      not_interested: 'rec_dismiss_not_interested',
+      already_watched: 'rec_dismiss_seen_it',
+      wrong_genre: 'rec_dismiss_wrong_genre',
+      too_long: 'rec_dismiss_too_long',
+      no_reason: 'stats_rec_no_reason',
+    };
+    const reasonList = document.getElementById('rec-dismiss-reason-list');
+    if (ro.dismiss_reasons.length) {
+      const maxCount = Math.max(...ro.dismiss_reasons.map(r => r.count));
+      ro.dismiss_reasons.forEach(r => {
+        const label = t(REASON_KEYS[r.reason] || r.reason);
+        const pct = maxCount ? Math.round((r.count / maxCount) * 100) : 0;
+        const row = document.createElement('div');
+        row.className = 'drop-rate-row';
+        row.innerHTML = `
+          <span class="drop-rate-label">${label}</span>
+          <span class="drop-rate-bar-track"><span class="drop-rate-bar-fill" style="width:${pct}%"></span></span>
+          <span class="drop-rate-pct">${r.count}</span>
+        `;
+        reasonList.appendChild(row);
+      });
+    } else {
+      reasonList.innerHTML = `<p class="drop-patterns-empty">${t('stats_rec_dismiss_empty')}</p>`;
+    }
+  })(data.recommendation_outcomes);
 }());
 </script>
 {% endblock %}

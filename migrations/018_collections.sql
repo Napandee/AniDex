@@ -1,6 +1,11 @@
 -- Issue #200 — Collections: named saved filter combinations over the library view's
 -- existing tag/status/score/format/season/rewatch/sort controls.
 --
+-- Renumbered 017 -> 018 (same pattern as the earlier 016->017 renumber this
+-- session): #199 (issue #185, recommend-outcome tracking) merged
+-- 017_recommendation_first_shown_at.sql to main first, while this branch was
+-- still cut from an older main — collided on 017 once rebased/merged forward.
+--
 -- Additive only: one new small per-user table. No changes to any existing table,
 -- and no new per-anime relationship — `filters` is a whitelisted snapshot of the
 -- library view's own client-side filter/sort state (see app/main.py's
