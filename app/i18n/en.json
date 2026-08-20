@@ -263,6 +263,12 @@
   "queue_no_matches": "No matches.",
   "queue_rec_match": "match",
   "queue_resumed_at": "resumed at ep {num}",
+  "queue_rewatch_heading": "Due for a Rewatch",
+  "queue_rewatch_sub": "Completed shows finished {months}+ months ago, sorted by longest since.",
+  "queue_rewatch_empty": "Nothing due for a rewatch yet.",
+  "queue_rewatch_finished_singular": "Finished {months} month ago",
+  "queue_rewatch_finished_plural": "Finished {months} months ago",
+  "queue_rewatch_start_btn": "↺ Rewatch",
 
   "notes_title": "Notes — {title} — Anime Tracker",
   "notes_your_score": "Your score",

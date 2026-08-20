@@ -263,6 +263,12 @@
   "queue_no_matches": "該当なし。",
   "queue_rec_match": "マッチ度",
   "queue_resumed_at": "第{num}話から再開",
+  "queue_rewatch_heading": "再視聴の候補",
+  "queue_rewatch_sub": "{months}ヶ月以上前に完走した作品を、経過が長い順に表示しています。",
+  "queue_rewatch_empty": "現在、再視聴候補はありません。",
+  "queue_rewatch_finished_singular": "{months}ヶ月前に完走",
+  "queue_rewatch_finished_plural": "{months}ヶ月前に完走",
+  "queue_rewatch_start_btn": "↺ 再視聴する",
 
   "notes_title": "ノート — {title} — Anime Tracker",
   "notes_your_score": "自分の評価",

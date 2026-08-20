@@ -263,6 +263,12 @@
   "queue_no_matches": "没有匹配项。",
   "queue_rec_match": "匹配度",
   "queue_resumed_at": "从第 {num} 集继续观看",
+  "queue_rewatch_heading": "值得重看",
+  "queue_rewatch_sub": "{months}+ 个月前看完的作品，按间隔时长从长到短排序。",
+  "queue_rewatch_empty": "暂时没有值得重看的作品。",
+  "queue_rewatch_finished_singular": "{months} 个月前看完",
+  "queue_rewatch_finished_plural": "{months} 个月前看完",
+  "queue_rewatch_start_btn": "↺ 重看",
 
   "notes_title": "笔记 — {title} — Anime Tracker",
   "notes_your_score": "你的评分",

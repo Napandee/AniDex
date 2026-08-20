@@ -127,6 +127,81 @@
 {% endif %}
 <p class="empty" id="queue-no-filter-results" style="display:none">{{ t('queue_no_matches') }}</p>
 
+{# ── Rewatch reminders (issue #191) ─────────────────────────────────────── #}
+<div class="extra-section" style="margin-top:2rem;">
+  <h2 class="extra-heading">{{ t('queue_rewatch_heading') }}</h2>
+  <p class="page-sub" style="margin-top:-0.5rem;">
+    {{ t('queue_rewatch_sub', months=rewatch_reminder_months) }}
+  </p>
+
+  {% if rewatch_entries %}
+  <ul class="queue-list" id="rewatch-list">
+    {% for e in rewatch_entries %}
+    <li class="queue-item" data-anime-id="{{ e.id }}">
+      {% if e.cover_image_url %}
+      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover">
+      {% endif %}
+
+      <div class="queue-body">
+        <div class="queue-top">
+          <div>
+            <div class="queue-title">{{ e.title_english or e.title_romaji }}</div>
+            {% if e.title_english and e.title_english != e.title_romaji %}
+            <div class="title-sub">{{ e.title_romaji }}</div>
+            {% endif %}
+          </div>
+          <div class="queue-badges">
+            {% if e.repeat_count %}
+            <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
+            {% endif %}
+            <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+          </div>
+        </div>
+
+        <div class="queue-meta">
+          {% if e.format %}<span class="format">{{ e.format }}</span>{% endif %}
+          {% if e.episodes %}<span class="format">{{ e.episodes }} ep</span>{% endif %}
+          {% if e.average_score %}<span class="score">★ {{ e.average_score }}</span>{% endif %}
+          <span class="progress">{% if e.months_since == 1 %}{{ t('queue_rewatch_finished_singular', months=e.months_since) }}{% else %}{{ t('queue_rewatch_finished_plural', months=e.months_since) }}{% endif %}</span>
+        </div>
+
+        {% if e.genres %}
+        <div class="genres" style="padding-top:0.3rem">
+          {% for g in e.genres[:4] %}
+          <span class="genre">{{ g }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if e.personal_tags %}
+        <div class="genres" style="padding-top:0.2rem">
+          {% for tag in e.personal_tags %}
+          <span class="personal-tag">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if e.streaming_links %}
+        <div class="stream-links" style="padding-top:0.3rem">
+          {% for lnk in e.streaming_links[:4] %}
+          <a href="{{ lnk.url }}" target="_blank" rel="noopener" class="stream-link">{{ lnk.site }}</a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="queue-actions">
+        <button class="btn-start-rewatch" data-anime-id="{{ e.id }}">{{ t('queue_rewatch_start_btn') }}</button>
+        <a href="/anime/{{ e.id }}/notes?back=COMPLETED" class="queue-notes-link" title="{{ t('queue_notes_edit_title') }}">✏</a>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">{{ t('queue_rewatch_empty') }}</p>
+  {% endif %}
+</div>
+
 <script>
 (function () {
   const list = document.getElementById('queue-list');
