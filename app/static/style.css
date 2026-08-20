@@ -440,6 +440,32 @@ main {
   gap: 0.25rem;
 }
 
+.collections-group { display: flex; align-items: center; gap: 0.25rem; }
+.collections-select {
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--t2);
+  font-size: 0.8rem;
+  cursor: pointer;
+  outline: none;
+  max-width: 160px;
+}
+.collections-select:focus { border-color: var(--accent); }
+
+.collections-manage-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; }
+.collections-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.collections-manage-row:first-child { border-top: none; }
+.collections-manage-name-input { flex: 1 1 auto; min-width: 0; }
+.collections-manage-row .filter-btn { flex: 0 0 auto; }
+
 .season-filter-group { display: flex; align-items: center; }
 .season-filter-select {
   padding: 0.3rem 0.6rem;

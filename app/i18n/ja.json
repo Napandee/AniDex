@@ -612,5 +612,20 @@
 
   "streaming_footprint_title": "過去の実績（完了 / 中断）",
   "streaming_footprint_desc": "参考情報のみ — 上記のランキングには影響しません。",
-  "streaming_footprint_empty": "配信リンクのある完了済み・中断した作品はまだありません。"
+  "streaming_footprint_empty": "配信リンクのある完了済み・中断した作品はまだありません。",
+
+  "lib_collections_placeholder": "コレクション…",
+  "lib_collections_save_btn": "フィルターを保存",
+  "lib_collections_manage_btn": "管理",
+  "lib_collections_save_modal_title": "コレクションとして保存",
+  "lib_collections_name_label": "名前",
+  "lib_collections_name_placeholder": "例：短めの癒し系作品",
+  "lib_collections_manage_modal_title": "コレクションを管理",
+  "lib_collections_empty": "保存されたコレクションはまだありません。",
+  "lib_collections_rename_btn": "名前を変更",
+  "lib_collections_delete_btn": "削除",
+  "js_collection_save_failed": "コレクションの保存に失敗しました。",
+  "js_collection_rename_failed": "名前の変更に失敗しました。",
+  "js_collection_delete_failed": "削除に失敗しました。",
+  "js_collection_delete_confirm": "「{name}」コレクションを削除しますか？元に戻せません。"
 }

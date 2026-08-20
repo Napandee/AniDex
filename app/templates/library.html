@@ -14,6 +14,14 @@
   <input id="library-search" class="library-search" type="search" placeholder="{{ t('lib_search_placeholder') }}" autocomplete="off">
 
   <div class="toolbar-right">
+    <div class="collections-group">
+      <select id="collections-select" class="collections-select">
+        <option value="">{{ t('lib_collections_placeholder') }}</option>
+      </select>
+      <button id="collections-save-btn" type="button" class="filter-btn" title="{{ t('lib_collections_save_btn') }}">{{ t('lib_collections_save_btn') }}</button>
+      <button id="collections-manage-btn" type="button" class="filter-btn" title="{{ t('lib_collections_manage_btn') }}">{{ t('lib_collections_manage_btn') }}</button>
+    </div>
+
     <div class="filter-group">
       <button class="filter-btn active" data-format="">{{ t('status_all') }}</button>
       <button class="filter-btn" data-format="TV">TV</button>
@@ -238,6 +246,32 @@
     </div>
   </div>
 </div>
+
+<div id="collection-save-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="{{ t('lib_collections_save_modal_title') }}">
+    <h3 class="modal-title">{{ t('lib_collections_save_modal_title') }}</h3>
+    <label class="notes-field-label">{{ t('lib_collections_name_label') }}
+      <input class="notes-field" id="collection-save-name" type="text" maxlength="100" placeholder="{{ t('lib_collections_name_placeholder') }}">
+    </label>
+    <div class="modal-actions">
+      <button id="collection-save-confirm">{{ t('settings_save_button') }}</button>
+      <button id="collection-save-cancel">{{ t('notes_cancel_btn') }}</button>
+    </div>
+  </div>
+</div>
+
+<div id="collections-manage-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="{{ t('lib_collections_manage_modal_title') }}">
+    <h3 class="modal-title">{{ t('lib_collections_manage_modal_title') }}</h3>
+    <div id="collections-manage-list" class="collections-manage-list"></div>
+    <p class="empty" id="collections-manage-empty" hidden>{{ t('lib_collections_empty') }}</p>
+    <div class="modal-actions">
+      <button id="collections-manage-close">{{ t('lib_add_anime_close_label') }}</button>
+    </div>
+  </div>
+</div>
+
+<script>window.COLLECTIONS = {{ collections_json|safe }};</script>
 
 <script>
 // ── Score filter ──────────────────────────────────────────────────────────────

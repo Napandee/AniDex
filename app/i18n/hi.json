@@ -612,5 +612,20 @@
 
   "streaming_footprint_title": "ऐतिहासिक पदचिह्न (पूर्ण / छोड़ा गया)",
   "streaming_footprint_desc": "केवल जानकारी हेतु — ऊपर की रैंकिंग को प्रभावित नहीं करता।",
-  "streaming_footprint_empty": "अभी तक स्ट्रीमिंग लिंक वाले कोई पूर्ण या छोड़े गए शीर्षक नहीं हैं।"
+  "streaming_footprint_empty": "अभी तक स्ट्रीमिंग लिंक वाले कोई पूर्ण या छोड़े गए शीर्षक नहीं हैं।",
+
+  "lib_collections_placeholder": "कलेक्शन…",
+  "lib_collections_save_btn": "फ़िल्टर सहेजें",
+  "lib_collections_manage_btn": "प्रबंधित करें",
+  "lib_collections_save_modal_title": "कलेक्शन के रूप में सहेजें",
+  "lib_collections_name_label": "नाम",
+  "lib_collections_name_placeholder": "जैसे, छोटी आरामदायक सीरीज़",
+  "lib_collections_manage_modal_title": "कलेक्शन प्रबंधित करें",
+  "lib_collections_empty": "अभी तक कोई सहेजा गया कलेक्शन नहीं है।",
+  "lib_collections_rename_btn": "नाम बदलें",
+  "lib_collections_delete_btn": "हटाएं",
+  "js_collection_save_failed": "कलेक्शन सहेजने में विफल।",
+  "js_collection_rename_failed": "नाम बदलने में विफल।",
+  "js_collection_delete_failed": "हटाने में विफल।",
+  "js_collection_delete_confirm": "\"{name}\" कलेक्शन हटाएं? इसे वापस नहीं किया जा सकता।"
 }
