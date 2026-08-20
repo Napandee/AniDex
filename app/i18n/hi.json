@@ -38,6 +38,7 @@
 
   "settings_page_title": "सेटिंग्स",
   "settings_page_sub": "इस ट्रैकर के लिए प्राथमिकताएँ और क्रेडेंशियल।",
+  "settings_about_version_label": "चल रहा संस्करण:",
   "settings_section_display": "डिस्प्ले",
   "settings_saved": "सहेजा गया।",
   "settings_timezone_label": "समय क्षेत्र",

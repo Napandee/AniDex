@@ -38,6 +38,7 @@
 
   "settings_page_title": "設定",
   "settings_page_sub": "このトラッカーの設定と認証情報。",
+  "settings_about_version_label": "実行中のバージョン:",
   "settings_section_display": "表示",
   "settings_saved": "保存しました。",
   "settings_timezone_label": "タイムゾーン",

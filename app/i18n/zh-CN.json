@@ -38,6 +38,7 @@
 
   "settings_page_title": "设置",
   "settings_page_sub": "此追踪器的偏好设置和凭据。",
+  "settings_about_version_label": "当前运行版本：",
   "settings_section_display": "显示",
   "settings_saved": "已保存。",
   "settings_timezone_label": "时区",

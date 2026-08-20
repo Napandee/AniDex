@@ -38,6 +38,7 @@
 
   "settings_page_title": "Ajustes",
   "settings_page_sub": "Preferencias y credenciales para este tracker.",
+  "settings_about_version_label": "En ejecución:",
   "settings_section_display": "Pantalla",
   "settings_saved": "Guardado.",
   "settings_timezone_label": "Zona horaria",
