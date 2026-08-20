@@ -1616,19 +1616,30 @@ def _log_admin_action(admin_user_id: int, action: str, target_user_id: int | Non
     )
 
 
+GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
+
+
+def _build_version() -> str | None:
+    """The short git SHA baked into the image via the Dockerfile's GIT_SHA build
+    arg (see Dockerfile), if any. Shared by the admin-only Operability tab
+    (_instance_health below) and the user-facing "currently deployed commit" link
+    on every user's own Settings page (issue #204) — one place reads GIT_SHA,
+    not two."""
+    git_sha = os.environ.get("GIT_SHA", "").strip()
+    return git_sha[:12] if git_sha else None
+
+
 def _instance_health() -> dict:
     """Read-only instance-health data for the admin panel (issue #86): running
     build version (if baked into the image via the Dockerfile's GIT_SHA build
     arg — see Dockerfile), Postgres database size, and row counts for a few key
     tables. Display only — deliberately no write/control actions here."""
-    git_sha = os.environ.get("GIT_SHA", "").strip()
-
     db_size_row = db.fetchone(
         "SELECT pg_size_pretty(pg_database_size(current_database())) AS size"
     )
 
     return {
-        "build_version": git_sha[:12] if git_sha else None,
+        "build_version": _build_version(),
         "db_size": db_size_row["size"] if db_size_row else None,
         "row_counts": {
             "library_entries": db.fetchone("SELECT COUNT(*) AS n FROM library_entries")["n"],
@@ -2765,6 +2776,12 @@ def settings_page(
         ),
     }
 
+    # Issue #204 — same GIT_SHA value the admin-only Operability tab already
+    # surfaces as plain text (_instance_health's build_version), reused here as a
+    # real link to the commit on GitHub so every user, not just admins, can see
+    # exactly what's deployed.
+    build_version = _build_version()
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2775,6 +2792,8 @@ def settings_page(
             "languages": i18n.SUPPORTED_LOCALES,
             "language_labels": i18n.LOCALE_LABELS,
             "last_synced": last_synced,
+            "build_version": build_version,
+            "build_commit_url": f"{GITHUB_REPO_URL}/commit/{build_version}" if build_version else None,
             "account": {
                 "has_password": bool(user["password_hash"]),
                 "google_linked": bool(user["google_id"]),

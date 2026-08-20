@@ -723,6 +723,24 @@
     </div>
   </div>
 
+  {# ══════════════════════════════════════════════════════════════════════
+     "What's deployed" footer (issue #204) — shown on every tab, not scoped to
+     one panel. Reuses the same GIT_SHA value the admin-only Operability tab
+     already shows as plain text (_instance_health's build_version), rendered
+     here as a real link so any user, not just admins, can see and click
+     through to the exact commit running.
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-about">
+    <p class="settings-about-text">
+      {{ t('settings_about_version_label') }}
+      {% if build_version %}
+      <a href="{{ build_commit_url }}" target="_blank" rel="noopener noreferrer"><code>{{ build_version }}</code></a>
+      {% else %}
+      {{ t('admin_build_version_unknown') }}
+      {% endif %}
+    </p>
+  </div>
+
 </div>
 
 <script>

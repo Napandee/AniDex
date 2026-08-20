@@ -922,6 +922,20 @@ main {
 .settings-section-desc { font-size: 0.85rem; color: var(--t6); margin: 0 0 1rem; line-height: 1.5; }
 .settings-section form { display: flex; flex-direction: column; gap: 1.25rem; }
 
+/* Issue #204 — small "what's deployed" footer, outside the tab panels so it shows
+   regardless of which settings tab is active. Deliberately quiet: a single line, not
+   its own section heading — this isn't a feature, just a link out to GitHub. */
+.settings-about {
+  max-width: 640px;
+  margin: 2.5rem auto 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.settings-about-text { font-size: 0.8rem; color: var(--t7); margin: 0; }
+.settings-about-text a { color: var(--t7); text-decoration: underline; }
+.settings-about-text code { font-size: 0.8rem; }
+
 /* Help disclosure (#141) — small "i" button next to a section heading or inline in a
    field label; click/tap toggles the panel below it open. Click/tap only, deliberately
    no hover-only path — see issue for why. */
