@@ -1657,6 +1657,17 @@ body.auth-page main {
 }
 .wrapup-empty { color: var(--t6); font-size: 0.85rem; margin: 0; }
 
+/* ── Stats: #wrapup-card year-comparison extras (issue #193) ────────────── */
+.wrapup-extras { margin-top: 1.25rem; }
+.wrapped-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+.wrapped-detail { min-width: 0; }
+.wrapped-detail p { margin: 0; font-size: 0.9rem; color: var(--t2); }
+.wrapped-detail--wide { grid-column: 1 / -1; }
+
 /* ── Stats: watch-activity heatmap (issue #10) ───────────────────────────── */
 .heatmap-wrap {
   display: flex;
@@ -1777,6 +1788,7 @@ body.auth-page main {
 
 @media (max-width: 720px) {
   .drop-patterns-body { grid-template-columns: 1fr; }
+  .wrapped-detail-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Streaming Coverage (issue #182) ─────────────────────────────────────── */
