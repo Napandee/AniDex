@@ -395,6 +395,21 @@ CREATE TABLE user_streaming_services (
     PRIMARY KEY (user_id, service)
 );
 
+-- Named, saved filter combinations over the library view's existing tag/status/
+-- score/format/season/rewatch/sort controls (issue #200). `filters` is a
+-- whitelisted snapshot of that client-side filter/sort state, not a list of
+-- anime ids — a collection is a shortcut to a filter state, never a place an
+-- anime is manually added. See app/main.py's COLLECTION_FILTER_KEYS.
+CREATE TABLE collections (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    filters     JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, name)
+);
+
 -- =========================================================================
 -- PER-USER SETTINGS (timezone, credentials, sync schedule — key/value for extensibility)
 -- =========================================================================
@@ -439,4 +454,5 @@ CREATE INDEX idx_recommendation_scores_score ON recommendation_scores(user_id, s
 CREATE INDEX idx_anime_genres ON anime USING GIN (genres);
 CREATE INDEX idx_anime_tags ON anime USING GIN (tags);
 CREATE INDEX idx_invites_email ON invites(email) WHERE accepted_at IS NULL;
+CREATE INDEX idx_collections_user ON collections (user_id);
 CREATE INDEX idx_admin_audit_log_created_at ON admin_audit_log(created_at DESC);

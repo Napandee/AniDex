@@ -4074,6 +4074,156 @@ def search(request: Request, q: str = ""):
     )
 
 
+# ── Collections (issue #200) ────────────────────────────────────────────────────
+# Named, saved filter combinations over the library view's existing tag/status/
+# score/format/season/rewatch/sort controls — no new organizing primitive, no new
+# per-anime relationship. A collection is a shortcut to a filter *state*; applying
+# one just re-drives the same client-side filter controls a user would click by
+# hand (see library.html/script.js), it never looks up which anime "belong" to it.
+COLLECTION_FILTER_KEYS = {"format", "season", "tag", "score", "rewatch", "sort", "status", "q"}
+COLLECTION_NAME_MAX_LEN = 100
+
+
+def _sanitize_collection_filters(raw) -> dict:
+    """Whitelist to exactly the library view's own filter/sort/search keys — a
+    collection stores filter criteria only, never anime ids or anything from
+    personal_notes. Every value is coerced to a stripped str since that's what the
+    client-side filter functions compare against (button dataset values and select
+    option values are always strings)."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key in COLLECTION_FILTER_KEYS:
+        val = raw.get(key)
+        if val is None:
+            continue
+        val = str(val).strip()
+        if val:
+            out[key] = val
+    return out
+
+
+@app.get("/api/collections")
+def list_collections(request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    rows = db.fetchall(
+        "SELECT id, name, filters FROM collections WHERE user_id = %s ORDER BY name",
+        (user["id"],),
+    )
+    return JSONResponse({"items": [dict(r) for r in rows]})
+
+
+@app.post("/api/collections")
+async def create_collection(request: Request):
+    """Save the library view's current active filter/sort state as a named
+    collection."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if len(name) > COLLECTION_NAME_MAX_LEN:
+        return JSONResponse({"error": "name too long"}, status_code=400)
+    filters = _sanitize_collection_filters(body.get("filters"))
+
+    existing = db.fetchone(
+        "SELECT id FROM collections WHERE user_id = %s AND name = %s",
+        (user["id"], name),
+    )
+    if existing:
+        return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+
+    try:
+        row = db.execute_returning(
+            """
+            INSERT INTO collections (user_id, name, filters)
+            VALUES (%s, %s, %s::jsonb)
+            RETURNING id, name, filters
+            """,
+            (user["id"], name, json.dumps(filters)),
+        )
+    except psycopg2.errors.UniqueViolation:
+        # Backstop for a same-name race against the pre-check above — the UNIQUE
+        # (user_id, name) constraint is the real guarantee, this just turns it
+        # into the same clean 409 instead of a 500.
+        return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+
+    return JSONResponse({"ok": True, "collection": dict(row)})
+
+
+@app.patch("/api/collections/{collection_id}")
+async def update_collection(collection_id: int, request: Request):
+    """Rename and/or re-save the filter criteria of an existing collection —
+    scoped to the owning user like every other personal-layer write."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    sets = []
+    params = []
+
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name:
+            return JSONResponse({"error": "name required"}, status_code=400)
+        if len(name) > COLLECTION_NAME_MAX_LEN:
+            return JSONResponse({"error": "name too long"}, status_code=400)
+        dup = db.fetchone(
+            "SELECT id FROM collections WHERE user_id = %s AND name = %s AND id != %s",
+            (user["id"], name, collection_id),
+        )
+        if dup:
+            return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+        sets.append("name = %s")
+        params.append(name)
+
+    if "filters" in body:
+        filters = _sanitize_collection_filters(body.get("filters"))
+        sets.append("filters = %s::jsonb")
+        params.append(json.dumps(filters))
+
+    if not sets:
+        return JSONResponse({"error": "nothing to update"}, status_code=400)
+
+    sets.append("updated_at = now()")
+    params.extend([collection_id, user["id"]])
+
+    try:
+        row = db.execute_returning(
+            f"UPDATE collections SET {', '.join(sets)} WHERE id = %s AND user_id = %s "
+            "RETURNING id, name, filters",
+            tuple(params),
+        )
+    except psycopg2.errors.UniqueViolation:
+        return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+
+    if not row:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"ok": True, "collection": dict(row)})
+
+
+@app.delete("/api/collections/{collection_id}")
+def delete_collection(collection_id: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    row = db.execute_returning(
+        "DELETE FROM collections WHERE id = %s AND user_id = %s RETURNING id",
+        (collection_id, user["id"]),
+    )
+    if not row:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/", response_class=HTMLResponse)
 def library(request: Request, response: Response, status: str = None):
     user, denied = _require_user(request)
@@ -4158,6 +4308,20 @@ def library(request: Request, response: Response, status: str = None):
             entry["next_airing_label"] = None
         entries.append(entry)
 
+    collection_rows = db.fetchall(
+        "SELECT id, name, filters FROM collections WHERE user_id = %s ORDER BY name",
+        (user["id"],),
+    )
+    # Same pattern as base.html's window.I18N (issue #147): a small JSON payload
+    # embedded via a `<script>` + `|safe`, with `<` escaped so a collection name
+    # containing e.g. "</script>" can never break out of the block it's embedded
+    # in. Jinja's normal HTML-attribute autoescaping doesn't apply inside a
+    # <script> body, so this can't rely on that the way an ordinary `{{ }}` would.
+    collections_json = json.dumps(
+        [{"id": c["id"], "name": c["name"], "filters": c["filters"]} for c in collection_rows],
+        ensure_ascii=False,
+    ).replace("<", "\\u003c")
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -4165,6 +4329,7 @@ def library(request: Request, response: Response, status: str = None):
             "entries": entries,
             "statuses": statuses,
             "active_status": active_status,
+            "collections_json": collections_json,
         },
     )
 

@@ -539,5 +539,20 @@
 
   "streaming_footprint_title": "历史足迹（已完成 / 已弃坑）",
   "streaming_footprint_desc": "仅供参考 — 不影响上方的排名。",
-  "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。"
+  "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。",
+
+  "lib_collections_placeholder": "收藏集…",
+  "lib_collections_save_btn": "保存筛选条件",
+  "lib_collections_manage_btn": "管理",
+  "lib_collections_save_modal_title": "保存为收藏集",
+  "lib_collections_name_label": "名称",
+  "lib_collections_name_placeholder": "例如：短篇治愈番",
+  "lib_collections_manage_modal_title": "管理收藏集",
+  "lib_collections_empty": "还没有已保存的收藏集。",
+  "lib_collections_rename_btn": "重命名",
+  "lib_collections_delete_btn": "删除",
+  "js_collection_save_failed": "保存收藏集失败。",
+  "js_collection_rename_failed": "重命名失败。",
+  "js_collection_delete_failed": "删除失败。",
+  "js_collection_delete_confirm": "删除收藏集“{name}”？此操作无法撤销。"
 }

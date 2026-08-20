@@ -539,5 +539,20 @@
 
   "streaming_footprint_title": "Huella histórica (Completado / Abandonado)",
   "streaming_footprint_desc": "Solo informativo — no afecta a la clasificación anterior.",
-  "streaming_footprint_empty": "Todavía no hay títulos Completados o Abandonados con enlaces de streaming."
+  "streaming_footprint_empty": "Todavía no hay títulos Completados o Abandonados con enlaces de streaming.",
+
+  "lib_collections_placeholder": "Colecciones…",
+  "lib_collections_save_btn": "Guardar filtros",
+  "lib_collections_manage_btn": "Gestionar",
+  "lib_collections_save_modal_title": "Guardar como colección",
+  "lib_collections_name_label": "Nombre",
+  "lib_collections_name_placeholder": "p. ej. Vistas cortas y reconfortantes",
+  "lib_collections_manage_modal_title": "Gestionar colecciones",
+  "lib_collections_empty": "Todavía no hay colecciones guardadas.",
+  "lib_collections_rename_btn": "Renombrar",
+  "lib_collections_delete_btn": "Eliminar",
+  "js_collection_save_failed": "No se pudo guardar la colección.",
+  "js_collection_rename_failed": "No se pudo renombrar.",
+  "js_collection_delete_failed": "No se pudo eliminar.",
+  "js_collection_delete_confirm": "¿Eliminar la colección \"{name}\"? Esta acción no se puede deshacer."
 }

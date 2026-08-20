@@ -107,10 +107,18 @@ if (librarySearch) {
 }
 
 // ── Library format filter ─────────────────────────────────────────────────────
+// Scoped to `.filter-btn[data-format]` (issue #200 fix), not the bare `.filter-btn`
+// class — score-filter-group, rewatch-filter-group, and #bulk-toggle all share that
+// same class for styling, so the old unscoped selector meant clicking a score or
+// rewatch button (or even Select) stripped the format button's "active" highlight
+// on every click, and vice versa. Filtering itself still worked either way (each
+// group tracks its own activeX variable), but the visual state was misleadingly
+// wrong — most visible now that Collections replays several of these clicks in a
+// row to reapply a saved filter combination.
 let activeFormat = '';
-document.querySelectorAll('.filter-btn').forEach(btn => {
+document.querySelectorAll('.filter-btn[data-format]').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.filter-btn[data-format]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeFormat = btn.dataset.format;
     applyLibraryFilters();
@@ -199,6 +207,272 @@ function refreshTagFilterOptions() {
     activeTag = sel.value;
     applyLibraryFilters();
   });
+}());
+
+// ── Collections (#200) ───────────────────────────────────────────────────────────
+// Named, saved filter combinations over the format/season/tag/score/rewatch/sort
+// controls above, plus the server-rendered status tab and the free-text search box.
+// This never re-implements filtering itself — saving reads the *current* UI state,
+// and applying replays it through the exact same click/change handlers a user
+// would trigger by hand, so it can never drift from what those controls actually do.
+(function () {
+  const sel = document.getElementById('collections-select');
+  if (!sel) return; // library page only
+
+  const saveBtn = document.getElementById('collections-save-btn');
+  const manageBtn = document.getElementById('collections-manage-btn');
+  const saveModal = document.getElementById('collection-save-modal');
+  const saveNameInput = document.getElementById('collection-save-name');
+  const saveConfirmBtn = document.getElementById('collection-save-confirm');
+  const saveCancelBtn = document.getElementById('collection-save-cancel');
+  const manageModal = document.getElementById('collections-manage-modal');
+  const manageList = document.getElementById('collections-manage-list');
+  const manageEmpty = document.getElementById('collections-manage-empty');
+  const manageCloseBtn = document.getElementById('collections-manage-close');
+
+  let collections = Array.isArray(window.COLLECTIONS) ? window.COLLECTIONS.slice() : [];
+
+  function currentActiveStatus() {
+    return (new URLSearchParams(location.search).get('status') || 'WATCHING').toUpperCase();
+  }
+
+  function currentFilterState() {
+    return {
+      status: currentActiveStatus(),
+      format: document.querySelector('.filter-btn[data-format].active')?.dataset.format || '',
+      season: document.getElementById('season-filter')?.value || '',
+      tag: document.getElementById('tag-filter')?.value || '',
+      score: document.querySelector('.filter-btn[data-score-filter].active')?.dataset.scoreFilter || '',
+      rewatch: document.querySelector('.filter-btn[data-rewatch-filter].active')?.dataset.rewatchFilter || '',
+      sort: document.querySelector('.sort-btn.active')?.dataset.sort || 'score',
+      q: librarySearch?.value || '',
+    };
+  }
+
+  function clickFormat(value) {
+    document.querySelector(`.filter-btn[data-format="${CSS.escape(value || '')}"]`)?.click();
+  }
+  function clickAttr(attr, value) {
+    document.querySelector(`[${attr}="${CSS.escape(value || '')}"]`)?.click();
+  }
+
+  // Replays a saved filters object through the real controls — never touches
+  // applyLibraryFilters/sortLibrary/applyScoreFilter/applyRewatchFilter directly,
+  // each control's own handler does, exactly as if a user had clicked it.
+  function applyFilterValues(filters) {
+    if (librarySearch) {
+      librarySearch.value = filters.q || '';
+      librarySearch.dispatchEvent(new Event('input'));
+    }
+    clickFormat(filters.format);
+    clickAttr('data-score-filter', filters.score);
+    clickAttr('data-rewatch-filter', filters.rewatch);
+    clickAttr('data-sort', filters.sort || 'score');
+
+    const seasonSel = document.getElementById('season-filter');
+    if (seasonSel) {
+      seasonSel.value = filters.season || '';
+      seasonSel.dispatchEvent(new Event('change'));
+    }
+    const tagSel = document.getElementById('tag-filter');
+    if (tagSel) {
+      tagSel.value = filters.tag || '';
+      tagSel.dispatchEvent(new Event('change'));
+    }
+  }
+
+  function renderSelectOptions() {
+    const current = sel.value;
+    sel.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
+    collections.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = String(c.id);
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+    sel.value = collections.some(c => String(c.id) === current) ? current : '';
+  }
+  renderSelectOptions();
+
+  function applyCollection(c) {
+    const filters = c.filters || {};
+    const targetStatus = (filters.status || 'WATCHING').toUpperCase();
+    if (targetStatus !== currentActiveStatus()) {
+      // The tag/season dropdowns are rebuilt from whatever cards render for the
+      // target status, so the rest of the filters can only be safely replayed
+      // *after* that navigation — carried across via query params and picked up
+      // by the "apply from URL" block below, once this page's own status tab
+      // (WATCHING/etc, server-side) has actually changed.
+      const params = new URLSearchParams();
+      params.set('status', targetStatus);
+      params.set('collection', String(c.id));
+      Object.entries(filters).forEach(([k, v]) => {
+        if (k !== 'status' && v) params.set(k, v);
+      });
+      location.href = '/?' + params.toString();
+      return;
+    }
+    applyFilterValues(filters);
+  }
+
+  sel.addEventListener('change', () => {
+    const id = sel.value;
+    sel.value = ''; // the dropdown is a picker, not a persistent "current collection" state
+    if (!id) return;
+    const c = collections.find(c => String(c.id) === id);
+    if (c) applyCollection(c);
+  });
+
+  // ── Save current filters as a new collection ──────────────────────────────
+  function openSaveModal() {
+    saveModal.hidden = false;
+    saveNameInput.value = '';
+    setTimeout(() => saveNameInput.focus(), 50);
+  }
+  function closeSaveModal() { saveModal.hidden = true; }
+
+  saveBtn?.addEventListener('click', openSaveModal);
+  saveCancelBtn?.addEventListener('click', closeSaveModal);
+  saveModal?.addEventListener('click', e => { if (e.target === saveModal) closeSaveModal(); });
+
+  saveConfirmBtn?.addEventListener('click', async () => {
+    const name = saveNameInput.value.trim();
+    if (!name) { saveNameInput.focus(); return; }
+    saveConfirmBtn.disabled = true;
+    try {
+      const resp = await fetch('/api/collections', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, filters: currentFilterState()}),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        alert(data.error || t('js_collection_save_failed'));
+        return;
+      }
+      collections.push(data.collection);
+      renderSelectOptions();
+      closeSaveModal();
+    } catch {
+      alert(t('js_collection_save_failed'));
+    } finally {
+      saveConfirmBtn.disabled = false;
+    }
+  });
+
+  // ── Manage (rename/delete) ─────────────────────────────────────────────────
+  // Built via DOM APIs rather than innerHTML templating — a collection name is
+  // free user text, and this way it's never at risk of being parsed as markup.
+  function renderManageList() {
+    manageList.innerHTML = '';
+    manageEmpty.hidden = collections.length !== 0;
+    collections.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'collections-manage-row';
+      row.dataset.id = String(c.id);
+
+      const input = document.createElement('input');
+      input.className = 'notes-field collections-manage-name-input';
+      input.type = 'text';
+      input.maxLength = 100;
+      input.value = c.name;
+
+      const renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'filter-btn collections-manage-rename-btn';
+      renameBtn.textContent = t('lib_collections_rename_btn');
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'filter-btn collections-manage-delete-btn';
+      deleteBtn.textContent = t('lib_collections_delete_btn');
+
+      row.append(input, renameBtn, deleteBtn);
+      manageList.appendChild(row);
+    });
+  }
+
+  function openManageModal() {
+    renderManageList();
+    manageModal.hidden = false;
+  }
+  function closeManageModal() { manageModal.hidden = true; }
+
+  manageBtn?.addEventListener('click', openManageModal);
+  manageCloseBtn?.addEventListener('click', closeManageModal);
+  manageModal?.addEventListener('click', e => { if (e.target === manageModal) closeManageModal(); });
+
+  manageList?.addEventListener('click', async e => {
+    const row = e.target.closest('.collections-manage-row');
+    if (!row) return;
+    const id = row.dataset.id;
+    const input = row.querySelector('.collections-manage-name-input');
+
+    if (e.target.classList.contains('collections-manage-rename-btn')) {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      e.target.disabled = true;
+      try {
+        const resp = await fetch(`/api/collections/${id}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name}),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          alert(data.error || t('js_collection_rename_failed'));
+          return;
+        }
+        const idx = collections.findIndex(c => String(c.id) === id);
+        if (idx !== -1) collections[idx] = data.collection;
+        renderSelectOptions();
+        renderManageList();
+      } catch {
+        alert(t('js_collection_rename_failed'));
+      } finally {
+        e.target.disabled = false;
+      }
+      return;
+    }
+
+    if (e.target.classList.contains('collections-manage-delete-btn')) {
+      const name = collections.find(c => String(c.id) === id)?.name || '';
+      if (!confirm(t('js_collection_delete_confirm', {name}))) return;
+      e.target.disabled = true;
+      try {
+        const resp = await fetch(`/api/collections/${id}`, {method: 'DELETE'});
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) {
+          alert(data.error || t('js_collection_delete_failed'));
+          return;
+        }
+        collections = collections.filter(c => String(c.id) !== id);
+        renderSelectOptions();
+        renderManageList();
+      } catch {
+        alert(t('js_collection_delete_failed'));
+        e.target.disabled = false;
+      }
+      return;
+    }
+  });
+
+  // ── Apply a collection's filters after navigating here via ?collection=ID ───
+  // (see applyCollection above) — the season/tag dropdowns for the new status are
+  // already built by this point, since those IIFEs run earlier in this same file.
+  (function applyFromUrl() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('collection')) return;
+    const filters = {};
+    ['format', 'season', 'tag', 'score', 'rewatch', 'sort', 'q'].forEach(k => {
+      if (params.has(k)) filters[k] = params.get(k);
+    });
+    applyFilterValues(filters);
+
+    const url = new URL(location.href);
+    ['collection', 'format', 'season', 'tag', 'score', 'rewatch', 'sort', 'q'].forEach(k => url.searchParams.delete(k));
+    history.replaceState(null, '', url);
+  }());
 }());
 
 // ── Library sort ──────────────────────────────────────────────────────────────
