@@ -23,8 +23,8 @@ import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
-from fastapi import BackgroundTasks, FastAPI, File, Form, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -636,6 +636,41 @@ def _upsert_anime_row(media: dict) -> None:
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+_SERVICE_WORKER_PATH = "app/static/service-worker.js"
+
+
+@app.get("/service-worker.js")
+def service_worker() -> FileResponse:
+    # Served from the root path (not /static/service-worker.js) so its default
+    # scope is "/" and it actually controls the app's pages — a service worker
+    # registered from under /static/ can only ever control /static/* by default,
+    # which fails the "has a service worker controlling start_url" PWA
+    # installability check (#12). Minimal no-op-fetch worker, not for offline
+    # caching — see the file's own header comment.
+    #
+    # FileResponse (not a hand-rolled open()+Response) so this gets correct
+    # ETag/Last-Modified headers for free instead of reinventing them. Note
+    # this Starlette version's plain FileResponse doesn't itself short-circuit
+    # a matching If-None-Match into a 304 the way the /static mount's
+    # StaticFiles does — it only sets the validator headers — but that's fine
+    # here: Cache-Control: no-cache below means the browser always revalidates
+    # before using a cached copy, so the freshness guarantee holds either way,
+    # it just costs a full response body on revalidation instead of a 304.
+    #
+    # The explicit os.path.exists check (and 404) below is deliberate too:
+    # FileResponse itself only stats the file lazily inside its ASGI __call__,
+    # and turns a missing file into an unhandled RuntimeError (-> 500), not a
+    # 404 — that auto-404 behavior belongs to StaticFiles' own lookup, not to
+    # a bare FileResponse returned from a route.
+    if not os.path.exists(_SERVICE_WORKER_PATH):
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        _SERVICE_WORKER_PATH,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 _SESSION_SECRET_KEY = os.getenv("SESSION_SECRET_KEY")
 if not _SESSION_SECRET_KEY:

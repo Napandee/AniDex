@@ -23,6 +23,7 @@
     <div class="settings-section settings-section--first">
       <h2 class="settings-section-title">{{ t('admin_users_title') }}</h2>
       <p class="settings-section-desc">{{ t('admin_users_desc') }}</p>
+      <div class="table-scroll">
       <table class="admin-table">
         <thead>
           <tr>
@@ -95,6 +96,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 
@@ -112,6 +114,7 @@
           <button type="submit" class="btn-save">{{ t('admin_invite_btn') }}</button>
         </div>
       </form>
+      <div class="table-scroll">
       <table class="admin-table">
         <thead>
           <tr><th>{{ t('admin_col_email') }}</th><th>{{ t('admin_col_status') }}</th><th>{{ t('admin_col_created') }}</th></tr>
@@ -128,6 +131,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 
@@ -273,6 +277,7 @@
       <p class="settings-section-desc">
         {{ t('admin_instance_health_desc') }}
       </p>
+      <div class="table-scroll">
       <table class="admin-table">
         <tbody>
           <tr>
@@ -303,6 +308,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     {# ── Audit log ────────────────────────────────────────────────────── #}
@@ -311,6 +317,7 @@
       <p class="settings-section-desc">
         {{ t('admin_audit_log_desc') }}
       </p>
+      <div class="table-scroll">
       <table class="admin-table">
         <thead>
           <tr><th>{{ t('admin_col_time') }}</th><th>{{ t('admin_col_admin') }}</th><th>{{ t('admin_col_action') }}</th><th>{{ t('admin_col_target') }}</th><th>{{ t('admin_col_detail') }}</th></tr>
@@ -329,6 +336,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
 
     {# ── Backup ───────────────────────────────────────────────────────── #}

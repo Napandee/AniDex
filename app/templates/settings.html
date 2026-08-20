@@ -106,6 +106,7 @@
       {% if saved == 'session_revoked' %}<p class="settings-success">{{ t('account_sessions_revoked_msg') }}</p>{% endif %}
 
       {% if active_sessions %}
+      <div class="table-scroll">
       <table class="sync-log-table">
         <thead>
           <tr>
@@ -135,6 +136,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% else %}
       <p class="settings-section-desc">{{ t('account_sessions_empty') }}</p>
       {% endif %}
@@ -360,6 +362,7 @@
       {% if cr_override_error %}<p class="settings-error">{{ cr_override_error }}</p>{% endif %}
 
       {% if cr_overrides %}
+      <div class="table-scroll">
       <table class="sync-log-table">
         <thead>
           <tr>
@@ -384,6 +387,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% else %}
       <p class="settings-section-desc">{{ t('sync_cr_overrides_empty') }}</p>
       {% endif %}
@@ -415,6 +419,7 @@
     {# ── Sync history ─────────────────────────────────────────────────── #}
     <div class="settings-section">
       <h2 class="settings-section-title">{{ t('sync_history_title') }}</h2>
+      <div class="table-scroll">
       <table class="sync-log-table" id="sync-log-table">
         <thead>
           <tr>
@@ -429,6 +434,7 @@
           <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     {# ── Data export ──────────────────────────────────────────────────── #}
