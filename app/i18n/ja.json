@@ -387,6 +387,15 @@
   "stats_taste_drift_quarterly": "四半期ごと",
   "stats_taste_drift_yearly": "年ごと",
 
+  "stats_studio_loyalty_title": "スタジオ愛着度",
+  "stats_studio_loyalty_sub": "スタジオごとの平均評価と完走作品数（完走かつ評価済みの作品が{min_titles}本以上あるスタジオのみ） — {total}スタジオ中{shown}スタジオを表示中（作品数の基準未満：{excluded_low_volume}、未評価：{excluded_unscored}）。",
+  "stats_studio_loyalty_ranked_heading": "平均評価順",
+  "stats_studio_loyalty_x_axis": "完走作品数",
+  "stats_studio_loyalty_y_axis": "平均評価",
+  "stats_studio_loyalty_tooltip_avg": "平均",
+  "stats_studio_loyalty_tooltip_titles": "作品",
+  "stats_studio_loyalty_tooltip_rated": "評価済み",
+
   "stats_streaming_card_title": "ストリーミングカバレッジ",
   "stats_streaming_no_owned": "契約中の配信サービスを設定すると、どのサービスがバックログを最も多く解放するかがわかります。",
   "stats_streaming_covered": "視聴中/視聴予定のバックログは、すでに契約中のサービスでカバーされています。",

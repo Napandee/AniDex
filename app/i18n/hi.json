@@ -387,6 +387,15 @@
   "stats_taste_drift_quarterly": "तिमाही आधार पर",
   "stats_taste_drift_yearly": "वार्षिक आधार पर",
 
+  "stats_studio_loyalty_title": "स्टूडियो वफ़ादारी",
+  "stats_studio_loyalty_sub": "प्रति स्टूडियो औसत स्कोर बनाम पूर्ण शीर्षकों की संख्या, उन स्टूडियो के लिए जिनके कम से कम {min_titles} पूर्ण और रेटेड शीर्षक हैं — {total} में से {shown} स्टूडियो दिखाए जा रहे हैं ({excluded_low_volume} शीर्षक-सीमा से नीचे, {excluded_unscored} अभी तक रेट नहीं किए गए)।",
+  "stats_studio_loyalty_ranked_heading": "औसत स्कोर के अनुसार क्रमबद्ध",
+  "stats_studio_loyalty_x_axis": "पूर्ण शीर्षक",
+  "stats_studio_loyalty_y_axis": "औसत स्कोर",
+  "stats_studio_loyalty_tooltip_avg": "औसत",
+  "stats_studio_loyalty_tooltip_titles": "शीर्षक",
+  "stats_studio_loyalty_tooltip_rated": "रेटेड",
+
   "stats_streaming_card_title": "स्ट्रीमिंग कवरेज",
   "stats_streaming_no_owned": "यह देखने के लिए कि कौन-सी सेवा आपके बैकलॉग का सबसे अधिक हिस्सा अनलॉक करेगी, अपनी मौजूदा स्ट्रीमिंग सेवाएँ सेट करें।",
   "stats_streaming_covered": "आपकी Watching/Planning बैकलॉग पहले से ही आपकी सेवाओं द्वारा कवर की जा चुकी है।",

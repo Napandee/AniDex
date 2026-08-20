@@ -4786,6 +4786,97 @@ def _compute_taste_drift(user_id: int) -> dict | None:
     }
 
 
+# Studio loyalty (issue #223) -- per-studio average score vs. volume watched, a
+# scatter/ranked comparison derived entirely from anime.studios + library_entries.score,
+# same query-only pattern as taste drift (#176) above -- no schema change, no new
+# table. The issue's own text says "anime.studio" but the actual column (see
+# schema.sql) is `studios`, a JSONB array of {"name": ..., "isMain": ...} -- a title
+# can carry several credited studios (e.g. animation studio + a co-producer). Only
+# isMain=true entries count here, matching the exact convention
+# scripts/run_recommender.py's _build_taste_profile/_score_candidate already use for
+# studio weighting/matching -- keeps "which studio a title counts toward" consistent
+# across the whole app rather than inventing a second definition.
+#
+# "Volume watched" is scoped to COMPLETED entries only (matches taste drift's own
+# COMPLETED-only scoping) -- a title still WATCHING/PLANNING hasn't actually
+# contributed a rating or a finished watch yet, so counting it as "loyalty" volume
+# would be premature.
+#
+# Minimum-title threshold, per the issue's explicit ask ("require at least 2-3
+# completed titles from a studio before it's plotted"): STUDIO_LOYALTY_MIN_TITLES
+# takes 3, the same ">=3 combined sample" floor _compute_drop_patterns' per-genre
+# drop-rate already uses above for the identical "don't let a single one-off title
+# stand in for a signal" reasoning -- reusing an already-established number in this
+# file rather than picking a fresh one. Below this, a studio is excluded from the
+# view entirely (excluded_low_volume) rather than shown with a "low confidence"
+# asterisk -- 1-2 completed titles isn't a partial signal worth flagging, it's not a
+# signal. Separately, a studio can clear the title-count threshold but still have
+# zero *scored* completions (AniList entries synced with progress but no rating) --
+# there's no average to plot at all in that case, so those are excluded too
+# (excluded_unscored), tracked separately from low-volume so the sub-line stays
+# accurate about *why* a studio isn't shown rather than lumping both reasons
+# together.
+STUDIO_LOYALTY_MIN_TITLES = 3
+
+
+def _compute_studio_loyalty(user_id: int) -> dict | None:
+    """Per-studio (main studio only) average score vs. completed-title count, for
+    the /stats "studio loyalty" section (issue #223). Returns None when the user has
+    no COMPLETED entry attributed to any main studio yet -- the section stays hidden
+    entirely, same gating pattern as _compute_taste_drift/_compute_drop_patterns
+    above, rather than rendering an empty chart."""
+    rows = db.fetchall(
+        """
+        SELECT
+            studio_elem->>'name' AS studio,
+            COUNT(*) AS title_count,
+            COUNT(*) FILTER (WHERE le.score IS NOT NULL AND le.score > 0) AS scored_count,
+            AVG(le.score) FILTER (WHERE le.score IS NOT NULL AND le.score > 0) AS avg_score
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id,
+             jsonb_array_elements(a.studios) AS studio_elem
+        WHERE le.user_id = %s AND le.status = 'COMPLETED'
+          AND (studio_elem->>'isMain')::boolean
+        GROUP BY studio_elem->>'name'
+        """,
+        (user_id,),
+    )
+    if not rows:
+        return None
+
+    studios_out = []
+    excluded_low_volume = 0
+    excluded_unscored = 0
+    for row in rows:
+        title_count = int(row["title_count"])
+        scored_count = int(row["scored_count"])
+        if title_count < STUDIO_LOYALTY_MIN_TITLES:
+            excluded_low_volume += 1
+            continue
+        if scored_count == 0:
+            excluded_unscored += 1
+            continue
+        studios_out.append({
+            "studio": row["studio"],
+            "title_count": title_count,
+            "scored_count": scored_count,
+            "avg_score": round(float(row["avg_score"]), 2),
+        })
+
+    if not studios_out:
+        return None
+
+    studios_out.sort(key=lambda s: (-s["avg_score"], -s["title_count"]))
+
+    return {
+        "studios": studios_out,
+        "min_titles": STUDIO_LOYALTY_MIN_TITLES,
+        "total_studios": len(rows),
+        "excluded_low_volume": excluded_low_volume,
+        "excluded_unscored": excluded_unscored,
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -4899,6 +4990,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     recommendation_outcomes = _compute_recommendation_outcomes(user["id"])  # issue #185, None if never recommended anything
     rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
     taste_drift = _compute_taste_drift(user["id"])  # issue #176, None if no usable finish_date yet
+    studio_loyalty = _compute_studio_loyalty(user["id"])  # issue #223, None below the per-studio title threshold
 
     # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
     # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
@@ -4921,6 +5013,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "recommendation_outcomes": recommendation_outcomes,
         "rewatch": rewatch_stats,
         "taste_drift": taste_drift,
+        "studio_loyalty": studio_loyalty,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),

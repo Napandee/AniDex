@@ -150,6 +150,25 @@
     </div>
   </div>
 
+  <!-- Studio loyalty (issue #223) — average score vs. volume watched, per main
+       studio (anime.studios where isMain=true), derived entirely from
+       library_entries.score/status + anime.studios (no new schema, see
+       app/main.py's _compute_studio_loyalty docstring). Its own clearly-separated
+       section, same gating pattern as taste-drift/drop-patterns above — hidden
+       entirely when data.studio_loyalty is null (no studio has cleared the
+       STUDIO_LOYALTY_MIN_TITLES threshold with at least one rated title yet). -->
+  <div class="stats-grid" id="studio-loyalty-section" hidden>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">{{ t('stats_studio_loyalty_title') }}</h2>
+      <p class="drop-patterns-sub" id="studio-loyalty-sub"></p>
+      <canvas id="chart-studio-loyalty"></canvas>
+      <div class="drop-patterns-col">
+        <h3 class="drop-patterns-subhead">{{ t('stats_studio_loyalty_ranked_heading') }}</h3>
+        <div id="studio-loyalty-list" class="drop-rate-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Rewatch data (issue #189) — built entirely from library_entries.repeat_count,
        already synced from AniList's `repeat` field, no new data collection. Unlike
        the drop-patterns panel below, this always renders (no minimum-sample gate) —
@@ -370,6 +389,77 @@
       },
     });
   })(data.taste_drift);
+
+  // Studio loyalty (issue #223) — scatter of per-studio (main studio only) average
+  // score (y) against completed-title count (x), plus a ranked list below sorted
+  // by average score. Hidden entirely when data.studio_loyalty is null (no studio
+  // has cleared STUDIO_LOYALTY_MIN_TITLES with at least one rated title yet — see
+  // app/main.py's _compute_studio_loyalty for the threshold/exclusion reasoning).
+  (function renderStudioLoyalty(sl) {
+    const section = document.getElementById('studio-loyalty-section');
+    if (!sl || !sl.studios.length) return;
+    section.hidden = false;
+
+    const shown = sl.studios.length;
+    document.getElementById('studio-loyalty-sub').textContent = t('stats_studio_loyalty_sub', {
+      shown,
+      total: sl.total_studios,
+      min_titles: sl.min_titles,
+      excluded_low_volume: sl.excluded_low_volume,
+      excluded_unscored: sl.excluded_unscored,
+    });
+
+    new Chart(document.getElementById('chart-studio-loyalty'), {
+      type: 'scatter',
+      data: {
+        datasets: [{
+          label: t('stats_studio_loyalty_title'),
+          data: sl.studios.map(s => ({ x: s.title_count, y: s.avg_score, studio: s.studio, scored_count: s.scored_count })),
+          backgroundColor: '#2563eb',
+          pointRadius: 6,
+          pointHoverRadius: 8,
+        }],
+      },
+      options: {
+        ...baseOpts,
+        plugins: {
+          ...baseOpts.plugins,
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const p = ctx.raw;
+                return `${p.studio}: ${p.y.toFixed(2)} ${t('stats_studio_loyalty_tooltip_avg')} (${p.x} ${t('stats_studio_loyalty_tooltip_titles')}, ${p.scored_count} ${t('stats_studio_loyalty_tooltip_rated')})`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            title: { display: true, text: t('stats_studio_loyalty_x_axis'), color: LABEL_COLOR },
+            grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 },
+          },
+          y: {
+            title: { display: true, text: t('stats_studio_loyalty_y_axis'), color: LABEL_COLOR },
+            min: 0, max: 5,
+            grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR },
+          },
+        },
+      },
+    });
+
+    const list = document.getElementById('studio-loyalty-list');
+    sl.studios.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'drop-rate-row';
+      row.innerHTML = `
+        <span class="drop-rate-label">${s.studio}</span>
+        <span class="drop-rate-bar-track"><span class="drop-rate-bar-fill" style="width:${s.avg_score / 5 * 100}%"></span></span>
+        <span class="drop-rate-pct">${s.avg_score.toFixed(2)} <span class="drop-rate-n">(${s.title_count})</span></span>
+      `;
+      list.appendChild(row);
+    });
+  })(data.studio_loyalty);
 
   // Watch-activity heatmap (issue #10) — one cell per day, shaded by episodes
   // watched that day (approximated via completions' finish_date, see /api/stats).
