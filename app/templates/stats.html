@@ -174,6 +174,30 @@
     </div>
   </div>
 
+  <!-- Recommendation performance panel (issue #185) — hidden entirely unless
+       /api/stats returns a non-null recommendation_outcomes, i.e. the user has at
+       least one recommendation_scores row (the recommender has run for them at
+       least once). See app/main.py's _compute_recommendation_outcomes for the
+       "hit" definition and the HIT_WINDOW_DAYS reasoning. -->
+  <div class="stats-grid" id="rec-outcomes-section" hidden>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">{{ t('stats_rec_card_title') }}</h2>
+      <p class="drop-patterns-sub" id="rec-outcomes-sub"></p>
+      <div class="stats-headlines" id="rec-outcomes-headlines">
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-hitrate">—</span><span class="stat-label">{{ t('stats_rec_hit_rate_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-hits">—</span><span class="stat-label">{{ t('stats_rec_hits_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-eligible">—</span><span class="stat-label">{{ t('stats_rec_eligible_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="rec-hl-dismissed">—</span><span class="stat-label">{{ t('stats_rec_dismissed_label') }}</span></div>
+      </div>
+      <div class="drop-patterns-body">
+        <div class="drop-patterns-col">
+          <h3 class="drop-patterns-subhead">{{ t('stats_rec_dismiss_heading') }}</h3>
+          <div id="rec-dismiss-reason-list" class="drop-rate-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -547,6 +571,58 @@
       tagList.innerHTML = '<p class="drop-patterns-empty">No personal tags on dropped shows yet.</p>';
     }
   })(data.drop_patterns);
+
+  // Recommendation performance panel (issue #185) — hidden entirely unless
+  // data.recommendation_outcomes is non-null (the recommender has run at least
+  // once for this user). "Hit" definition and window lives in app/main.py's
+  // _compute_recommendation_outcomes docstring, not duplicated here.
+  //
+  // Dismiss-reason labels reuse the same rec_dismiss_* i18n keys the
+  // /recommendations dismiss chips already use, mapped from the raw
+  // dismiss_reason DB value — 'no_reason' (dismissed via the no-JSON-body
+  // fallback in POST /recommendations/{id}/dismiss, or a blank string) is the
+  // one bucket that isn't a chip value, so it gets its own stats-only key.
+  (function renderRecommendationOutcomes(ro) {
+    const section = document.getElementById('rec-outcomes-section');
+    if (!ro) return; // no recommendation_scores rows for this user yet
+    section.hidden = false;
+
+    document.getElementById('rec-hl-hitrate').textContent =
+      ro.hit_rate != null ? `${ro.hit_rate}%` : '—';
+    document.getElementById('rec-hl-hits').textContent = ro.hits;
+    document.getElementById('rec-hl-eligible').textContent = ro.eligible;
+    document.getElementById('rec-hl-dismissed').textContent = ro.dismissed_total;
+
+    document.getElementById('rec-outcomes-sub').textContent = t('stats_rec_sub', {
+      hits: ro.hits, eligible: ro.eligible, window: ro.window_days,
+    });
+
+    const REASON_KEYS = {
+      not_interested: 'rec_dismiss_not_interested',
+      already_watched: 'rec_dismiss_seen_it',
+      wrong_genre: 'rec_dismiss_wrong_genre',
+      too_long: 'rec_dismiss_too_long',
+      no_reason: 'stats_rec_no_reason',
+    };
+    const reasonList = document.getElementById('rec-dismiss-reason-list');
+    if (ro.dismiss_reasons.length) {
+      const maxCount = Math.max(...ro.dismiss_reasons.map(r => r.count));
+      ro.dismiss_reasons.forEach(r => {
+        const label = t(REASON_KEYS[r.reason] || r.reason);
+        const pct = maxCount ? Math.round((r.count / maxCount) * 100) : 0;
+        const row = document.createElement('div');
+        row.className = 'drop-rate-row';
+        row.innerHTML = `
+          <span class="drop-rate-label">${label}</span>
+          <span class="drop-rate-bar-track"><span class="drop-rate-bar-fill" style="width:${pct}%"></span></span>
+          <span class="drop-rate-pct">${r.count}</span>
+        `;
+        reasonList.appendChild(row);
+      });
+    } else {
+      reasonList.innerHTML = `<p class="drop-patterns-empty">${t('stats_rec_dismiss_empty')}</p>`;
+    }
+  })(data.recommendation_outcomes);
 }());
 </script>
 {% endblock %}
