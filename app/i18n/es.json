@@ -464,7 +464,7 @@
   "js_done": "Listo",
   "js_queuing": "Encolando {n}…",
   "js_bulk_status_failed": "No se pudo actualizar en bloque.",
-  "js_apply_status": "Aplicar estado",
+  "js_apply_status": "Aplicar",
   "js_adding_to": "Añadiendo a {n}…",
   "js_add_tags": "Añadir etiquetas",
   "js_bulk_tags_failed": "No se pudieron añadir las etiquetas.",

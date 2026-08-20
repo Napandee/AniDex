@@ -464,7 +464,7 @@
   "js_done": "हो गया",
   "js_queuing": "{n} को कतार में डाला जा रहा है…",
   "js_bulk_status_failed": "बल्क अपडेट में विफल।",
-  "js_apply_status": "स्थिति लागू करें",
+  "js_apply_status": "लागू करें",
   "js_adding_to": "{n} में जोड़ा जा रहा है…",
   "js_add_tags": "टैग जोड़ें",
   "js_bulk_tags_failed": "टैग जोड़ने में विफल।",
