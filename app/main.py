@@ -5113,6 +5113,16 @@ def search(request: Request, q: str = ""):
     q = q.strip()
     entries = []
     if q:
+        # Issue #221: search also covers the personal-notes layer (personal_notes.notes,
+        # rewatch_notes.note, episode_notes.note), not just anime titles, so a user can
+        # find "that show where I wrote about X" without remembering which title it was
+        # on. Plain ILIKE rather than a tsvector/GIN index — per the issue's own scope
+        # note, this app's realistic per-user note volume doesn't justify the index
+        # overhead, and library_entries/personal_notes are both already unique per
+        # (user_id, anime_id) so the LEFT JOIN below can't fan out extra rows. Every
+        # note table is filtered by the searching user's own id, never cross-user.
+        # matched_title / matched_notes tell the template *why* a row matched, since a
+        # notes-only match won't have the query string visible anywhere else on the card.
         pattern = f"%{q}%"
         rows = db.fetchall(
             """
@@ -5128,17 +5138,44 @@ def search(request: Request, q: str = ""):
                 a.external_links,
                 le.status,
                 le.score,
-                le.progress
+                le.progress,
+                (a.title_english ILIKE %(pattern)s
+                 OR a.title_romaji ILIKE %(pattern)s
+                 OR a.title_native ILIKE %(pattern)s) AS matched_title,
+                (pn.notes ILIKE %(pattern)s
+                 OR EXISTS (
+                     SELECT 1 FROM rewatch_notes rn
+                     WHERE rn.user_id = le.user_id AND rn.anime_id = a.id
+                       AND rn.note ILIKE %(pattern)s
+                 )
+                 OR EXISTS (
+                     SELECT 1 FROM episode_notes en
+                     WHERE en.user_id = le.user_id AND en.anime_id = a.id
+                       AND en.note ILIKE %(pattern)s
+                 )) AS matched_notes
             FROM library_entries le
             JOIN anime a ON a.id = le.anime_id
-            WHERE
-                (a.title_english ILIKE %s
-                 OR a.title_romaji ILIKE %s
-                 OR a.title_native ILIKE %s)
-                AND le.user_id = %s
+            LEFT JOIN personal_notes pn ON pn.user_id = le.user_id AND pn.anime_id = a.id
+            WHERE le.user_id = %(user_id)s
+              AND (
+                a.title_english ILIKE %(pattern)s
+                OR a.title_romaji ILIKE %(pattern)s
+                OR a.title_native ILIKE %(pattern)s
+                OR pn.notes ILIKE %(pattern)s
+                OR EXISTS (
+                    SELECT 1 FROM rewatch_notes rn
+                    WHERE rn.user_id = le.user_id AND rn.anime_id = a.id
+                      AND rn.note ILIKE %(pattern)s
+                )
+                OR EXISTS (
+                    SELECT 1 FROM episode_notes en
+                    WHERE en.user_id = le.user_id AND en.anime_id = a.id
+                      AND en.note ILIKE %(pattern)s
+                )
+              )
             ORDER BY le.status, a.title_romaji
             """,
-            (pattern, pattern, pattern, user["id"]),
+            {"pattern": pattern, "user_id": user["id"]},
         )
         for row in rows:
             entry = dict(row)

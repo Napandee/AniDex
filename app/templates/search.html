@@ -23,6 +23,9 @@
           {% if e.title_english and e.title_english != e.title_romaji %}
           <p class="title-sub">{{ e.title_romaji }}</p>
           {% endif %}
+          {% if e.matched_notes and not e.matched_title %}
+          <p class="search-matched-notes">{{ t('search_matched_notes') }}</p>
+          {% endif %}
           <div class="meta">
             <div class="star-rating" data-anime-id="{{ e.id }}" data-score="{{ (e.score | int) if e.score else 0 }}">
               {% for i in [1, 2, 3, 4, 5] %}

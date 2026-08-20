@@ -256,11 +256,12 @@
   "link_go_to_library": "ライブラリタブへ移動",
 
   "title_search": "検索 — Anime Tracker",
-  "search_placeholder": "すべてのタイトルを検索…",
+  "search_placeholder": "タイトルとメモを検索…",
   "search_submit_btn": "検索",
   "search_result_singular": "{count}件の結果",
   "search_result_plural": "{count}件の結果",
   "search_empty_result": "該当する結果はありません",
+  "search_matched_notes": "メモ内で一致",
 
   "title_upcoming": "放送予定 — Anime Tracker",
   "upcoming_page_title": "放送予定のエピソード",

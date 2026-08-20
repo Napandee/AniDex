@@ -2665,6 +2665,12 @@ body.auth-page main {
 .search-submit:hover { background: var(--accent-hover); }
 .search-count { font-size: 0.875rem; color: var(--t5); margin-bottom: 1rem; }
 .search-empty { color: var(--t6); font-size: 0.9rem; }
+.search-matched-notes {
+  font-size: 0.75rem;
+  color: var(--t6);
+  font-style: italic;
+  margin: 0 0 0.35rem;
+}
 
 .status-chip {
   font-size: 0.7rem;

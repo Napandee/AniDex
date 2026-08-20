@@ -256,11 +256,12 @@
   "link_go_to_library": "前往库标签页",
 
   "title_search": "搜索 — Anime Tracker",
-  "search_placeholder": "搜索所有标题…",
+  "search_placeholder": "搜索标题和笔记…",
   "search_submit_btn": "搜索",
   "search_result_singular": "找到 {count} 个结果，关于",
   "search_result_plural": "找到 {count} 个结果，关于",
   "search_empty_result": "没有找到关于以下内容的结果",
+  "search_matched_notes": "在笔记中匹配",
 
   "title_upcoming": "即将播出 — Anime Tracker",
   "upcoming_page_title": "即将播出的剧集",

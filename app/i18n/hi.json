@@ -256,11 +256,12 @@
   "link_go_to_library": "लाइब्रेरी टैब पर जाएँ",
 
   "title_search": "खोजें — Anime Tracker",
-  "search_placeholder": "सभी शीर्षकों में खोजें…",
+  "search_placeholder": "शीर्षकों और नोट्स में खोजें…",
   "search_submit_btn": "खोजें",
   "search_result_singular": "{count} परिणाम मिला",
   "search_result_plural": "{count} परिणाम मिले",
   "search_empty_result": "कोई परिणाम नहीं मिला",
+  "search_matched_notes": "आपके नोट्स में मेल खाया",
 
   "title_upcoming": "आगामी — Anime Tracker",
   "upcoming_page_title": "आगामी एपिसोड",
