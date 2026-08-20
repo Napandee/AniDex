@@ -203,6 +203,16 @@ file's own header comment before running it.
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
   all using `SaveMediaListEntry`. Never add further AniList mutations to the app without
   explicit agreement.
+- **MCP server exposure (issue #171):** AniDex exposes an MCP server for external AI
+  clients (Claude Code, self-configured MCP clients) to read a user's own
+  library/notes/stats/recommendation data, authenticated via per-user personal access
+  tokens issued in Settings (GitHub-PAT style — Bearer token, revocable, no OAuth
+  authorization-server role for this app). v1 is read-only; no write-capable MCP tools
+  exist. If write tools are ever added, they must require explicit ID lists — never
+  wildcard or filter-based bulk writes — to bound the blast radius of a single LLM
+  reasoning pass, and that's a deliberate future decision, not assumed here. MCP
+  exposure is a new access surface, not a new AniList write path — it never bypasses
+  the app's own internal endpoints or the guardrail above.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline (GitHub Actions workflows, image name) — changes
