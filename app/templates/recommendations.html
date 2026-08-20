@@ -31,7 +31,14 @@
       {% if e.season_label %}
       <div class="rec-season-badge" title="{{ t('rec_season_badge_title') }}">{{ e.season_label }}</div>
       {% endif %}
+      {% if not e.uninformative %}
       <div class="rec-score-badge">{{ e.rec_score | int }}%</div>
+      {% elif not e.season_label %}
+      {# Issue #178 — cold-start/uninformative score with no seasonal badge to fall
+         back on (e.g. non-seasonal candidate with zero taste-profile signal): show a
+         neutral label instead of leaving the corner blank or claiming a fake "0%". #}
+      <div class="rec-score-badge rec-score-badge--neutral" title="{{ t('rec_score_unavailable_title') }}">{{ t('rec_score_unavailable_badge') }}</div>
+      {% endif %}
     </div>
 
     <div class="rec-body">

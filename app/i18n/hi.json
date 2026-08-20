@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "ओवरराइड सहेजा गया।",
   "sync_cr_override_deleted": "ओवरराइड हटाया गया।",
 
+  "streaming_services_title": "आपके पास मौजूद स्ट्रीमिंग सेवाएँ",
+  "streaming_services_help": "स्ट्रीमिंग कवरेज पेज पर मार्जिनल-वैल्यू रैंकिंग की गणना के लिए उपयोग होता है — हर उस सेवा को चुनें जिसकी आपके पास पहले से सदस्यता है।",
+  "streaming_services_saved": "स्ट्रीमिंग सेवाएँ सहेजी गईं।",
+  "streaming_services_save_btn": "सेवाएँ सहेजें",
+  "streaming_services_view_link": "स्ट्रीमिंग कवरेज देखें →",
+
   "sync_history_title": "सिंक इतिहास",
   "sync_history_col_time": "समय",
   "sync_history_col_type": "प्रकार",
@@ -263,6 +269,12 @@
   "queue_no_matches": "कोई मेल नहीं मिला।",
   "queue_rec_match": "मेल",
   "queue_resumed_at": "एप {num} से फिर शुरू किया",
+  "queue_rewatch_heading": "फिर से देखने लायक",
+  "queue_rewatch_sub": "{months}+ महीने पहले पूरी हुई सीरीज़, सबसे लंबे समय से न देखी गई पहले।",
+  "queue_rewatch_empty": "अभी फिर से देखने लायक कुछ नहीं है।",
+  "queue_rewatch_finished_singular": "{months} महीने पहले पूरी हुई",
+  "queue_rewatch_finished_plural": "{months} महीने पहले पूरी हुई",
+  "queue_rewatch_start_btn": "↺ फिर से देखें",
 
   "notes_title": "नोट्स — {title} — Anime Tracker",
   "notes_your_score": "आपका स्कोर",
@@ -333,6 +345,17 @@
   "stats_rec_dismiss_heading": "खारिज करने के कारण",
   "stats_rec_dismiss_empty": "अभी तक कोई अनुशंसा खारिज नहीं की गई।",
   "stats_rec_no_reason": "कोई कारण नहीं दिया गया",
+  "stats_chart_most_rewatched": "सबसे ज़्यादा दोबारा देखे गए",
+  "stats_chart_rewatch_dist": "दोबारा देखने का वितरण",
+  "stats_rewatch_list_empty": "अभी तक कोई दोबारा देखा गया शीर्षक नहीं — जो भी आप फिर से देखेंगे वह यहाँ दिखेगा।",
+  "stats_rewatch_dist_empty": "यहाँ रीवॉच आँकड़े देखने के लिए कोई शीर्षक पूरा करें।",
+
+  "stats_streaming_card_title": "स्ट्रीमिंग कवरेज",
+  "stats_streaming_no_owned": "यह देखने के लिए कि कौन-सी सेवा आपके बैकलॉग का सबसे अधिक हिस्सा अनलॉक करेगी, अपनी मौजूदा स्ट्रीमिंग सेवाएँ सेट करें।",
+  "stats_streaming_covered": "आपकी Watching/Planning बैकलॉग पहले से ही आपकी सेवाओं द्वारा कवर की जा चुकी है।",
+  "stats_streaming_top_line_singular": "{service} जोड़ने से आपके बैकलॉग से {count} और एपिसोड अनलॉक होगा।",
+  "stats_streaming_top_line_plural": "{service} जोड़ने से आपके बैकलॉग से {count} और एपिसोड अनलॉक होंगे।",
+  "stats_streaming_cta": "पूरा विवरण देखें →",
 
   "title_recommendations": "अनुशंसित — Anime Tracker",
   "rec_page_title": "आपके लिए अनुशंसित",
@@ -341,6 +364,8 @@
   "rec_scored_against": "आपकी पूर्ण और देख रहे इतिहास के आधार पर स्कोर किया गया",
   "rec_filter_new_season": "इस सीज़न में नए ({count})",
   "rec_season_badge_title": "इस सीज़न में नया — सीज़नल डिस्कवरी डाइजेस्ट (issue #13)",
+  "rec_score_unavailable_badge": "नया सुझाव",
+  "rec_score_unavailable_title": "इसे स्कोर करने के लिए अभी पर्याप्त देखने का इतिहास नहीं है — इसके बजाय एक सीज़नल डिस्कवरी पिक के रूप में दिखाया गया है",
   "rec_community_score_title": "AniList समुदाय स्कोर",
   "rec_match_genres": "जॉनर",
   "rec_match_tags": "टैग",
@@ -368,8 +393,11 @@
   "lib_sort_title": "शीर्षक",
   "lib_sort_progress": "प्रगति",
   "lib_sort_updated": "अपडेट किया गया",
+  "lib_sort_rewatches": "रीवॉच",
   "lib_all_seasons": "सभी सीज़न",
   "lib_all_stars": "सभी ★",
+  "lib_all_rewatches": "सभी",
+  "lib_rewatched_filter": "फिर से देखा गया",
   "lib_add_tags_placeholder": "टैग जोड़ें (कॉमा से अलग करें)",
   "lib_clear_btn": "साफ़ करें",
   "lib_empty": "इस सूची में कोई प्रविष्टि नहीं है।",
@@ -497,5 +525,28 @@
   "season_spring": "वसंत",
   "season_summer": "गर्मी",
   "season_fall": "पतझड़",
-  "js_season_label": "{season} {year}"
+  "js_season_label": "{season} {year}",
+
+  "streaming_page_title": "स्ट्रीमिंग कवरेज",
+  "streaming_page_sub": "कौन-सी न रखी गई स्ट्रीमिंग सेवा आपके Watching/Planning बैकलॉग का सबसे अधिक हिस्सा अनलॉक करेगी, शेष एपिसोड के अनुसार क्रमबद्ध।",
+  "streaming_disclosure": "AniList के स्ट्रीमिंग लिंक समुदाय द्वारा क्यूरेट किए जाते हैं और वास्तविक उपलब्धता से पीछे हो सकते हैं — इसे एक गारंटी नहीं, बल्कि एक मार्गदर्शिका मानें।",
+
+  "streaming_owned_title": "आपके पास मौजूद सेवाएँ",
+  "streaming_owned_empty": "आपने अभी तक यह सेट नहीं किया कि आपके पास कौन-सी स्ट्रीमिंग सेवाएँ हैं।",
+  "streaming_owned_manage_link": "सेटिंग्स में प्रबंधित करें →",
+
+  "streaming_ranked_title": "अगर आप जोड़ें…",
+  "streaming_ranked_empty_no_owned": "व्यक्तिगत कवरेज देखने के लिए सेटिंग्स में अपनी मौजूदा स्ट्रीमिंग सेवाएँ सेट करें।",
+  "streaming_ranked_empty_covered": "आपकी Watching/Planning बैकलॉग पहले से ही आपकी सेवाओं द्वारा कवर की जा चुकी है — अनलॉक करने के लिए कुछ नहीं बचा।",
+  "streaming_already_covered_label": "आपकी सेवाओं द्वारा पहले से कवर किया गया",
+  "streaming_backlog_remaining_label": "कुल शेष Watching/Planning एपिसोड",
+
+  "streaming_episodes_singular": "{count} एपिसोड",
+  "streaming_episodes_plural": "{count} एपिसोड",
+  "streaming_titles_singular": "{count} शीर्षक",
+  "streaming_titles_plural": "{count} शीर्षक",
+
+  "streaming_footprint_title": "ऐतिहासिक पदचिह्न (पूर्ण / छोड़ा गया)",
+  "streaming_footprint_desc": "केवल जानकारी हेतु — ऊपर की रैंकिंग को प्रभावित नहीं करता।",
+  "streaming_footprint_empty": "अभी तक स्ट्रीमिंग लिंक वाले कोई पूर्ण या छोड़े गए शीर्षक नहीं हैं।"
 }

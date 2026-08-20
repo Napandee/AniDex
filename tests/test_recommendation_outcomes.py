@@ -5,7 +5,7 @@ The recommender has never had a feedback loop: `recommendation_scores.dismissed`
 `dismiss_reason` was captured but never aggregated, and there was no positive signal
 linking "we recommended X" to "the user later added/rated X". This suite covers
 app.main's `_compute_recommendation_outcomes()` (the new hit-rate + dismiss-reason
-query) and `recommendation_scores.first_shown_at` (migration 016 — the anchor the hit
+query) and `recommendation_scores.first_shown_at` (migration 017 — the anchor the hit
 window is measured from, since `computed_at` gets bumped to now() on every recommender
 rerun and would otherwise make a long-lived recommendation look "just recommended").
 

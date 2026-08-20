@@ -328,7 +328,7 @@ CREATE TABLE recommendation_scores (
                                                             -- window is measured from. Preserved
                                                             -- across rebuilds the same way
                                                             -- dismissed/snoozed_until are. Added
-                                                            -- migration 016.
+                                                            -- migration 017.
     UNIQUE (user_id, anime_id)
 );
 
@@ -390,6 +390,20 @@ CREATE TABLE netflix_sync_state (
     rewatch_in_progress     BOOLEAN NOT NULL DEFAULT FALSE,
     last_synced_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, anilist_id)
+);
+
+-- =========================================================================
+-- STREAMING COVERAGE (issue #182) — "services I own", scored against the library by
+-- episodes-remaining. See migrations/016_streaming_coverage.sql for the schema-choice
+-- rationale (free TEXT service name validated against app/main.py's STREAMING_SITES
+-- allowlist in application code, not a DB-level CHECK/FK).
+-- =========================================================================
+
+CREATE TABLE user_streaming_services (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    service    TEXT NOT NULL,
+    added_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, service)
 );
 
 -- =========================================================================

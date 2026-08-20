@@ -230,9 +230,10 @@ function applyLibraryFilters() {
       ? `${card.dataset.seasonYear}|${card.dataset.season}` : '';
     const seasonOk  = !activeSeason || seasonKey === activeSeason;
     const scoreOk   = card.dataset.scoreHidden !== 'true';
+    const rewatchOk = card.dataset.rewatchHidden !== 'true';
     const cardTags  = (card.dataset.tags || '').toLowerCase().split(',').map(t => t.trim());
     const tagOk     = !activeTag || cardTags.includes(activeTag);
-    const show    = textOk && fmtOk && seasonOk && scoreOk && tagOk;
+    const show    = textOk && fmtOk && seasonOk && scoreOk && rewatchOk && tagOk;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
@@ -256,6 +257,9 @@ function sortLibrary() {
     }
     if (activeSort === 'updated') {
       return (b.dataset.updated || '').localeCompare(a.dataset.updated || '');
+    }
+    if (activeSort === 'rewatches') {
+      return parseFloat(b.dataset.repeatCount || 0) - parseFloat(a.dataset.repeatCount || 0);
     }
     return 0;
   });
@@ -770,6 +774,33 @@ document.querySelectorAll('.btn-mark-watched').forEach(btn => {
     } catch {
       btn.disabled = false;
       btn.textContent = '✓ ' + t('queue_watched_btn');
+    }
+  });
+});
+
+// ── Start rewatch (queue page rewatch-reminder section, issue #191) ───────────
+document.querySelectorAll('.btn-start-rewatch').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const animeId = btn.dataset.animeId;
+    const item = btn.closest('.queue-item');
+
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: 'REPEATING'}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+
+      item.style.transition = 'opacity 0.3s';
+      item.style.opacity = '0';
+      setTimeout(() => item.remove(), 300);
+    } catch {
+      btn.disabled = false;
+      btn.textContent = t('queue_rewatch_start_btn');
     }
   });
 });

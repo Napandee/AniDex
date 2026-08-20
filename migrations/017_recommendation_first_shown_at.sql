@@ -1,5 +1,9 @@
--- Migration 016: add recommendation_scores.first_shown_at — issue #185's
+-- Migration 017: add recommendation_scores.first_shown_at — issue #185's
 -- recommend->outcome hit-rate instrumentation.
+--
+-- (Originally numbered 016 during development; renumbered to 017 after #182's
+-- Streaming Coverage migration merged to main and claimed 016 first — see the
+-- sequential-numbering convention this repo follows for migrations/.)
 --
 -- `computed_at` is overwritten to now() on every recommender rerun (see
 -- score_and_store()'s ON CONFLICT DO UPDATE), so it only ever reflects the *last*

@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "Corrección guardada.",
   "sync_cr_override_deleted": "Corrección eliminada.",
 
+  "streaming_services_title": "Servicios de streaming que ya tienes",
+  "streaming_services_help": "Se usa para calcular la clasificación de cobertura de valor marginal en la página de Cobertura de Streaming — marca cada servicio al que ya estés suscrito.",
+  "streaming_services_saved": "Servicios de streaming guardados.",
+  "streaming_services_save_btn": "Guardar servicios",
+  "streaming_services_view_link": "Ver cobertura de streaming →",
+
   "sync_history_title": "Historial de sincronización",
   "sync_history_col_time": "Hora",
   "sync_history_col_type": "Tipo",
@@ -263,6 +269,12 @@
   "queue_no_matches": "Sin coincidencias.",
   "queue_rec_match": "coincidencia",
   "queue_resumed_at": "reanudado en el ep {num}",
+  "queue_rewatch_heading": "Pendientes de revisión",
+  "queue_rewatch_sub": "Series completadas hace {months}+ meses, ordenadas de más a menos tiempo transcurrido.",
+  "queue_rewatch_empty": "Nada pendiente de revisión todavía.",
+  "queue_rewatch_finished_singular": "Terminado hace {months} mes",
+  "queue_rewatch_finished_plural": "Terminado hace {months} meses",
+  "queue_rewatch_start_btn": "↺ Revisar",
 
   "notes_title": "Notas — {title} — Anime Tracker",
   "notes_your_score": "Tu puntuación",
@@ -333,6 +345,17 @@
   "stats_rec_dismiss_heading": "Motivos de descarte",
   "stats_rec_dismiss_empty": "Aún no hay recomendaciones descartadas.",
   "stats_rec_no_reason": "Sin motivo indicado",
+  "stats_chart_most_rewatched": "Más revisionados",
+  "stats_chart_rewatch_dist": "Distribución de revisionados",
+  "stats_rewatch_list_empty": "Aún no hay revisionados: lo que vuelvas a ver aparecerá aquí.",
+  "stats_rewatch_dist_empty": "Completa un título para ver aquí las estadísticas de revisionado.",
+
+  "stats_streaming_card_title": "Cobertura de Streaming",
+  "stats_streaming_no_owned": "Indica qué servicios de streaming ya tienes para ver cuál desbloquearía más de tu lista pendiente.",
+  "stats_streaming_covered": "Tu lista de Viendo/Planeando ya está cubierta por los servicios que tienes.",
+  "stats_streaming_top_line_singular": "Añadir {service} desbloquearía {count} episodio más de tu lista pendiente de Viendo/Planeando.",
+  "stats_streaming_top_line_plural": "Añadir {service} desbloquearía {count} episodios más de tu lista pendiente de Viendo/Planeando.",
+  "stats_streaming_cta": "Ver el desglose completo →",
 
   "title_recommendations": "Recomendados — Anime Tracker",
   "rec_page_title": "Recomendados para ti",
@@ -341,6 +364,8 @@
   "rec_scored_against": "puntuado según tu historial de completados y en visionado",
   "rec_filter_new_season": "Nuevas esta temporada ({count})",
   "rec_season_badge_title": "Nueva esta temporada — resumen de descubrimiento estacional (issue #13)",
+  "rec_score_unavailable_badge": "Nueva sugerencia",
+  "rec_score_unavailable_title": "Aún no hay suficiente historial de visualización para puntuar esto — se muestra como una recomendación de descubrimiento estacional",
   "rec_community_score_title": "Puntuación de la comunidad de AniList",
   "rec_match_genres": "Géneros",
   "rec_match_tags": "Etiquetas",
@@ -368,8 +393,11 @@
   "lib_sort_title": "Título",
   "lib_sort_progress": "Progreso",
   "lib_sort_updated": "Actualizado",
+  "lib_sort_rewatches": "Repeticiones",
   "lib_all_seasons": "Todas las temporadas",
   "lib_all_stars": "Todas ★",
+  "lib_all_rewatches": "Todas",
+  "lib_rewatched_filter": "Revisto",
   "lib_add_tags_placeholder": "Añadir etiquetas (separadas por comas)",
   "lib_clear_btn": "Borrar",
   "lib_empty": "No hay entradas en esta lista.",
@@ -497,5 +525,28 @@
   "season_spring": "Primavera",
   "season_summer": "Verano",
   "season_fall": "Otoño",
-  "js_season_label": "{season} {year}"
+  "js_season_label": "{season} {year}",
+
+  "streaming_page_title": "Cobertura de Streaming",
+  "streaming_page_sub": "Qué servicio de streaming que no tienes desbloquearía más de tu lista pendiente de Viendo/Planeando, clasificado por episodios restantes.",
+  "streaming_disclosure": "Los enlaces de streaming de AniList son editados por la comunidad y pueden no reflejar la disponibilidad real — tómalo como una guía, no como una garantía.",
+
+  "streaming_owned_title": "Servicios que tienes",
+  "streaming_owned_empty": "Todavía no has indicado qué servicios de streaming tienes.",
+  "streaming_owned_manage_link": "Gestionar en Ajustes →",
+
+  "streaming_ranked_title": "Si añadieras…",
+  "streaming_ranked_empty_no_owned": "Indica qué servicios de streaming ya tienes en Ajustes para ver una cobertura personalizada.",
+  "streaming_ranked_empty_covered": "Tu lista pendiente de Viendo/Planeando ya está cubierta por los servicios que tienes — no queda nada por desbloquear.",
+  "streaming_already_covered_label": "Ya cubierto por los servicios que tienes",
+  "streaming_backlog_remaining_label": "Episodios restantes totales en Viendo/Planeando",
+
+  "streaming_episodes_singular": "{count} episodio",
+  "streaming_episodes_plural": "{count} episodios",
+  "streaming_titles_singular": "{count} título",
+  "streaming_titles_plural": "{count} títulos",
+
+  "streaming_footprint_title": "Huella histórica (Completado / Abandonado)",
+  "streaming_footprint_desc": "Solo informativo — no afecta a la clasificación anterior.",
+  "streaming_footprint_empty": "Todavía no hay títulos Completados o Abandonados con enlaces de streaming."
 }
