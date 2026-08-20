@@ -17,7 +17,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <link rel="stylesheet" href="/static/style.css?v=50">
+  <!-- v=51, not the v=50 both this branch and #83 (2FA) independently landed on —
+       #83 bumped v49->v50 for unrelated .twofa-* CSS, this branch separately bumped
+       v49->v50 for the mobile-overflow fixes; merging both under one shared "v=50"
+       string would leave any client that already cached style.css?v=50 from
+       whichever of the two shipped first stuck with half the changes forever. -->
+  <link rel="stylesheet" href="/static/style.css?v=51">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <script src="/static/script.js?v=23" defer></script>
 </head>

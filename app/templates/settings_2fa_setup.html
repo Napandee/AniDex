@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ t('title_2fa_setup') }}{% endblock %}
+
+{% block content %}
+<div class="notes-page">
+
+  <div class="page-header">
+    <h1 class="page-title">{{ t('twofa_setup_heading') }}</h1>
+    <p class="page-sub">{{ t('twofa_setup_intro') }}</p>
+  </div>
+
+  <div class="settings-section settings-section--first">
+    {% if error %}<p class="settings-error">{{ error }}</p>{% endif %}
+
+    <div class="twofa-qr-wrap">
+      <img src="{{ qr_data_uri }}" alt="{{ t('twofa_setup_qr_alt') }}" width="220" height="220">
+    </div>
+
+    <p class="settings-section-desc">{{ t('twofa_setup_secret_label') }}</p>
+    <div class="twofa-secret-key">{{ secret }}</div>
+
+    <form method="post" action="/settings/2fa/setup">
+      <div class="form-field">
+        <label class="form-label" for="code">{{ t('twofa_setup_code_label') }}</label>
+        <input class="form-input" type="text" id="code" name="code"
+               inputmode="numeric" autocomplete="one-time-code"
+               placeholder="{{ t('twofa_setup_code_placeholder') }}" maxlength="6" required autofocus>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-save">{{ t('twofa_setup_submit_btn') }}</button>
+      </div>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

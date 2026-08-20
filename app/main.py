@@ -1,3 +1,4 @@
+import base64
 import html
 import io
 import json
@@ -15,6 +16,10 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
 import httpx
+import psycopg2.extras
+import pyotp
+import qrcode
+import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
@@ -29,7 +34,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n
+from app import db, config, privacy, outbox, i18n, sessions
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -674,7 +679,14 @@ if not _SESSION_SECRET_KEY:
         "SESSION_SECRET_KEY not set — generated a random one for this process. "
         "Sessions will NOT survive a restart. Set SESSION_SECRET_KEY for production."
     )
-app.add_middleware(SessionMiddleware, secret_key=_SESSION_SECRET_KEY)
+# Cookie max_age matches sessions.SESSION_TTL_DAYS (issue #82) — the signed cookie
+# and the server-side sessions row it points at expire on the same schedule, so
+# neither one outlives the other in either direction.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_SESSION_SECRET_KEY,
+    max_age=sessions.SESSION_TTL_DAYS * 24 * 60 * 60,
+)
 
 oauth = OAuth()  # clients registered dynamically per-request — see _ensure_oauth_registered
 
@@ -682,6 +694,151 @@ AUTH_PROVIDERS = {"google", "discord"}
 
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_LOCKOUT_MINUTES = 15
+
+# ── TOTP two-factor authentication (issue #83) ──────────────────────────────────
+# Local-account-only, deliberately unrelated to the OAuth login/callback routes above
+# (out of scope per the issue — Google/Discord already get the provider's own 2FA).
+_TOTP_ISSUER = "Anime Tracker"  # matches the brand name shown everywhere else in the
+                                # app's own UI (base.html's site-name/title suffix) —
+                                # not the repo/package name, which differs (see
+                                # CLAUDE.local.md), so an authenticator app entry
+                                # doesn't show the user something they don't recognize
+_TOTP_SETUP_TTL_MINUTES = 10
+_TOTP_SETUP_MAX_ATTEMPTS = 10
+_TOTP_RECOVERY_CODE_COUNT = 8
+_PENDING_2FA_SESSION_KEY = "pending_2fa_user_id"
+
+# A separate lockout counter from _LOGIN_MAX_ATTEMPTS/_LOGIN_LOCKOUT_MINUTES above —
+# same numbers today, but deliberately its own users.totp_failed_attempts/
+# totp_locked_until columns rather than sharing failed_login_attempts/locked_until
+# with the password check. Security-review finding (post-#83): the password-reset
+# flow (auth_reset_password_submit) resets failed_login_attempts/locked_until as a
+# side effect of a successful reset, which is correct for the *password* guess
+# budget but would also have silently re-armed an in-progress *2FA-code* brute-force
+# lockout if the two shared a column — an attacker mid-way through guessing someone's
+# TOTP code would get a fresh 5-attempt budget for free the moment an unrelated
+# password reset happened. Splitting the columns means a password reset now simply
+# can't touch the TOTP-code counter at all.
+_TOTP_LOGIN_MAX_ATTEMPTS = 5
+_TOTP_LOGIN_LOCKOUT_MINUTES = 15
+
+# Pending (not-yet-confirmed) TOTP setup state, and the one-time recovery-code
+# display payload, are held server-side in-process — keyed by user_id, never
+# written to users.totp_secret/totp_recovery_codes until a real 6-digit code from
+# the authenticator app has been verified (setup) or the codes have been shown
+# once (recovery display).
+#
+# Security-review finding (post-#83): these were originally round-tripped through
+# request.session instead. Starlette's SessionMiddleware cookie is itsdangerous-
+# *signed*, not encrypted — signing proves the cookie wasn't tampered with, it does
+# NOT keep the cookie's contents confidential. Anyone who can read the raw cookie
+# value (a browser extension with cookie-read permission, a proxy/log system that
+# captures full request/response headers) can base64-decode it and read a raw TOTP
+# secret or all 8 recovery codes in plaintext, without ever needing this process's
+# SESSION_SECRET_KEY. That's a materially different risk than the session's other
+# use (an opaque user_id, which authorizes nothing on its own without the signed
+# cookie itself) — nothing else in this app puts a real secret in request.session
+# (verified via `grep -n 'request\.session\[' app/main.py` before making this call),
+# so TOTP setup isn't going to be the first. Kept in-process (same pattern as
+# _sync_state below) rather than a DB table since it's inherently short-lived
+# (cleared on confirm/expiry/first display) and this app runs as a single uvicorn
+# process with no --workers flag (see Dockerfile CMD) — the one tradeoff is that a
+# mid-setup process restart drops the pending state, which just means the user sees
+# a fresh QR code (GET regenerates one, see settings_2fa_setup_page) rather than any
+# data loss or security gap.
+_totp_setup_state: dict[int, dict] = {}   # user_id -> {"secret", "started_at", "attempts"}
+_totp_recovery_display: dict[int, list[str]] = {}  # user_id -> plaintext codes, popped on render
+
+
+def _generate_totp_recovery_codes() -> list[str]:
+    """8 one-time backup codes (issue #83's lost-authenticator recovery mechanism),
+    formatted like 'a1b2-c3d4' for readability. Only ever returned here for the
+    one-time display right after enabling — callers must hash before persisting,
+    see _hash_recovery_code."""
+    return [f"{secrets.token_hex(2)}-{secrets.token_hex(2)}" for _ in range(_TOTP_RECOVERY_CODE_COUNT)]
+
+
+def _hash_recovery_code(code: str) -> str:
+    """Same standard as users.password_hash — bcrypt, never stored plaintext. Unlike
+    the other bcrypt.hashpw call sites in this file (registration, password reset,
+    settings_set_password), this one also lower-cases and strips the input first —
+    deliberate, not an oversight: recovery codes are meant to be enterable without
+    worrying about case, so both hashing and verification (see
+    _consume_recovery_code_if_valid) normalize the same way. Don't "fix" this
+    inconsistency by dropping the normalization."""
+    return bcrypt.hashpw(code.strip().lower().encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _consume_recovery_code_if_valid(user_id: int, code: str) -> int | None:
+    """Checks `code` against this user's unused recovery-code hashes (bcrypt compare,
+    since they're hashed at rest — no direct lookup possible). On a match, atomically
+    marks that row used (the `WHERE used_at IS NULL` guard on the UPDATE closes the
+    race window against a concurrent request replaying the same code) and returns its
+    id, or None if used_at was already set by whoever won that race. Returns None if
+    no row matches at all. One connection/transaction for the whole find-and-consume
+    operation rather than two separate db.fetchall/db.execute_returning round trips."""
+    code_norm = code.strip().lower().encode("utf-8")
+    with db.get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, code_hash FROM totp_recovery_codes WHERE user_id = %s AND used_at IS NULL",
+                (user_id,),
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                if bcrypt.checkpw(code_norm, row["code_hash"].encode("utf-8")):
+                    cur.execute(
+                        "UPDATE totp_recovery_codes SET used_at = now() WHERE id = %s AND used_at IS NULL RETURNING id",
+                        (row["id"],),
+                    )
+                    claimed = cur.fetchone()
+                    conn.commit()
+                    return claimed["id"] if claimed else None
+    return None
+
+
+def _totp_qr_data_uri(secret: str, email: str) -> str:
+    """Renders the QR code as an inline base64 SVG data: URI — never written to disk,
+    never served from a static/cacheable route, never passed as a URL query param that
+    could end up in an access log. It only ever exists embedded directly in the HTML of
+    the one-time setup screen's own HTTP response."""
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name=_TOTP_ISSUER)
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage)
+    buf = io.BytesIO()
+    img.save(buf)
+    return "data:image/svg+xml;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _start_totp_setup_state(user_id: int) -> str:
+    """Issues a fresh pending secret for user_id, overwriting any previous pending
+    state (e.g. an expired attempt) — see settings_2fa_setup_state."""
+    secret = pyotp.random_base32()
+    _totp_setup_state[user_id] = {
+        "secret": secret,
+        "started_at": datetime.now(timezone.utc),
+        "attempts": 0,
+    }
+    return secret
+
+
+def _totp_setup_state_for(user_id: int) -> dict | None:
+    """Returns the pending setup state for user_id if one exists and hasn't expired
+    (_TOTP_SETUP_TTL_MINUTES) — expired state is discarded here so callers never see
+    a stale secret. This is the single place both the GET (render) and POST
+    (confirm) setup handlers check TTL, so they can no longer disagree about whether
+    a given secret is still current (a QR the user is actively looking at on GET
+    always matches what POST will accept, and vice versa)."""
+    state = _totp_setup_state.get(user_id)
+    if not state:
+        return None
+    if datetime.now(timezone.utc) - state["started_at"] > timedelta(minutes=_TOTP_SETUP_TTL_MINUTES):
+        _totp_setup_state.pop(user_id, None)
+        return None
+    return state
+
+
+def _clear_totp_setup_state(user_id: int) -> None:
+    _totp_setup_state.pop(user_id, None)
 
 
 @app.on_event("startup")
@@ -700,6 +857,78 @@ def shutdown() -> None:
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
+#
+# Issue #82 — session storage. The signed cookie (SessionMiddleware) now carries
+# only an opaque `sid` token; app/sessions.py is the only place that resolves that
+# token back to a user_id, against the server-side `sessions` table. Helpers below
+# wrap that for the rest of this file: _client_ip (best-effort, cosmetic only),
+# _start_session (the low-level "create a session row + point the cookie at it"
+# primitive), _end_session (call on logout), and _set_authenticated_session (issue
+# #83 — the actual call site every login/register/OAuth-callback route uses; a thin
+# wrapper around _start_session that also clears any leftover 2FA-pending state,
+# see its own docstring).
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort client IP for the Settings "active sessions" display only — never
+    used for any access-control decision. Prefers X-Forwarded-For's first hop (set
+    by the Cloudflare tunnel this instance normally sits behind) over the raw socket
+    peer, which would otherwise just be the tunnel/proxy itself."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def _start_session(request: Request, user_id: int) -> None:
+    """Create a server-side session row for user_id and point this request's signed
+    cookie at it via an opaque token. Low-level primitive — every route should call
+    _set_authenticated_session (below) instead, so a 2FA-pending flow can never leak
+    into a session established some other way."""
+    token = sessions.create_session(user_id, request.headers.get("user-agent"), _client_ip(request))
+    request.session["sid"] = token
+
+
+def _end_session(request: Request) -> None:
+    """Revoke this request's server-side session row (if any) and clear its cookie.
+    Call this instead of request.session.clear() directly from logout — a bare
+    cookie clear alone would leave the sessions row itself still active until it
+    naturally expires."""
+    token = request.session.get("sid")
+    if token:
+        sessions.revoke_session_by_token(token)
+    request.session.clear()
+
+
+def _set_authenticated_session(request: Request, user_id: int) -> None:
+    """Grants a real logged-in session for user_id — the single place every login
+    path (direct local login, the 2FA second-factor step, registration, and the
+    OAuth callback) should call, instead of _start_session directly.
+
+    Security-review finding (post-#83, re-verified after reconciling with #82's
+    session-store rewrite): auth_login_submit sets session[pending_2fa_user_id] = X
+    after a correct password on a 2FA-enabled account X, before the user has
+    completed the second factor. Nothing previously cleared that key on any OTHER
+    path that could go on to establish a session — so a user could enter X's correct
+    password, abandon the /auth/login/2fa prompt, and then separately log into (or
+    register, or OAuth-log into) a different account Y in the same browser session.
+    The session would correctly end up pointed at Y's new server-side session row at
+    that point, but the stale pending_2fa_user_id=X would still be sitting in the
+    cookie alongside it; revisiting /auth/login/2fa later with a valid code for X
+    would silently switch the authenticated identity back to X with no re-auth of Y
+    involved. Routing every session grant through here — and through _start_session,
+    the only thing that actually writes a new "sid" — closes that off
+    unconditionally, including the direct (non-2FA) login path where it's merely
+    defensive today.
+
+    Under #82's session-token model this delegates to _start_session for the actual
+    session-row creation/cookie write, rather than writing request.session["user_id"]
+    directly the way it did before #82 — see get_current_user's own #83-era note
+    about why request.session.clear() also needs to preserve pending_2fa_user_id,
+    the other half of this same reconciliation."""
+    request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+    _start_session(request, user_id)
+
 
 def get_current_user(request: Request) -> dict | None:
     """Return the logged-in user's row, or None if no valid session.
@@ -708,14 +937,53 @@ def get_current_user(request: Request) -> dict | None:
     single choke point _require_user/_require_user_api/_require_admin and the nav
     context processor all go through, so clearing the session here rejects an
     already-established session on its very next request, not just at login.
+
+    Issue #82: resolves request.session["sid"] against the server-side sessions
+    table rather than trusting a user_id straight out of the cookie. Cached on
+    request.state for the duration of one request — _nav_context and whichever
+    route handler is running both call this, and without the cache that's two
+    identical DB round trips (users + sessions) per page load instead of one.
+
+    Rollout note: every pre-#82 cookie has no "sid" key at all (old shape was just
+    `{"user_id": N}`), so `request.session.get("sid")` on one of those is always
+    None — those requests fall straight through to the "not authenticated" branch
+    below and the stale cookie gets cleared. That's a deliberate one-time re-login
+    for every session that existed before this shipped, not a bug — see this
+    feature's PR description for the full rollout writeup.
+
+    Issue #83 reconciliation note: a request mid-way through the TOTP second-factor
+    flow ALSO has no "sid" key yet (that's the whole point — it isn't authenticated
+    until the code is verified), so it hits this same "not authenticated" branch on
+    every single page render in between (every templates.TemplateResponse call runs
+    the _nav_context processor, which calls this function). Without special-casing
+    it, the unconditional request.session.clear() below would wipe out
+    pending_2fa_user_id the moment auth_login_2fa_page renders its own response —
+    before the user ever gets to submit a code — since SessionMiddleware writes
+    whatever's left in request.session back to the cookie at the end of the request
+    regardless of which code path touched it. pending_2fa_user_id is deliberately
+    preserved across the clear; everything else about a stale/invalid session still
+    gets scrubbed exactly as before.
     """
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return None
-    user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
-    if user and not user["is_active"]:
+    if hasattr(request.state, "_cached_user"):
+        return request.state._cached_user
+
+    user = None
+    token = request.session.get("sid")
+    if token:
+        user_id = sessions.resolve_session(token)
+        if user_id:
+            user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+            if user and not user["is_active"]:
+                sessions.revoke_session_by_token(token)
+                user = None
+
+    if user is None:
+        pending_2fa = request.session.get(_PENDING_2FA_SESSION_KEY)
         request.session.clear()
-        return None
+        if pending_2fa is not None:
+            request.session[_PENDING_2FA_SESSION_KEY] = pending_2fa
+
+    request.state._cached_user = user
     return user
 
 
@@ -970,11 +1238,106 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
             url="/auth/login?error=This+account+has+been+deactivated", status_code=303
         )
 
+    if user["totp_enabled"]:
+        # Issue #83 — hold off on last_login_at/the real session until the second
+        # factor also succeeds. The password itself is proven correct at this point,
+        # so failed_login_attempts/locked_until (the PASSWORD guess budget) reset
+        # right away, same as the no-2FA path below — that's a separate concern from
+        # totp_failed_attempts/totp_locked_until (the CODE guess budget), which
+        # auth_login_2fa_submit owns exclusively from here on. If that TOTP counter
+        # is already locked, say so now instead of bouncing the user into a 2FA
+        # prompt they can't actually get past.
+        if user["totp_locked_until"] and user["totp_locked_until"] > datetime.now(timezone.utc):
+            minutes_left = max(1, int((user["totp_locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+            return RedirectResponse(
+                url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
+                status_code=303,
+            )
+        db.execute(
+            "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
+            (user["id"],),
+        )
+        request.session[_PENDING_2FA_SESSION_KEY] = user["id"]
+        return RedirectResponse(url="/auth/login/2fa", status_code=303)
+
     db.execute(
         "UPDATE users SET last_login_at = now(), failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
         (user["id"],),
     )
-    request.session["user_id"] = user["id"]
+    _set_authenticated_session(request, user["id"])
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/auth/login/2fa", response_class=HTMLResponse)
+def auth_login_2fa_page(request: Request, error: str = ""):
+    """Second-factor prompt (issue #83) — only reachable via the pending_2fa_user_id
+    session key auth_login_submit sets after a correct password on an account with
+    TOTP enabled. Never starts a real session itself; that only happens on a
+    verified code/recovery code below, via _set_authenticated_session (issue #82's
+    session-token model under the hood, see that helper's docstring)."""
+    if not request.session.get(_PENDING_2FA_SESSION_KEY):
+        return RedirectResponse(url="/auth/login", status_code=303)
+    return templates.TemplateResponse(request, "auth_login_2fa.html", {"error": error})
+
+
+@app.post("/auth/login/2fa")
+def auth_login_2fa_submit(request: Request, code: str = Form(...)):
+    pending_id = request.session.get(_PENDING_2FA_SESSION_KEY)
+    if not pending_id:
+        return RedirectResponse(url="/auth/login", status_code=303)
+
+    user = db.fetchone("SELECT * FROM users WHERE id = %s", (pending_id,))
+    if not user or not user["totp_enabled"] or not user["is_active"]:
+        # Account state changed mid-flow (2FA disabled elsewhere, deactivated, or
+        # deleted) — no valid pending login to complete.
+        request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+        return RedirectResponse(url="/auth/login", status_code=303)
+
+    if user["totp_locked_until"] and user["totp_locked_until"] > datetime.now(timezone.utc):
+        request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+        minutes_left = max(1, int((user["totp_locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+        return RedirectResponse(
+            url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
+            status_code=303,
+        )
+
+    code = code.strip()
+    valid = bool(code) and pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1)
+    if not valid and code:
+        # Falls back to a one-time recovery code (issue #83's lost-authenticator path)
+        # — only tried if the TOTP check itself failed, so a valid 6-digit code is
+        # never wasted second-guessing it against the recovery-code table.
+        valid = _consume_recovery_code_if_valid(user["id"], code) is not None
+
+    if not valid:
+        attempts = user["totp_failed_attempts"] + 1
+        if attempts >= _TOTP_LOGIN_MAX_ATTEMPTS:
+            db.execute(
+                "UPDATE users SET totp_failed_attempts = %s, totp_locked_until = now() + (%s * interval '1 minute') WHERE id = %s",
+                (attempts, _TOTP_LOGIN_LOCKOUT_MINUTES, user["id"]),
+            )
+            # Crossing the lockout threshold ends this login attempt just as
+            # definitively as the two early-return branches above — clear the
+            # pending state AND redirect straight to /auth/login with the lockout
+            # message immediately, rather than back to /auth/login/2fa, so an
+            # immediate follow-up GET can't re-render a code-entry form the account
+            # is now locked out of even for one extra round trip.
+            request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+            return RedirectResponse(
+                url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{_TOTP_LOGIN_LOCKOUT_MINUTES}+minutes",
+                status_code=303,
+            )
+        db.execute(
+            "UPDATE users SET totp_failed_attempts = %s WHERE id = %s",
+            (attempts, user["id"]),
+        )
+        return RedirectResponse(url="/auth/login/2fa?error=Invalid+code", status_code=303)
+
+    db.execute(
+        "UPDATE users SET last_login_at = now(), totp_failed_attempts = 0, totp_locked_until = NULL WHERE id = %s",
+        (user["id"],),
+    )
+    _set_authenticated_session(request, user["id"])
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -1006,7 +1369,7 @@ def auth_register_submit(request: Request, email: str = Form(...), password: str
         return denied
     db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user["id"]))
 
-    request.session["user_id"] = user["id"]
+    _set_authenticated_session(request, user["id"])
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -1113,7 +1476,7 @@ async def auth_callback(request: Request, provider: str):
     if denied:
         return denied
 
-    request.session["user_id"] = user["id"]
+    _set_authenticated_session(request, user["id"])
     return RedirectResponse(url="/")
 
 
@@ -1204,7 +1567,7 @@ def settings_unlink(request: Request, provider: str):
 
 @app.post("/auth/logout")
 async def auth_logout(request: Request):
-    request.session.clear()
+    _end_session(request)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -1462,6 +1825,9 @@ def admin_deactivate_user(request: Request, user_id: int):
         return HTMLResponse("<h1>User not found</h1>", status_code=404)
 
     db.execute("UPDATE users SET is_active = false WHERE id = %s", (user_id,))
+    # Issue #82 — now that sessions are server-side, cut off any already-open tab
+    # immediately instead of only rejecting it lazily on its next request.
+    sessions.revoke_all_sessions(user_id)
     _log_admin_action(
         admin_user["id"],
         "user_deactivated",
@@ -1482,6 +1848,45 @@ def admin_reactivate_user(request: Request, user_id: int):
         return HTMLResponse("<h1>User not found</h1>", status_code=404)
 
     db.execute("UPDATE users SET is_active = true WHERE id = %s", (user_id,))
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/disable-2fa")
+def admin_disable_2fa(request: Request, user_id: int):
+    """Security-review finding (post-#83): there was no path — not even for an
+    admin — to disable 2FA for a user who lost both their authenticator AND all
+    recovery codes (the admin-mediated password reset above only ever touches
+    password_hash/failed_login_attempts/locked_until, never the totp_* columns).
+    That was a permanent-lockout trap. Gated the same way every other admin
+    user-management action in this app already is (_require_admin + admin_audit_log),
+    not a new pattern."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    target = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    if not target:
+        return HTMLResponse("<h1>User not found</h1>", status_code=404)
+    if not target["totp_enabled"]:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM totp_recovery_codes WHERE user_id = %s", (user_id,))
+            cur.execute(
+                "UPDATE users SET totp_secret = NULL, totp_enabled = false, totp_enabled_at = NULL, "
+                "totp_failed_attempts = 0, totp_locked_until = NULL WHERE id = %s",
+                (user_id,),
+            )
+        conn.commit()
+
+    admin_user = get_current_user(request)
+    _log_admin_action(
+        admin_user["id"],
+        "totp_disabled_by_admin",
+        target_user_id=user_id,
+        detail=f"target_email={target['email']}",
+    )
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -2064,7 +2469,7 @@ def queue(request: Request, status: str = None):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request, link_error: str = "", password_error: str = "", saved: str = "",
-    csv_import_error: str = "", cr_override_error: str = "",
+    csv_import_error: str = "", cr_override_error: str = "", twofa_error: str = "",
 ):
     user, denied = _require_user(request)
     if denied:
@@ -2086,6 +2491,12 @@ def settings_page(
         (user["id"],),
     )
 
+    # Issue #82 — active sessions list. current_token identifies which row is
+    # "this device" purely server-side (list_active_sessions never hands the raw
+    # token back), so the current row can be flagged without ever putting a live
+    # session token into the rendered page.
+    active_sessions = sessions.list_active_sessions(user["id"], request.session.get("sid"))
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2100,6 +2511,7 @@ def settings_page(
                 "google_linked": bool(user["google_id"]),
                 "discord_linked": bool(user["discord_id"]),
                 "is_admin": user["is_admin"],
+                "totp_enabled": user["totp_enabled"],
             },
             "oauth_google_configured": oauth_configured("google"),
             "oauth_discord_configured": oauth_configured("discord"),
@@ -2108,13 +2520,45 @@ def settings_page(
             "saved": saved,
             "csv_import_error": csv_import_error,
             "cr_override_error": cr_override_error,
+            "twofa_error": twofa_error,
             "cr_overrides": cr_overrides,
+            "active_sessions": active_sessions,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
             },
         },
     )
+
+
+@app.post("/settings/sessions/{session_id}/revoke")
+def settings_revoke_session(request: Request, session_id: int):
+    """Revoke one of the current user's own sessions (issue #82). sessions.revoke_session
+    scopes the UPDATE to (id, user_id), so passing another user's session_id here just
+    finds no matching row and no-ops — there's no separate ownership check needed above
+    that. Revoking the session the caller is CURRENTLY using logs them out immediately,
+    same as clicking Logout; revoking any other one just removes it from the list.
+
+    Only redirects with the success message (saved=session_revoked) when a row was
+    actually revoked — revoke_session() returns None on a no-op (already revoked, or
+    a stale/tampered id), e.g. a double-click or the same session revoked from two
+    open tabs, and that must NOT show a false "revoked" confirmation.
+
+    No explicit ?tab= on either redirect, matching every other saved=/no-op redirect
+    in this file — script.js's savedTabMap (session_revoked -> account) resolves the
+    tab client-side, and account is also just the default first tab either way.
+    """
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    revoked_token = sessions.revoke_session(session_id, user["id"])
+    if revoked_token and revoked_token == request.session.get("sid"):
+        request.session.clear()
+        return RedirectResponse(url="/auth/login", status_code=303)
+    if revoked_token:
+        return RedirectResponse(url="/settings?saved=session_revoked", status_code=303)
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -2453,6 +2897,168 @@ def settings_set_password(request: Request, password: str = Form(...)):
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user["id"]))
     return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.get("/settings/2fa/setup", response_class=HTMLResponse)
+def settings_2fa_setup_page(request: Request, error: str = ""):
+    """Issue #83 — start (or resume) a pending TOTP setup. The secret is generated
+    once per setup attempt and held server-side, in-process, keyed by user_id (see
+    _totp_setup_state's module-level comment above) — reloading this page mid-setup
+    reuses the same pending secret (so the QR code the user already scanned stays
+    valid) rather than silently generating a new one underneath them. If the
+    previous pending secret has expired (_TOTP_SETUP_TTL_MINUTES), a fresh one is
+    issued here too — the same TTL check POST already did — so GET and POST can
+    never disagree about whether a given secret/QR is still current."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    if user["totp_enabled"]:
+        return RedirectResponse(url="/settings", status_code=303)
+    if not user["password_hash"]:
+        return RedirectResponse(
+            url="/settings?twofa_error=Set+a+password+first+-+two-factor+authentication+requires+a+local+password",
+            status_code=303,
+        )
+
+    state = _totp_setup_state_for(user["id"])
+    secret = state["secret"] if state else _start_totp_setup_state(user["id"])
+
+    return templates.TemplateResponse(
+        request,
+        "settings_2fa_setup.html",
+        {
+            "qr_data_uri": _totp_qr_data_uri(secret, user["email"]),
+            "secret": secret,
+            "error": error,
+        },
+    )
+
+
+@app.post("/settings/2fa/setup")
+def settings_2fa_setup_confirm(request: Request, code: str = Form(...)):
+    """Confirms setup by verifying a real code from the authenticator app before ever
+    writing totp_secret/totp_enabled — this is the acceptance-criteria requirement
+    that enabling 2FA can't just blind-save a secret nobody's proven they can produce
+    valid codes from. On success, also generates and stores this account's one-time
+    recovery codes (issue #83's lost-authenticator recovery mechanism) in the same
+    transaction as enabling, so 2FA is never left "on" without a working recovery
+    path."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    if user["totp_enabled"]:
+        return RedirectResponse(url="/settings", status_code=303)
+
+    state = _totp_setup_state_for(user["id"])
+    if not state:
+        return RedirectResponse(
+            url="/settings/2fa/setup?error=Setup+session+expired+-+start+again", status_code=303
+        )
+
+    state["attempts"] += 1
+    if state["attempts"] > _TOTP_SETUP_MAX_ATTEMPTS:
+        _clear_totp_setup_state(user["id"])
+        return RedirectResponse(
+            url="/settings/2fa/setup?error=Too+many+attempts+-+start+again", status_code=303
+        )
+
+    secret = state["secret"]
+    if not pyotp.TOTP(secret).verify(code.strip(), valid_window=1):
+        return RedirectResponse(url="/settings/2fa/setup?error=Incorrect+code+-+try+again", status_code=303)
+
+    recovery_codes = _generate_totp_recovery_codes()
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET totp_secret = %s, totp_enabled = true, totp_enabled_at = now() WHERE id = %s",
+                (secret, user["id"]),
+            )
+            for rc in recovery_codes:
+                cur.execute(
+                    "INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (%s, %s)",
+                    (user["id"], _hash_recovery_code(rc)),
+                )
+        conn.commit()
+
+    _clear_totp_setup_state(user["id"])
+    # Shown exactly once, on the very next request only — settings_2fa_recovery_codes_page
+    # pops this in-process entry on render, so a refresh/back-navigation can't re-display
+    # codes that have already been shown. Never written to the database in plaintext, and
+    # (like the setup secret above) never round-tripped through the client-visible
+    # session cookie.
+    _totp_recovery_display[user["id"]] = recovery_codes
+    return RedirectResponse(url="/settings/2fa/recovery-codes", status_code=303)
+
+
+@app.get("/settings/2fa/recovery-codes", response_class=HTMLResponse)
+def settings_2fa_recovery_codes_page(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    codes = _totp_recovery_display.pop(user["id"], None)
+    if not codes:
+        return RedirectResponse(url="/settings", status_code=303)
+    return templates.TemplateResponse(request, "settings_2fa_recovery_codes.html", {"codes": codes})
+
+
+@app.post("/settings/2fa/disable")
+def settings_2fa_disable(request: Request, password: str = Form(...)):
+    """Disabling requires re-entering the current account password first (issue #83's
+    explicit security requirement) — a hijacked session cookie alone can't silently
+    turn 2FA off, since it doesn't carry the password. Removes the secret and every
+    recovery code together so a later re-enable can't accidentally inherit stale
+    codes from a previous setup.
+
+    Security-review finding (post-#83): the password check here originally had no
+    rate limiting at all, unlike every other password check in this app — someone
+    holding a stolen session cookie but not the password got unlimited guesses to
+    permanently strip 2FA off the account, directly defeating this route's own
+    purpose. Now shares failed_login_attempts/locked_until with the login password
+    check (this IS a password check, so it draws from the same guess budget as any
+    other one) — not the separate totp_failed_attempts/totp_locked_until pair, which
+    is specifically the TOTP-*code* guess budget used on the login second-factor
+    step."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    if not user["totp_enabled"]:
+        return RedirectResponse(url="/settings", status_code=303)
+
+    if user["locked_until"] and user["locked_until"] > datetime.now(timezone.utc):
+        minutes_left = max(1, int((user["locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
+        return RedirectResponse(
+            url=f"/settings?twofa_error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
+            status_code=303,
+        )
+
+    valid = user["password_hash"] and bcrypt.checkpw(
+        password.encode("utf-8"), user["password_hash"].encode("utf-8")
+    )
+    if not valid:
+        attempts = user["failed_login_attempts"] + 1
+        if attempts >= _LOGIN_MAX_ATTEMPTS:
+            db.execute(
+                "UPDATE users SET failed_login_attempts = %s, locked_until = now() + (%s * interval '1 minute') WHERE id = %s",
+                (attempts, _LOGIN_LOCKOUT_MINUTES, user["id"]),
+            )
+        else:
+            db.execute(
+                "UPDATE users SET failed_login_attempts = %s WHERE id = %s",
+                (attempts, user["id"]),
+            )
+        return RedirectResponse(url="/settings?twofa_error=Incorrect+password", status_code=303)
+
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM totp_recovery_codes WHERE user_id = %s", (user["id"],))
+            cur.execute(
+                "UPDATE users SET totp_secret = NULL, totp_enabled = false, totp_enabled_at = NULL, "
+                "failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
+                (user["id"],),
+            )
+        conn.commit()
+
+    return RedirectResponse(url="/settings?saved=twofa_disabled", status_code=303)
 
 
 @app.post("/api/sync")

@@ -18,7 +18,7 @@
   </div>
 
   {# ══════════════════════════════════════════════════════════════════════
-     Account tab — password + linked accounts (future home for #82, #83)
+     Account tab — password + linked accounts + active sessions (#82) (future home for #83)
      ══════════════════════════════════════════════════════════════════════ #}
   <div class="settings-tab-panel" data-tab-panel="account">
 
@@ -68,6 +68,76 @@
         <span class="linked-account-status">{{ t('account_status_not_configured') }}</span>
         {% endif %}
       </div>
+    </div>
+
+    {# ── Two-factor authentication (issue #83) ──────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('twofa_title') }}</h2>
+      <p class="settings-section-desc">{{ t('twofa_desc') }}</p>
+      {% if twofa_error %}<p class="settings-error">{{ twofa_error }}</p>{% endif %}
+      {% if saved == 'twofa_disabled' %}<p class="settings-success">{{ t('twofa_disabled_success') }}</p>{% endif %}
+
+      <div class="linked-account-row">
+        <span class="linked-account-name">{{ t('twofa_status_label') }}</span>
+        {% if account.totp_enabled %}
+        <span class="linked-account-status linked-account-status--on">{{ t('twofa_status_enabled') }}</span>
+        {% else %}
+        <span class="linked-account-status">{{ t('twofa_status_disabled') }}</span>
+        {% endif %}
+      </div>
+
+      {% if account.totp_enabled %}
+      <form method="post" action="/settings/2fa/disable" class="password-form">
+        <input class="form-input" type="password" name="password" required autocomplete="current-password"
+               placeholder="{{ t('twofa_disable_password_placeholder') }}">
+        <button type="submit" class="btn-unlink">{{ t('twofa_disable_btn') }}</button>
+      </form>
+      {% elif account.has_password %}
+      <a href="/settings/2fa/setup" class="btn-save">{{ t('twofa_enable_btn') }}</a>
+      {% else %}
+      <p class="settings-section-desc">{{ t('twofa_needs_password') }}</p>
+      {% endif %}
+    </div>
+
+    {# ── Active sessions (issue #82) ──────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('account_sessions_title') }}</h2>
+      <p class="settings-section-desc">{{ t('account_sessions_desc') }}</p>
+      {% if saved == 'session_revoked' %}<p class="settings-success">{{ t('account_sessions_revoked_msg') }}</p>{% endif %}
+
+      {% if active_sessions %}
+      <table class="sync-log-table">
+        <thead>
+          <tr>
+            <th>{{ t('account_sessions_col_device') }}</th>
+            <th>{{ t('account_sessions_col_ip') }}</th>
+            <th>{{ t('account_sessions_col_last_active') }}</th>
+            <th>{{ t('account_sessions_col_started') }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in active_sessions %}
+          <tr>
+            <td>
+              {{ s.device }}
+              {% if s.is_current %}<span class="linked-account-status linked-account-status--on">{{ t('account_sessions_current_badge') }}</span>{% endif %}
+            </td>
+            <td>{{ s.ip_address or '—' }}</td>
+            <td>{{ s.last_seen_at.strftime('%Y-%m-%d %H:%M') if s.last_seen_at else '—' }}</td>
+            <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}</td>
+            <td>
+              <form method="post" action="/settings/sessions/{{ s.id }}/revoke">
+                <button type="submit" class="btn-unlink">{% if s.is_current %}{{ t('account_sessions_revoke_current_btn') }}{% else %}{{ t('account_sessions_revoke_btn') }}{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="settings-section-desc">{{ t('account_sessions_empty') }}</p>
+      {% endif %}
     </div>
   </div>
 
@@ -558,11 +628,12 @@ document.addEventListener('DOMContentLoaded', function () {
       display: 'preferences', credentials: 'sync', netflix_csv_import: 'sync',
       cr_override: 'sync', cr_override_deleted: 'sync',
       notifications: 'notifications', privacy: 'privacy',
+      twofa_disabled: 'account', session_revoked: 'account',
     };
     const saved = params.get('saved');
     if (saved && savedTabMap[saved]) return savedTabMap[saved];
     if (params.get('csv_import_error') || params.get('cr_override_error')) return 'sync';
-    if (params.get('password_error') || params.get('link_error')) return 'account';
+    if (params.get('password_error') || params.get('link_error') || params.get('twofa_error')) return 'account';
     return null;
   });
 });
