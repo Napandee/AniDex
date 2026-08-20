@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ t('streaming_page_title') }}{% endblock %}
+
+{% block content %}
+<div class="streaming-page">
+
+  <div class="page-header">
+    <h1 class="page-title">{{ t('streaming_page_title') }}</h1>
+    <p class="page-sub">{{ t('streaming_page_sub') }}</p>
+  </div>
+
+  {# Issue #182 — same "last synced" disclosure pattern as Settings' sync-status-text
+     (settings.html), since this data (anime.external_links) is the same
+     community-curated, sync-job-owned field that pattern exists for. #}
+  <p class="streaming-disclosure">
+    {{ t('streaming_disclosure') }}
+    <span class="streaming-disclosure-ts">
+      {% if last_synced %}{{ t('sync_last_synced_prefix') }} <time datetime="{{ last_synced }}">{{ last_synced }}</time>{% else %}{{ t('sync_never_synced') }}{% endif %}
+    </span>
+  </p>
+
+  {# ── Services you own (read-only here — edited from Settings) ─────────────── #}
+  <div class="settings-section settings-section--first">
+    <h2 class="settings-section-title">{{ t('streaming_owned_title') }}</h2>
+    {% if owned_services %}
+    <div class="genre-list streaming-owned-list">
+      {% for s in owned_services %}<span class="genre">{{ s }}</span>{% endfor %}
+    </div>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_owned_empty') }}</p>
+    {% endif %}
+    <p class="streaming-manage-link"><a href="/settings?tab=sync">{{ t('streaming_owned_manage_link') }}</a></p>
+  </div>
+
+  {# ── Marginal-value ranking (the core of #182) ─────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_ranked_title') }}</h2>
+
+    {% if ranked %}
+    {% set max_episodes = ranked[0].episodes %}
+    <div class="drop-rate-list streaming-rank-list">
+      {% for r in ranked %}
+      <div class="drop-rate-row streaming-rank-row">
+        <span class="drop-rate-label streaming-rank-label">{{ r.service }}</span>
+        <div class="drop-rate-bar-track">
+          <span class="drop-rate-bar-fill streaming-rank-bar-fill"
+                style="width: {{ ((r.episodes / max_episodes * 100) if max_episodes else 0) | round(1) }}%"></span>
+        </div>
+        <span class="drop-rate-pct streaming-rank-value">
+          {% if r.episodes == 1 %}{{ t('streaming_episodes_singular', count=r.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=r.episodes) }}{% endif %}
+          <span class="drop-rate-n">· {% if r.titles == 1 %}{{ t('streaming_titles_singular', count=r.titles) }}{% else %}{{ t('streaming_titles_plural', count=r.titles) }}{% endif %}</span>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% elif not owned_services %}
+    <p class="settings-section-desc">{{ t('streaming_ranked_empty_no_owned') }}</p>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_ranked_empty_covered') }}</p>
+    {% endif %}
+
+    {% if owned_services %}
+    <p class="streaming-summary-line">
+      <span class="streaming-summary-item">
+        {{ t('streaming_already_covered_label') }}:
+        <strong>{% if already_covered_remaining == 1 %}{{ t('streaming_episodes_singular', count=already_covered_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=already_covered_remaining) }}{% endif %}</strong>
+      </span>
+      <span class="streaming-summary-item">
+        {{ t('streaming_backlog_remaining_label') }}:
+        <strong>{% if total_backlog_remaining == 1 %}{{ t('streaming_episodes_singular', count=total_backlog_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=total_backlog_remaining) }}{% endif %}</strong>
+      </span>
+    </p>
+    {% endif %}
+  </div>
+
+  {# ── Historical footprint (Completed/Dropped) — secondary, separate, never
+       blended into the ranking above. Included in v1: see the PR description for
+       why (cheap once the main query exists — same rows, same STREAMING_SITES
+       filter, just a different status bucket and a title-count instead of an
+       episodes-remaining tally). #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_footprint_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_footprint_desc') }}</p>
+    {% if footprint %}
+    <div class="drop-tag-cloud">
+      {% for f in footprint %}
+      <span class="drop-tag-chip">{{ f.service }} — {% if f.titles == 1 %}{{ t('streaming_titles_singular', count=f.titles) }}{% else %}{{ t('streaming_titles_plural', count=f.titles) }}{% endif %}</span>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_footprint_empty') }}</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

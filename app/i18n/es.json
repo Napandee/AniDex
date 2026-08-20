@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "Corrección guardada.",
   "sync_cr_override_deleted": "Corrección eliminada.",
 
+  "streaming_services_title": "Servicios de streaming que ya tienes",
+  "streaming_services_help": "Se usa para calcular la clasificación de cobertura de valor marginal en la página de Cobertura de Streaming — marca cada servicio al que ya estés suscrito.",
+  "streaming_services_saved": "Servicios de streaming guardados.",
+  "streaming_services_save_btn": "Guardar servicios",
+  "streaming_services_view_link": "Ver cobertura de streaming →",
+
   "sync_history_title": "Historial de sincronización",
   "sync_history_col_time": "Hora",
   "sync_history_col_type": "Tipo",
@@ -324,6 +330,13 @@
   "stats_day_fri": "Vie",
   "stats_heatmap_less": "Menos",
   "stats_heatmap_more": "Más",
+
+  "stats_streaming_card_title": "Cobertura de Streaming",
+  "stats_streaming_no_owned": "Indica qué servicios de streaming ya tienes para ver cuál desbloquearía más de tu lista pendiente.",
+  "stats_streaming_covered": "Tu lista de Viendo/Planeando ya está cubierta por los servicios que tienes.",
+  "stats_streaming_top_line_singular": "Añadir {service} desbloquearía {count} episodio más de tu lista pendiente de Viendo/Planeando.",
+  "stats_streaming_top_line_plural": "Añadir {service} desbloquearía {count} episodios más de tu lista pendiente de Viendo/Planeando.",
+  "stats_streaming_cta": "Ver el desglose completo →",
 
   "title_recommendations": "Recomendados — Anime Tracker",
   "rec_page_title": "Recomendados para ti",
@@ -488,5 +501,28 @@
   "season_spring": "Primavera",
   "season_summer": "Verano",
   "season_fall": "Otoño",
-  "js_season_label": "{season} {year}"
+  "js_season_label": "{season} {year}",
+
+  "streaming_page_title": "Cobertura de Streaming",
+  "streaming_page_sub": "Qué servicio de streaming que no tienes desbloquearía más de tu lista pendiente de Viendo/Planeando, clasificado por episodios restantes.",
+  "streaming_disclosure": "Los enlaces de streaming de AniList son editados por la comunidad y pueden no reflejar la disponibilidad real — tómalo como una guía, no como una garantía.",
+
+  "streaming_owned_title": "Servicios que tienes",
+  "streaming_owned_empty": "Todavía no has indicado qué servicios de streaming tienes.",
+  "streaming_owned_manage_link": "Gestionar en Ajustes →",
+
+  "streaming_ranked_title": "Si añadieras…",
+  "streaming_ranked_empty_no_owned": "Indica qué servicios de streaming ya tienes en Ajustes para ver una cobertura personalizada.",
+  "streaming_ranked_empty_covered": "Tu lista pendiente de Viendo/Planeando ya está cubierta por los servicios que tienes — no queda nada por desbloquear.",
+  "streaming_already_covered_label": "Ya cubierto por los servicios que tienes",
+  "streaming_backlog_remaining_label": "Episodios restantes totales en Viendo/Planeando",
+
+  "streaming_episodes_singular": "{count} episodio",
+  "streaming_episodes_plural": "{count} episodios",
+  "streaming_titles_singular": "{count} título",
+  "streaming_titles_plural": "{count} títulos",
+
+  "streaming_footprint_title": "Huella histórica (Completado / Abandonado)",
+  "streaming_footprint_desc": "Solo informativo — no afecta a la clasificación anterior.",
+  "streaming_footprint_empty": "Todavía no hay títulos Completados o Abandonados con enlaces de streaming."
 }

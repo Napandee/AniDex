@@ -416,6 +416,36 @@
       </form>
     </div>
 
+    {# ── Streaming services you own (issue #182) — scored against the library on
+       the separate /streaming page; this is the only place that set is edited. #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('streaming_services_title') }}
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-streaming-services">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-streaming-services"><div>
+        <p class="help-disclosure-panel-body">
+          {{ t('streaming_services_help') }}
+        </p>
+      </div></div>
+      {% if saved == 'streaming_services' %}<p class="settings-success">{{ t('streaming_services_saved') }}</p>{% endif %}
+
+      <form method="post" action="/settings/streaming-services">
+        <div class="streaming-services-grid">
+          {% for s in all_streaming_services %}
+          <label class="form-checkbox-label streaming-service-checkbox">
+            <input type="checkbox" name="service" value="{{ s }}" {% if s in owned_streaming_services %}checked{% endif %}>
+            {{ s }}
+          </label>
+          {% endfor %}
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">{{ t('streaming_services_save_btn') }}</button>
+        </div>
+      </form>
+
+      <p class="streaming-manage-link"><a href="/streaming">{{ t('streaming_services_view_link') }}</a></p>
+    </div>
+
     {# ── Sync history ─────────────────────────────────────────────────── #}
     <div class="settings-section">
       <h2 class="settings-section-title">{{ t('sync_history_title') }}</h2>
@@ -632,7 +662,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initSettingsTabs(function (params) {
     const savedTabMap = {
       display: 'preferences', credentials: 'sync', netflix_csv_import: 'sync',
-      cr_override: 'sync', cr_override_deleted: 'sync',
+      cr_override: 'sync', cr_override_deleted: 'sync', streaming_services: 'sync',
       notifications: 'notifications', privacy: 'privacy',
       twofa_disabled: 'account', session_revoked: 'account',
     };
