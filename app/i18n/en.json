@@ -396,6 +396,8 @@
   "admin_deactivate_confirm": "Deactivate {email}? They will be logged out immediately and unable to log back in until reactivated.",
   "admin_deactivate_btn": "Deactivate",
   "admin_reactivate_btn": "Reactivate",
+  "admin_disable_2fa_confirm": "Disable two-factor authentication for {email}? Use this if they've lost their authenticator and all their recovery codes — they'll need to set 2FA up again from Settings if they want it back on.",
+  "admin_disable_2fa_btn": "Disable 2FA",
 
   "admin_invites_title": "Invites",
   "admin_invite_btn": "Invite",

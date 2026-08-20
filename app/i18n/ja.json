@@ -396,6 +396,8 @@
   "admin_deactivate_confirm": "{email}を無効化しますか？ただちにログアウトされ、再度有効化されるまで再ログインできなくなります。",
   "admin_deactivate_btn": "無効化",
   "admin_reactivate_btn": "再有効化",
+  "admin_disable_2fa_confirm": "{email} の二段階認証を無効にしますか? 認証アプリとすべてのリカバリーコードを失った場合に使用してください — 再度有効にするには設定から2FAを再設定する必要があります。",
+  "admin_disable_2fa_btn": "2FAを無効にする",
 
   "admin_invites_title": "招待",
   "admin_invite_btn": "招待する",

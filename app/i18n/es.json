@@ -396,6 +396,8 @@
   "admin_deactivate_confirm": "¿Desactivar a {email}? Se cerrará su sesión de inmediato y no podrá volver a iniciar sesión hasta que se reactive.",
   "admin_deactivate_btn": "Desactivar",
   "admin_reactivate_btn": "Reactivar",
+  "admin_disable_2fa_confirm": "¿Desactivar la autenticación de dos factores para {email}? Úsalo si ha perdido su app de autenticación y todos sus códigos de recuperación — tendrá que configurar 2FA de nuevo desde Ajustes si quiere volver a activarlo.",
+  "admin_disable_2fa_btn": "Desactivar 2FA",
 
   "admin_invites_title": "Invitaciones",
   "admin_invite_btn": "Invitar",

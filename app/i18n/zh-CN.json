@@ -396,6 +396,8 @@
   "admin_deactivate_confirm": "停用 {email}？该用户将立即被登出，且在重新启用之前无法再次登录。",
   "admin_deactivate_btn": "停用",
   "admin_reactivate_btn": "重新启用",
+  "admin_disable_2fa_confirm": "为 {email} 禁用双重认证？如果他们丢失了身份验证器和所有恢复代码，请使用此操作 — 如果他们想重新启用，需要从设置中重新设置双重认证。",
+  "admin_disable_2fa_btn": "禁用双重认证",
 
   "admin_invites_title": "邀请",
   "admin_invite_btn": "邀请",

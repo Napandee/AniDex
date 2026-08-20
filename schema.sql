@@ -31,11 +31,13 @@ CREATE TABLE users (
     is_active             BOOLEAN NOT NULL DEFAULT true,   -- soft deactivation (#85); false blocks login and drops any existing session
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_login_at         TIMESTAMPTZ,
-    failed_login_attempts INTEGER NOT NULL DEFAULT 0,  -- local login only; resets on success
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,  -- PASSWORD guesses only (login + /settings/2fa/disable re-auth) — resets on success or a password reset; see totp_failed_attempts below for the separate TOTP-code guess budget
     locked_until          TIMESTAMPTZ,                  -- set after 5 failures, cleared on success or reset
     totp_secret           TEXT,                         -- base32 TOTP secret; only set once setup is confirmed (issue #83)
     totp_enabled          BOOLEAN NOT NULL DEFAULT false,
     totp_enabled_at       TIMESTAMPTZ,
+    totp_failed_attempts  INTEGER NOT NULL DEFAULT 0,   -- separate from failed_login_attempts (see column comment on that one) — this is the TOTP-code guess budget, not the password guess budget; a password reset never clears this one
+    totp_locked_until     TIMESTAMPTZ,
     UNIQUE (auth_provider, auth_provider_id)
 );
 

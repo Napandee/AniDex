@@ -89,7 +89,7 @@ def client(app_module):
 _next_user_id = [1000]
 
 
-def _make_local_user(pg_conn, password_hash, email=None):
+def _make_local_user(pg_conn, password_hash, email=None, is_admin=False):
     """Inserts a user row directly (bypassing the registration HTTP flow, which isn't
     what this suite is testing) with a real bcrypt password hash already set, so tests
     can log in against it immediately."""
@@ -98,9 +98,9 @@ def _make_local_user(pg_conn, password_hash, email=None):
     email = email or f"user{uid}@example.com"
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO users (id, auth_provider, auth_provider_id, email, password_hash) "
-            "VALUES (%s, 'local', %s, %s, %s)",
-            (uid, email, email, password_hash),
+            "INSERT INTO users (id, auth_provider, auth_provider_id, email, password_hash, is_admin) "
+            "VALUES (%s, 'local', %s, %s, %s, %s)",
+            (uid, email, email, password_hash, is_admin),
         )
     return uid, email
 
@@ -306,3 +306,327 @@ def test_recovery_code_logs_in_and_cannot_be_reused(client, pg_conn, local_user)
             (user_id,),
         )
         assert cur.fetchone()[0] == 1  # exactly the one code got marked used
+
+
+# ── Post-#83 security-review regression coverage ────────────────────────────────────
+#
+# The findings below were caught by a follow-up code review of the original PR, not
+# by this test suite — added here specifically so they can't silently regress.
+
+
+def test_abandoned_2fa_prompt_cannot_hijack_a_later_different_login(client, pg_conn, local_user):
+    """Finding #1 (session identity-switch bug): entering account X's correct
+    password sets a pending_2fa_user_id=X session key and routes to the second-
+    factor prompt. Previously nothing cleared that key on any OTHER path that could
+    go on to establish a session — so abandoning the prompt and then logging into a
+    DIFFERENT account Y in the same browser session left session["user_id"] == Y but
+    pending_2fa_user_id still == X. Revisiting /auth/login/2fa afterward with a valid
+    code for X would silently switch the authenticated identity back to X with no
+    re-auth of Y at all. _set_authenticated_session now pops pending_2fa_user_id on
+    every path that grants a session, closing this off."""
+    x_id, x_email = local_user
+    _login(client, x_email)
+    x_secret, _codes = _enable_2fa(client, pg_conn, x_id)
+    client.post("/auth/logout", follow_redirects=False)
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT last_login_at FROM users WHERE id = %s", (x_id,))
+        x_last_login_before = cur.fetchone()[0]  # set by the setup-flow login above
+
+    # Enter X's correct password — this is the step that plants the stale pending
+    # key — then abandon the 2FA prompt entirely.
+    step1 = _login(client, x_email)
+    assert step1.status_code == 303
+    assert step1.headers["location"] == "/auth/login/2fa"
+
+    # Now log into a DIFFERENT account Y in the same browser session (same
+    # TestClient / cookie jar), without ever completing X's second factor.
+    import bcrypt as _bcrypt
+
+    y_password = "a totally different password 42"
+    y_hash = _bcrypt.hashpw(y_password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+    y_id, y_email = _make_local_user(pg_conn, y_hash)
+
+    step2 = client.post("/auth/login", data={"email": y_email, "password": y_password}, follow_redirects=False)
+    assert step2.status_code == 303
+    assert step2.headers["location"] == "/"
+
+    home = client.get("/", follow_redirects=False)
+    assert home.status_code == 200  # logged in as Y now
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT last_login_at FROM users WHERE id = %s", (y_id,))
+        assert cur.fetchone()[0] is not None  # Y's login actually completed
+
+    # The stale pending_2fa_user_id=X key must be gone — revisiting the 2FA prompt
+    # must NOT let X's code silently take over the session.
+    prompt = client.get("/auth/login/2fa", follow_redirects=False)
+    assert prompt.status_code == 303
+    assert prompt.headers["location"] == "/auth/login"  # no pending flow left to resume
+
+    # Even a technically-valid code for X, submitted directly, must not switch the
+    # session's identity — there's no pending flow for it to attach to.
+    import pyotp as _pyotp
+
+    hijack_attempt = client.post(
+        "/auth/login/2fa", data={"code": _pyotp.TOTP(x_secret).now()}, follow_redirects=False
+    )
+    assert hijack_attempt.status_code == 303
+    assert hijack_attempt.headers["location"] == "/auth/login"
+
+    # X's last_login_at must be UNCHANGED from before this whole sequence — proves
+    # the session never actually re-authenticated as X, even though the hijack
+    # attempt supplied a genuinely valid code for X's secret.
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT last_login_at FROM users WHERE id = %s", (x_id,))
+        assert cur.fetchone()[0] == x_last_login_before
+
+
+def test_direct_non_2fa_login_also_clears_stale_pending_key(client, pg_conn, local_user):
+    """Defensive half of finding #1: even a direct (no-2FA) login must clear any
+    leftover pending_2fa_user_id, not just the register/OAuth paths."""
+    x_id, x_email = local_user
+    _login(client, x_email)
+    x_secret, _codes = _enable_2fa(client, pg_conn, x_id)
+    client.post("/auth/logout", follow_redirects=False)
+
+    _login(client, x_email)  # plants pending_2fa_user_id = x_id
+
+    import bcrypt as _bcrypt
+
+    y_password = "yet another password 99"
+    y_hash = _bcrypt.hashpw(y_password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+    _y_id, y_email = _make_local_user(pg_conn, y_hash)  # no 2FA — direct login path
+
+    resp = client.post("/auth/login", data={"email": y_email, "password": y_password}, follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/"
+
+    prompt = client.get("/auth/login/2fa", follow_redirects=False)
+    assert prompt.status_code == 303
+    assert prompt.headers["location"] == "/auth/login"
+
+
+# ── Finding #2: /settings/2fa/disable's password check is now rate-limited ─────────
+
+def test_disable_2fa_password_check_is_rate_limited(client, pg_conn, local_user):
+    user_id, email = local_user
+    _login(client, email)
+    _enable_2fa(client, pg_conn, user_id)
+
+    app_module_login_max = 5  # matches _LOGIN_MAX_ATTEMPTS, shared with the login password check
+    for _ in range(app_module_login_max):
+        resp = client.post("/settings/2fa/disable", data={"password": "definitely wrong"}, follow_redirects=False)
+        assert resp.status_code == 303
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT failed_login_attempts, locked_until FROM users WHERE id = %s", (user_id,))
+        attempts, locked_until = cur.fetchone()
+    assert attempts == app_module_login_max
+    assert locked_until is not None  # locked out after the same threshold as login
+
+    # Even the CORRECT password is now rejected while locked — this is the actual
+    # regression guard: previously there was no lockout at all, so unlimited guesses
+    # against a stolen session cookie could eventually strip 2FA off silently.
+    locked_attempt = client.post("/settings/2fa/disable", data={"password": PASSWORD}, follow_redirects=False)
+    assert locked_attempt.status_code == 303
+    assert locked_attempt.headers["location"].startswith("/settings?twofa_error=Too+many+failed+attempts")
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT totp_enabled FROM users WHERE id = %s", (user_id,))
+        assert cur.fetchone()[0] is True  # still enabled — lockout blocked even the right password
+
+
+def test_disable_2fa_shares_password_lockout_with_login(client, pg_conn, local_user):
+    """The disable-password check and the login-password check draw from the SAME
+    failed_login_attempts/locked_until budget (deliberate design choice — this is a
+    password check like any other), so exhausting it via one blocks the other too.
+
+    Mirrors the threat model finding #2 is actually about: a stolen SESSION COOKIE
+    (still logged in) but not the password — so the session stays authenticated
+    throughout the guessing, same as a real hijacked-cookie attacker's would."""
+    user_id, email = local_user
+    _login(client, email)
+    _enable_2fa(client, pg_conn, user_id)
+
+    for _ in range(5):
+        client.post("/settings/2fa/disable", data={"password": "nope"}, follow_redirects=False)
+
+    client.post("/auth/logout", follow_redirects=False)
+
+    # Logged out now — but the lockout is on the account (failed_login_attempts/
+    # locked_until columns), not the session, so a fresh login attempt with the
+    # correct password is also blocked.
+    resp = _login(client, email)
+    assert resp.status_code == 303
+    assert resp.headers["location"].startswith("/auth/login?error=Too+many+failed+attempts")
+
+
+# ── Finding #4: password reset must not re-arm the TOTP-code lockout ───────────────
+
+def test_password_reset_does_not_clear_totp_code_lockout(client, pg_conn, local_user):
+    user_id, email = local_user
+    _login(client, email)
+    secret, _codes = _enable_2fa(client, pg_conn, user_id)
+    client.post("/auth/logout", follow_redirects=False)
+
+    _login(client, email)
+    for _ in range(5):
+        client.post("/auth/login/2fa", data={"code": "000000"}, follow_redirects=False)
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT totp_failed_attempts, totp_locked_until FROM users WHERE id = %s", (user_id,))
+        totp_attempts, totp_locked_until = cur.fetchone()
+    assert totp_attempts == 5
+    assert totp_locked_until is not None
+
+    # Admin-mediated password reset (issue's existing flow) — insert a usable token
+    # directly, same as admin_reset_password would.
+    token = "test-reset-token-totp-lockout"
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO password_resets (token, user_id, expires_at) VALUES (%s, %s, now() + interval '1 hour')",
+            (token, user_id),
+        )
+    reset_resp = client.post(
+        f"/auth/reset-password/{token}", data={"password": "a brand new password 123"}, follow_redirects=False
+    )
+    assert reset_resp.status_code == 303
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT failed_login_attempts, locked_until, totp_failed_attempts, totp_locked_until "
+            "FROM users WHERE id = %s",
+            (user_id,),
+        )
+        pw_attempts, pw_locked, totp_attempts_after, totp_locked_after = cur.fetchone()
+
+    assert pw_attempts == 0 and pw_locked is None  # the password counter DOES reset, as before
+    # ...but the TOTP-code counter must be untouched — this is the actual regression
+    # guard: an attacker mid-way through brute-forcing the code must not get a fresh
+    # budget just because an unrelated password reset happened.
+    assert totp_attempts_after == totp_attempts
+    assert totp_locked_after == totp_locked_until
+
+
+# ── Finding #5: admin can force-disable 2FA for a locked-out user ──────────────────
+
+def test_admin_can_force_disable_2fa(client, pg_conn):
+    import bcrypt as _bcrypt
+
+    admin_password = "admin password 123"
+    admin_hash = _bcrypt.hashpw(admin_password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+    _admin_id, admin_email = _make_local_user(pg_conn, admin_hash, is_admin=True)
+
+    user_password = "locked out user password"
+    user_hash = _bcrypt.hashpw(user_password.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+    target_id, target_email = _make_local_user(pg_conn, user_hash)
+
+    # Target enables 2FA, then logs out — one shared TestClient/cookie jar used
+    # sequentially (not concurrently), so no second TestClient/lifespan startup is
+    # needed for what's really just "two different people using the browser at
+    # different times."
+    client.post("/auth/login", data={"email": target_email, "password": user_password})
+    setup_page = client.get("/settings/2fa/setup")
+    secret = SECRET_RE.search(setup_page.text).group(1)
+    import pyotp as _pyotp
+
+    client.post("/settings/2fa/setup", data={"code": _pyotp.TOTP(secret).now()})
+    client.post("/auth/logout", follow_redirects=False)
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT totp_enabled FROM users WHERE id = %s", (target_id,))
+        assert cur.fetchone()[0] is True
+
+    # Admin force-disables it — the only path available if the target lost both
+    # their authenticator and all recovery codes.
+    client.post("/auth/login", data={"email": admin_email, "password": admin_password})
+    resp = client.post(f"/admin/users/{target_id}/disable-2fa", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/admin"
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT totp_enabled, totp_secret FROM users WHERE id = %s", (target_id,))
+        enabled, secret_after = cur.fetchone()
+        cur.execute("SELECT COUNT(*) FROM totp_recovery_codes WHERE user_id = %s", (target_id,))
+        remaining = cur.fetchone()[0]
+    assert enabled is False
+    assert secret_after is None
+    assert remaining == 0
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT action, target_user_id FROM admin_audit_log WHERE action = 'totp_disabled_by_admin'"
+        )
+        audit_row = cur.fetchone()
+    assert audit_row is not None
+    assert audit_row[1] == target_id
+
+
+def test_non_admin_cannot_force_disable_2fa(client, pg_conn, local_user):
+    user_id, email = local_user
+    _login(client, email)
+    _enable_2fa(client, pg_conn, user_id)
+
+    resp = client.post(f"/admin/users/{user_id}/disable-2fa", follow_redirects=False)
+    assert resp.status_code == 403
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT totp_enabled FROM users WHERE id = %s", (user_id,))
+        assert cur.fetchone()[0] is True  # untouched — non-admin was rejected
+
+
+# ── Finding #7: crossing the TOTP lockout threshold ends the pending flow at once ──
+
+def test_totp_lockout_threshold_immediately_ends_pending_flow(client, pg_conn, local_user):
+    user_id, email = local_user
+    _login(client, email)
+    _enable_2fa(client, pg_conn, user_id)
+    client.post("/auth/logout", follow_redirects=False)
+
+    _login(client, email)
+    for _ in range(4):
+        resp = client.post("/auth/login/2fa", data={"code": "000000"}, follow_redirects=False)
+        assert resp.headers["location"] == "/auth/login/2fa?error=Invalid+code"
+
+    # The 5th wrong code crosses the lockout threshold — must redirect straight to
+    # /auth/login with the lockout message, not back to /auth/login/2fa.
+    fifth = client.post("/auth/login/2fa", data={"code": "000000"}, follow_redirects=False)
+    assert fifth.status_code == 303
+    assert fifth.headers["location"].startswith("/auth/login?error=Too+many+failed+attempts")
+
+    # And the pending flow is gone immediately — no extra round trip needed.
+    prompt = client.get("/auth/login/2fa", follow_redirects=False)
+    assert prompt.status_code == 303
+    assert prompt.headers["location"] == "/auth/login"
+
+
+# ── Finding #8: GET /settings/2fa/setup enforces the same TTL as POST ──────────────
+
+def test_setup_page_regenerates_secret_once_pending_state_expires(client, pg_conn, local_user):
+    user_id, email = local_user
+    _login(client, email)
+
+    first = client.get("/settings/2fa/setup")
+    first_secret = SECRET_RE.search(first.text).group(1)
+
+    # Force the in-process pending state to look expired without waiting 10 real
+    # minutes — reach into app.main's module-level store directly, the same one the
+    # route itself reads/writes.
+    import app.main as _m
+
+    state = _m._totp_setup_state[user_id]
+    state["started_at"] = state["started_at"] - _m.timedelta(minutes=_m._TOTP_SETUP_TTL_MINUTES + 1)
+
+    second = client.get("/settings/2fa/setup")
+    second_secret = SECRET_RE.search(second.text).group(1)
+    assert second_secret != first_secret  # GET issued a fresh one instead of re-serving the stale QR
+
+    # And POST accepts a code generated against the FRESH secret the user was just
+    # shown — no mismatch between what GET rendered and what POST will accept.
+    import pyotp as _pyotp
+
+    confirm = client.post(
+        "/settings/2fa/setup", data={"code": _pyotp.TOTP(second_secret).now()}, follow_redirects=False
+    )
+    assert confirm.status_code == 303
+    assert confirm.headers["location"] == "/settings/2fa/recovery-codes"
