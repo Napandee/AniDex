@@ -557,6 +557,11 @@
   "admin_reactivate_btn": "Reactivar",
   "admin_disable_2fa_confirm": "¿Desactivar la autenticación de dos factores para {email}? Úsalo si ha perdido su app de autenticación y todos sus códigos de recuperación — tendrá que configurar 2FA de nuevo desde Ajustes si quiere volver a activarlo.",
   "admin_disable_2fa_btn": "Desactivar 2FA",
+  "admin_impersonate_btn": "Iniciar sesión como",
+  "admin_impersonate_confirm": "¿Iniciar una sesión de soporte con tiempo limitado como {email}? Queda completamente auditada y finaliza automáticamente tras un breve período.",
+
+  "impersonation_banner_text": "Estás viendo como {user_email}, sesión iniciada por {admin_email}. Esta sesión finaliza automáticamente a las {expires_at}.",
+  "impersonation_stop_btn": "Finalizar sesión",
 
   "admin_invites_title": "Invitaciones",
   "admin_invite_btn": "Invitar",

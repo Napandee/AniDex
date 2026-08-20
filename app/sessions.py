@@ -38,6 +38,14 @@ SESSION_TTL_DAYS = 30
 _DEAD_ROW_RETENTION_DAYS = 7
 _LAST_SEEN_THROTTLE_MINUTES = 5  # see resolve_session's docstring
 
+# Issue #230 — admin "login as user" impersonation. Deliberately short and fixed
+# (not admin-configurable) per the issue's own scope note ("e.g. 15-30 minutes");
+# 20 minutes is comfortably long enough for a real support-debugging session
+# without leaving a wide-open window if an admin walks away mid-session. Enforced
+# independently of SESSION_TTL_DAYS above via each impersonation row's own
+# impersonation_expires_at column — see start_impersonation_session/resolve_session.
+IMPERSONATION_TTL_MINUTES = 20
+
 # Both user_agent and ip_address are attacker-controllable (raw headers — the
 # latter via X-Forwarded-For, see app/main.py's _client_ip()) and only ever used
 # cosmetically for the Settings display, so both get the same length cap before
@@ -99,13 +107,30 @@ def resolve_session(token: str) -> int | None:
     every single page load; a 5-minute-stale last_seen_at is indistinguishable from
     a fresh one anywhere it's actually shown (Settings' "last active" column), so
     this trades a little precision for cutting that write volume drastically.
+
+    Issue #230: a row created by start_impersonation_session() carries its own,
+    much shorter impersonation_expires_at on top of the normal (30-day)
+    expires_at. Once that shorter deadline passes this eagerly revokes the row
+    (not just filters it out) so a stale impersonation cookie can never be
+    resurrected — "session cannot outlive its time box" applies here the same way
+    a revoked_at check applies to a manually-ended one.
     """
     row = db.fetchone(
-        "SELECT user_id, last_seen_at FROM sessions "
+        "SELECT user_id, last_seen_at, impersonated_by, impersonation_expires_at FROM sessions "
         "WHERE session_token = %s AND revoked_at IS NULL AND expires_at > now()",
         (token,),
     )
     if not row:
+        return None
+    if (
+        row["impersonated_by"] is not None
+        and row["impersonation_expires_at"] is not None
+        and row["impersonation_expires_at"] <= datetime.now(timezone.utc)
+    ):
+        db.execute(
+            "UPDATE sessions SET revoked_at = now() WHERE session_token = %s",
+            (token,),
+        )
         return None
     stale_before = datetime.now(timezone.utc) - timedelta(minutes=_LAST_SEEN_THROTTLE_MINUTES)
     if row["last_seen_at"] < stale_before:
@@ -114,6 +139,71 @@ def resolve_session(token: str) -> int | None:
             (token,),
         )
     return row["user_id"]
+
+
+def start_impersonation_session(
+    admin_user_id: int, target_user_id: int, user_agent: str | None, ip_address: str | None
+) -> str:
+    """Create a new server-side session row for target_user_id, marked as an
+    admin-initiated impersonation of it (issue #230). Returns the opaque token —
+    same shape as create_session()'s — for the caller to point the signed cookie
+    at.
+
+    Deliberately a separate function rather than an extra create_session()
+    parameter: an impersonation session is a different kind of thing (started by
+    an admin, on behalf of the target, time-boxed in minutes via
+    impersonation_expires_at rather than days) and keeping it fully separate means
+    every existing create_session() call site/test is structurally guaranteed to
+    never end up with impersonation fields set by accident.
+
+    The row's own `expires_at` is still set to the normal SESSION_TTL_DAYS window
+    (not IMPERSONATION_TTL_MINUTES) — the short deadline is enforced entirely via
+    impersonation_expires_at inside resolve_session(), which revokes the row the
+    moment that passes regardless of how far away the row's own expires_at still
+    is. Doesn't run create_session()'s per-user dead-row prune — the *admin's*
+    session (not the target's) is the one that will naturally prune this dead row
+    later, the next time the admin's own account starts a fresh session."""
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    db.execute(
+        "INSERT INTO sessions (session_token, user_id, user_agent, ip_address, expires_at, "
+        "impersonated_by, impersonation_expires_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (
+            token,
+            target_user_id,
+            (user_agent or "")[:_USER_AGENT_MAX_LEN],
+            (ip_address or "")[:_IP_ADDRESS_MAX_LEN] or None,
+            now + timedelta(days=SESSION_TTL_DAYS),
+            admin_user_id,
+            now + timedelta(minutes=IMPERSONATION_TTL_MINUTES),
+        ),
+    )
+    return token
+
+
+def get_impersonation_context(token: str) -> dict | None:
+    """Read-only companion to resolve_session() (issue #230): if `token` currently
+    resolves to a live impersonation session, returns
+    {"admin_user_id": int, "expires_at": datetime}; otherwise None (not an
+    impersonation session, or dead for any reason — unknown/revoked/expired
+    token, or an impersonation session whose own shorter deadline has passed).
+
+    Deliberately never revokes anything itself, unlike resolve_session() — by the
+    time app/main.py's get_current_user calls this, it has already called
+    resolve_session() for the same token first, so an expired-impersonation row is
+    guaranteed already revoked (and this simply returns None for it) rather than
+    this function needing to duplicate that side effect."""
+    row = db.fetchone(
+        "SELECT impersonated_by, impersonation_expires_at FROM sessions "
+        "WHERE session_token = %s AND revoked_at IS NULL AND expires_at > now() "
+        "AND impersonated_by IS NOT NULL",
+        (token,),
+    )
+    if not row:
+        return None
+    if row["impersonation_expires_at"] is not None and row["impersonation_expires_at"] <= datetime.now(timezone.utc):
+        return None
+    return {"admin_user_id": row["impersonated_by"], "expires_at": row["impersonation_expires_at"]}
 
 
 def revoke_session_by_token(token: str) -> None:

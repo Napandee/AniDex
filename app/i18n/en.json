@@ -557,6 +557,11 @@
   "admin_reactivate_btn": "Reactivate",
   "admin_disable_2fa_confirm": "Disable two-factor authentication for {email}? Use this if they've lost their authenticator and all their recovery codes — they'll need to set 2FA up again from Settings if they want it back on.",
   "admin_disable_2fa_btn": "Disable 2FA",
+  "admin_impersonate_btn": "Login as",
+  "admin_impersonate_confirm": "Start a time-boxed support session logged in as {email}? This is fully audited and ends automatically after a short window.",
+
+  "impersonation_banner_text": "You are viewing as {user_email}, started by {admin_email}. This session ends automatically at {expires_at}.",
+  "impersonation_stop_btn": "End session",
 
   "admin_invites_title": "Invites",
   "admin_invite_btn": "Invite",

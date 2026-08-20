@@ -1173,6 +1173,40 @@ def _set_authenticated_session(request: Request, user_id: int) -> None:
     _start_session(request, user_id)
 
 
+def _resolve_session_user(token: str | None) -> tuple[dict | None, dict | None]:
+    """Resolve one session token to (user_row, impersonation_context), or
+    (None, None) if the token is missing/unknown/revoked/expired. Shared by
+    get_current_user's primary lookup and its impersonation-expiry fallback
+    below (issue #230) — split out so both call sites go through the exact same
+    is_active check rather than risking the two drifting apart.
+
+    impersonation_context, when not None, is
+    {"admin_id": int, "admin_email": str | None, "expires_at": datetime} — see
+    app/sessions.py's get_impersonation_context()."""
+    if not token:
+        return None, None
+    user_id = sessions.resolve_session(token)
+    if not user_id:
+        return None, None
+    user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    if not user:
+        return None, None
+    if not user["is_active"]:
+        sessions.revoke_session_by_token(token)
+        return None, None
+
+    impersonation = None
+    imp = sessions.get_impersonation_context(token)
+    if imp:
+        admin_row = db.fetchone("SELECT id, email FROM users WHERE id = %s", (imp["admin_user_id"],))
+        impersonation = {
+            "admin_id": imp["admin_user_id"],
+            "admin_email": admin_row["email"] if admin_row else None,
+            "expires_at": imp["expires_at"],
+        }
+    return user, impersonation
+
+
 def get_current_user(request: Request) -> dict | None:
     """Return the logged-in user's row, or None if no valid session.
 
@@ -1186,6 +1220,9 @@ def get_current_user(request: Request) -> dict | None:
     request.state for the duration of one request — _nav_context and whichever
     route handler is running both call this, and without the cache that's two
     identical DB round trips (users + sessions) per page load instead of one.
+    Also caches the resolved impersonation context (if any) on request.state, for
+    _get_current_impersonation()/the nav banner and the impersonation audit
+    middleware to read without a second lookup.
 
     Rollout note: every pre-#82 cookie has no "sid" key at all (old shape was just
     `{"user_id": N}`), so `request.session.get("sid")` on one of those is always
@@ -1206,19 +1243,35 @@ def get_current_user(request: Request) -> dict | None:
     regardless of which code path touched it. pending_2fa_user_id is deliberately
     preserved across the clear; everything else about a stale/invalid session still
     gets scrubbed exactly as before.
+
+    Issue #230 reconciliation note: while impersonating, request.session["sid"]
+    points at the impersonation session row (belonging to the target user) and
+    request.session["impersonator_sid"] holds the impersonating admin's own,
+    separate session token — set by admin_start_impersonation, restored by
+    admin_stop_impersonation. If the primary sid fails to resolve here (either it
+    was just explicitly revoked by Stop, or resolve_session() above auto-revoked
+    it because its own impersonation_expires_at passed) AND an impersonator_sid is
+    present, this falls back to resolving THAT token and, if it's still live,
+    transparently restores the admin's own session rather than just logging
+    everyone out — "no risk of getting stuck in the impersonated state" (#230's
+    acceptance criteria) applies to silent expiry, not only the explicit Stop
+    button. If the admin's own session has also gone dead in the meantime (e.g.
+    they logged out elsewhere), this falls through to the normal "not
+    authenticated" branch below like any other dead session.
     """
     if hasattr(request.state, "_cached_user"):
         return request.state._cached_user
 
-    user = None
     token = request.session.get("sid")
-    if token:
-        user_id = sessions.resolve_session(token)
-        if user_id:
-            user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
-            if user and not user["is_active"]:
-                sessions.revoke_session_by_token(token)
-                user = None
+    user, impersonation = _resolve_session_user(token)
+
+    if user is None and token and request.session.get("impersonator_sid"):
+        fallback_token = request.session.pop("impersonator_sid")
+        user, impersonation = _resolve_session_user(fallback_token)
+        if user is not None:
+            request.session["sid"] = fallback_token
+        else:
+            request.session.pop("sid", None)
 
     if user is None:
         pending_2fa = request.session.get(_PENDING_2FA_SESSION_KEY)
@@ -1227,7 +1280,20 @@ def get_current_user(request: Request) -> dict | None:
             request.session[_PENDING_2FA_SESSION_KEY] = pending_2fa
 
     request.state._cached_user = user
+    request.state._cached_impersonation = impersonation
     return user
+
+
+def _get_current_impersonation(request: Request) -> dict | None:
+    """The {"admin_id", "admin_email", "expires_at"} context cached by
+    get_current_user()'s most recent call this request, or None if the current
+    session isn't (or is no longer) an impersonation session. Must be called
+    after get_current_user() (directly, or via _require_user/_require_admin/the
+    nav context processor) has already run once this request — same
+    request.state cache dependency _nav_context already relies on for nav_user."""
+    if not hasattr(request.state, "_cached_user"):
+        get_current_user(request)
+    return getattr(request.state, "_cached_impersonation", None)
 
 
 def _nav_context(request: Request) -> dict:
@@ -1244,6 +1310,7 @@ def _nav_context(request: Request) -> dict:
     pages fall back to "system" (no explicit choice, so base.html sets no data-theme
     attribute and prefers-color-scheme alone decides light vs dark)."""
     user = get_current_user(request)
+    impersonation = _get_current_impersonation(request)
     user_language = config.get(user["id"], "language") if user else None
     locale = i18n.resolve_locale(request.headers.get("accept-language"), user_language)
     theme = config.get(user["id"], "theme") if user else "system"
@@ -1252,6 +1319,9 @@ def _nav_context(request: Request) -> dict:
     i18n_json = json.dumps(i18n.all_strings(locale), ensure_ascii=False).replace("<", "\\u003c")
     return {
         "nav_user": user,
+        # Issue #230 — non-None only while the current session is an admin
+        # impersonating this user; drives base.html's persistent banner.
+        "nav_impersonation": impersonation,
         "t": i18n.translator(locale),
         "current_language": locale,
         "nav_theme": theme,
@@ -1852,6 +1922,165 @@ def _log_admin_action(admin_user_id: int, action: str, target_user_id: int | Non
         "INSERT INTO admin_audit_log (admin_user_id, action, target_user_id, detail) VALUES (%s, %s, %s, %s)",
         (admin_user_id, action, target_user_id, detail),
     )
+
+
+# ── Impersonation (issue #230) ───────────────────────────────────────────────
+#
+# "Login as user" for support/debugging: an admin-initiated, time-boxed
+# (sessions.IMPERSONATION_TTL_MINUTES) session that acts AS the target user,
+# with the same privileges that user's own session would have — never more,
+# never a way to bypass their own auth state (deactivation still ends it
+# immediately, same is_active check every ordinary session goes through — see
+# _resolve_session_user). Never password-based: the admin never sees or needs
+# the target's credentials, only sessions.start_impersonation_session().
+#
+# Implementation shape: starting impersonation swaps request.session["sid"] to a
+# brand-new session row scoped to the target user, and stashes the admin's own
+# current sid under request.session["impersonator_sid"] — both inside the
+# signed, tamper-evident SessionMiddleware cookie, so a client can read but
+# never forge that key to point at a token it doesn't already legitimately own.
+# Ending impersonation (explicitly via Stop, or automatically once
+# impersonation_expires_at passes — see get_current_user's #230 note) swaps sid
+# back to impersonator_sid. There is deliberately no separate "impersonation
+# session" concept at the DB level beyond the two nullable columns on `sessions`
+# itself (migration 027) — it's a normal session row in every other respect.
+_IMPERSONATE_PATH_RE = re.compile(r"^/admin/users/\d+/impersonate$")
+
+
+@app.post("/admin/users/{user_id}/impersonate")
+def admin_start_impersonation(request: Request, user_id: int):
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    admin_user = get_current_user(request)
+    if admin_user["id"] == user_id:
+        return HTMLResponse(
+            "<h1>Can't impersonate your own account</h1><p><a href=\"/admin\">Back to admin</a></p>",
+            status_code=400,
+        )
+    if request.session.get("impersonator_sid"):
+        # Already impersonating someone (or a stale key survived some other
+        # path) — refuse to stack a second impersonation session on top rather
+        # than silently overwriting the way back to the original admin session.
+        return HTMLResponse(
+            "<h1>Already impersonating another user</h1>"
+            "<p>End that session first.</p><p><a href=\"/admin\">Back to admin</a></p>",
+            status_code=400,
+        )
+
+    target = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+    if not target:
+        return HTMLResponse("<h1>User not found</h1>", status_code=404)
+    if not target["is_active"]:
+        return HTMLResponse(
+            "<h1>Can't impersonate a deactivated account</h1><p><a href=\"/admin\">Back to admin</a></p>",
+            status_code=400,
+        )
+
+    admin_sid = request.session.get("sid")
+    if not admin_sid:
+        # _require_admin above already proved a live session exists, so this
+        # shouldn't happen — but never start an impersonation session with no
+        # recorded way back to it.
+        return RedirectResponse(url="/auth/login", status_code=303)
+
+    new_token = sessions.start_impersonation_session(
+        admin_user["id"], user_id, request.headers.get("user-agent"), _client_ip(request)
+    )
+    request.session["impersonator_sid"] = admin_sid
+    request.session["sid"] = new_token
+
+    _log_admin_action(
+        admin_user["id"],
+        "impersonation_started",
+        target_user_id=user_id,
+        detail=f"target_email={target['email']}; ttl_minutes={sessions.IMPERSONATION_TTL_MINUTES}",
+    )
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.post("/admin/impersonate/stop")
+def admin_stop_impersonation(request: Request):
+    """Ends the current impersonation session (if any) and returns to the
+    admin's own session. Deliberately NOT gated by _require_admin — by the time
+    this fires, request.session["sid"] points at the *target* user's session
+    row, whose is_admin may well be false, and the banner's Stop button has to
+    work for that non-admin identity. The real authorization boundary is
+    structural instead: this can only do anything meaningful when
+    impersonator_sid is actually present, and the only place that ever sets it
+    is admin_start_impersonation above, itself gated by _require_admin — a
+    non-admin target hitting this route on their own ordinary session just gets
+    the harmless no-op "nothing to stop" branch below."""
+    target_user = get_current_user(request)
+    impersonation = _get_current_impersonation(request)
+    admin_sid = request.session.get("impersonator_sid")
+
+    if not admin_sid or not impersonation:
+        return RedirectResponse(url="/", status_code=303)
+
+    current_token = request.session.get("sid")
+    if current_token:
+        sessions.revoke_session_by_token(current_token)
+
+    request.session["sid"] = admin_sid
+    request.session.pop("impersonator_sid", None)
+
+    _log_admin_action(
+        impersonation["admin_id"],
+        "impersonation_ended",
+        target_user_id=target_user["id"] if target_user else None,
+        detail=f"target_email={target_user['email']}" if target_user else None,
+    )
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.middleware("http")
+async def _impersonation_audit_middleware(request: Request, call_next):
+    """Issue #230 — best-effort audit trail for write actions taken WHILE
+    impersonating, on top of the explicit start/stop logging above. Generic
+    (every mutating request) rather than instrumenting each individual route,
+    so a future write endpoint can't silently slip through unaudited the way an
+    opt-in per-route call would.
+
+    Reads request.session only AFTER call_next() returns, not before — the ASGI
+    `scope` dict (and the session dict SessionMiddleware stores on it) is the
+    same object reference threaded through every layer of the stack regardless
+    of this middleware's registration order relative to SessionMiddleware, so by
+    the time control returns here it reflects whatever the route handler itself
+    left in request.session. This also means the request for
+    admin_start_impersonation itself doesn't get double-logged as an
+    "impersonation_action" here: impersonator_sid only becomes non-empty at the
+    very end of that request, but _IMPERSONATE_PATH_RE excludes it explicitly
+    anyway to make that independent of timing details. admin_stop_impersonation
+    needs no such exclusion — by the time this runs, it has already popped
+    impersonator_sid itself, so the check below naturally no-ops for it.
+
+    Wrapped in a broad try/except, same philosophy _log_admin_action's own
+    docstring states: a logging failure must never block or alter the actual
+    response."""
+    response = await call_next(request)
+    try:
+        if (
+            request.method not in ("GET", "HEAD", "OPTIONS")
+            and request.session.get("impersonator_sid")
+            and not _IMPERSONATE_PATH_RE.match(request.url.path)
+        ):
+            token = request.session.get("sid")
+            if token:
+                imp = sessions.get_impersonation_context(token)
+                if imp:
+                    cached_user = getattr(request.state, "_cached_user", None)
+                    target_user_id = cached_user["id"] if cached_user else sessions.resolve_session(token)
+                    _log_admin_action(
+                        imp["admin_user_id"],
+                        "impersonation_action",
+                        target_user_id=target_user_id,
+                        detail=f"{request.method} {request.url.path} -> {response.status_code}",
+                    )
+    except Exception:
+        log.exception("impersonation audit logging failed")
+    return response
 
 
 GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
