@@ -59,24 +59,24 @@ def _row(finish_date, progress=1, score=None, genres=None, title="Test", anime_i
 
 def test_pace_stat_no_prior_year_data():
     this_year = [_row(_d("2026-03-01"), progress=12)]
-    pace = m._pace_stat(this_year, [], day_of_year=100)
+    pace = m._pace_stat(this_year, [], cutoff_month_day=(4, 10))
     assert pace["status"] == "no_prior_data"
     assert pace["diff_pct"] is None
     assert pace["prior_year_episodes"] == 0
 
 
 def test_pace_stat_ahead_of_last_year():
-    # Cutoff day-of-year 100 (~Apr 10). This year: 50 episodes by then.
-    # Last year: only 20 episodes by the *same* day-of-year cutoff, even though
-    # last year's row set (if unfiltered) would total much more by year end —
-    # proving the comparison is cutoff-scoped, not "this year vs. last year's
-    # full total" (which the issue explicitly calls out as the wrong comparison).
+    # Cutoff (4, 10) — Apr 10. This year: 50 episodes by then. Last year: only 20
+    # episodes by the *same* calendar-date cutoff, even though last year's row
+    # set (if unfiltered) would total much more by year end — proving the
+    # comparison is cutoff-scoped, not "this year vs. last year's full total"
+    # (which the issue explicitly calls out as the wrong comparison).
     this_year = [_row(_d("2026-04-01"), progress=50)]
     prior_year = [
         _row(_d("2025-04-01"), progress=20),
-        _row(_d("2025-11-01"), progress=200),  # day-of-year > 100 — must be excluded
+        _row(_d("2025-11-01"), progress=200),  # past the cutoff — must be excluded
     ]
-    pace = m._pace_stat(this_year, prior_year, day_of_year=100)
+    pace = m._pace_stat(this_year, prior_year, cutoff_month_day=(4, 10))
     assert pace["status"] == "ahead"
     assert pace["prior_year_episodes"] == 20
     assert pace["this_year_episodes"] == 50
@@ -86,7 +86,7 @@ def test_pace_stat_ahead_of_last_year():
 def test_pace_stat_behind_last_year():
     this_year = [_row(_d("2026-04-01"), progress=10)]
     prior_year = [_row(_d("2025-04-01"), progress=50)]
-    pace = m._pace_stat(this_year, prior_year, day_of_year=100)
+    pace = m._pace_stat(this_year, prior_year, cutoff_month_day=(4, 10))
     assert pace["status"] == "behind"
     assert pace["diff_pct"] == -80  # (10-50)/50 * 100
 
@@ -94,22 +94,39 @@ def test_pace_stat_behind_last_year():
 def test_pace_stat_on_pace_within_five_percent():
     this_year = [_row(_d("2026-04-01"), progress=102)]
     prior_year = [_row(_d("2025-04-01"), progress=100)]
-    pace = m._pace_stat(this_year, prior_year, day_of_year=100)
+    pace = m._pace_stat(this_year, prior_year, cutoff_month_day=(4, 10))
     assert pace["status"] == "on_pace"
     assert pace["diff_pct"] == 2
 
 
 def test_pace_stat_excludes_rows_past_the_cutoff_in_both_years():
-    # Same day-of-year cutoff must be applied to both years' rows, not just the
-    # prior one — a defensive symmetry check.
+    # Same cutoff must be applied to both years' rows, not just the prior one —
+    # a defensive symmetry check.
     this_year = [
         _row(_d("2026-01-10"), progress=5),
-        _row(_d("2026-12-25"), progress=500),  # day-of-year > cutoff — excluded
+        _row(_d("2026-12-25"), progress=500),  # past the cutoff — excluded
     ]
     prior_year = [_row(_d("2025-01-10"), progress=5)]
-    pace = m._pace_stat(this_year, prior_year, day_of_year=20)
+    pace = m._pace_stat(this_year, prior_year, cutoff_month_day=(1, 20))
     assert pace["this_year_episodes"] == 5
     assert pace["status"] == "on_pace"
+
+
+def test_pace_stat_leap_year_boundary_uses_calendar_date_not_ordinal():
+    # Regression: 2028 is a leap year (Feb has 29 days) but 2027 isn't, so the
+    # SAME calendar date falls on a different ordinal day-of-year in each —
+    # 2028-03-05 is ordinal day 65, but so is 2027-03-06 (one calendar day
+    # later). Comparing by ordinal day-of-year (the original implementation)
+    # would have let 2027-03-06 leak into a 2028-03-05 cutoff; comparing by
+    # (month, day) instead correctly excludes it.
+    this_year = [_row(_d("2028-03-05"), progress=10)]
+    prior_year = [
+        _row(_d("2027-03-05"), progress=7, anime_id=1),    # same calendar date — included
+        _row(_d("2027-03-06"), progress=100, anime_id=2),  # one day later — excluded
+    ]
+    pace = m._pace_stat(this_year, prior_year, cutoff_month_day=(3, 5))
+    assert pace["prior_year_episodes"] == 7
+    assert pace["this_year_episodes"] == 10
 
 
 # ── DB-backed coverage ───────────────────────────────────────────────────────────
@@ -143,19 +160,23 @@ def pg_conn():
 
 @pytest.fixture()
 def db_module(pg_conn, monkeypatch):
+    """NOT autouse, and cleanup lives here rather than in a separate
+    autouse-on-pg_conn fixture — an autouse fixture that itself depends on
+    pg_conn forces pg_conn to resolve (and skip, absent a reachable Postgres)
+    for every test in this module, including the pure _pace_stat unit tests
+    above that need no DB at all. Every DB-backed test below already requests
+    db_module explicitly, so folding cleanup in here keeps the pure tests
+    running with zero Postgres involvement, same as tests/test_yearly_wrapped.py."""
     monkeypatch.setenv("DATABASE_URL", DATABASE_URL)
     monkeypatch.setenv("SESSION_SECRET_KEY", "test-key")
     import app.main as main_mod
 
-    return main_mod
-
-
-@pytest.fixture(autouse=True)
-def _clean_tables(pg_conn):
     with pg_conn.cursor() as cur:
         cur.execute("DELETE FROM library_entries")
         cur.execute("DELETE FROM anime")
         cur.execute("DELETE FROM users")
+
+    return main_mod
 
 
 @pytest.fixture()
@@ -259,6 +280,53 @@ def test_compute_wrapped_page_no_completions_this_year_has_no_data(pg_conn, db_m
     assert wrapped["highest_rated"] is None
     assert wrapped["binge_week"] is None
     assert wrapped["status_snapshot"] == {"planning_to_completed": 0}
+
+
+def test_compute_wrapped_page_has_data_false_when_progress_is_zero(pg_conn, db_module, _seeded_user):
+    """A COMPLETED row with a finish_date but zero progress (data-quality edge
+    case — e.g. synced before progress was backfilled) must still read as "no
+    data" for the page's empty-state gate, not render an all-zero headline row."""
+    _insert_anime(pg_conn, 1, genres=["Action"])
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=0, score=None)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["total_episodes"] == 0
+    assert wrapped["has_data"] is False
+
+
+def test_compute_wrapped_page_top_genre_tiebreak_is_deterministic(pg_conn, db_module, _seeded_user):
+    """_yearly_completion_rows has no ORDER BY, so a tied genre count must not
+    depend on unspecified row order — deterministically resolves to the
+    alphabetically-first genre name."""
+    _insert_anime(pg_conn, 1, genres=["Zeta"])
+    _insert_anime(pg_conn, 2, genres=["Alpha"])
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=1)
+    _insert_entry(pg_conn, 2, _d("2026-01-11"), progress=1)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["top_genre"] == "Alpha"
+
+
+def test_compute_wrapped_page_highest_rated_tiebreak_is_deterministic(pg_conn, db_module, _seeded_user):
+    """Same determinism guarantee for a tied top score — resolves to the
+    alphabetically-first title rather than whichever row Postgres returns first."""
+    _insert_anime(pg_conn, 1, genres=["Action"], title="Zeta Show")
+    _insert_anime(pg_conn, 2, genres=["Action"], title="Alpha Show")
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=1, score=5)
+    _insert_entry(pg_conn, 2, _d("2026-01-11"), progress=1, score=5)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["highest_rated"] == {"title": "Alpha Show", "score": 5}
+
+
+def test_notify_wrapped_checkin_raises_on_unknown_occasion(pg_conn, db_module):
+    with pytest.raises(ValueError):
+        db_module._notify_wrapped_checkin("mid_year")  # not "midyear" — must not
+                                                         # silently fall through to
+                                                         # the year_end branch
 
 
 # ── Notification trigger (issue #51 dispatcher integration) ────────────────────

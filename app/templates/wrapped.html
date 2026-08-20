@@ -45,7 +45,7 @@
 
   <div class="stats-headlines">
     <div class="stat-headline"><span class="stat-num">{{ wrapped.total_episodes }}</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
-    <div class="stat-headline"><span class="stat-num">{% if wrapped.total_hours >= 24 %}{{ wrapped.total_days }}d{% else %}{{ wrapped.total_hours }}h{% endif %}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.total_watch_display }}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
     <div class="stat-headline"><span class="stat-num">{{ wrapped.top_genre or '—' }}</span><span class="stat-label">{{ t('stats_wrapped_hl_top_genre') }}</span></div>
     <div class="stat-headline"><span class="stat-num">{{ wrapped.status_snapshot.planning_to_completed }}</span><span class="stat-label">{{ t('stats_wrapped_planning_completed') }}</span></div>
   </div>

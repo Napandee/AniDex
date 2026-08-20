@@ -304,7 +304,17 @@ def _weekly_airing_digest() -> None:
 #     late to act on.
 # Both skip a user with zero completions so far this year (has_data is False) —
 # nudging someone toward an empty page reads as noise, not a check-in.
+_WRAPPED_CHECKIN_OCCASIONS = ("midyear", "year_end")
+
+
 def _notify_wrapped_checkin(occasion: str) -> None:
+    # Fail loudly on an unexpected occasion rather than a bare `else` silently
+    # treating anything-not-"midyear" as "year_end" — a future scheduler-wiring
+    # typo (e.g. "mid_year") should surface as an error, not send the wrong
+    # message to every user without a trace of the mistake.
+    if occasion not in _WRAPPED_CHECKIN_OCCASIONS:
+        raise ValueError(f"Unknown wrapped check-in occasion: {occasion!r}")
+
     for user in db.fetchall("SELECT id FROM users"):
         user_id = user["id"]
         try:
@@ -4062,39 +4072,47 @@ def _year_comparison_extras(user_id: int, year: int) -> dict:
 # shipped — nothing here reimplements binge-week/status-snapshot/score-shift logic.
 
 
-def _pace_stat(this_year_rows: list[dict], prior_year_rows: list[dict], day_of_year: int) -> dict:
+def _pace_stat(
+    this_year_rows: list[dict], prior_year_rows: list[dict], cutoff_month_day: tuple[int, int]
+) -> dict:
     """Issue #164's pace stat, folded into #196: "on pace to match last year",
     framed as ahead/behind/on-pace rather than a numeric target (see #164's own
     gut-check against a nagging pace nudge — this is passive/visual only, no
     notification tied to it specifically).
 
-    Compares this year's cumulative episodes/minutes as of `day_of_year` against
-    the prior year's cumulative total at that SAME day-of-year cutoff — not the
-    prior year's full-year total, which would always read as "behind" until
-    Dec 31. Pure function over two _yearly_completion_rows() row sets plus a
-    day-of-year cutoff (rather than reaching for date.today() itself), so it's
-    directly unit-testable with known rows/cutoffs for two different years
-    without needing a real "today" or a DB.
+    Compares this year's cumulative episodes as of `cutoff_month_day` against the
+    prior year's cumulative total at that SAME (month, day) cutoff — not the prior
+    year's full-year total, which would always read as "behind" until Dec 31.
+    Pure function over two _yearly_completion_rows() row sets plus a cutoff
+    (rather than reaching for date.today() itself), so it's directly
+    unit-testable with known rows/cutoffs for two different years without
+    needing a real "today" or a DB.
+
+    Deliberately a (month, day) tuple rather than an ordinal day-of-year: two
+    calendar dates that are "the same point in the year" don't share an ordinal
+    day-of-year across a leap-year boundary (e.g. 2028-03-05 is day 65 of a leap
+    year, but the equivalent 2027-03-05 is day 64) — comparing ordinals directly
+    would let up to a day of the wrong year's data leak into the cumulative
+    total. (month, day) tuples compare correctly regardless of either year's
+    leap-ness.
 
     Anything within 5 percentage points either side of the prior year counts as
     "on_pace" rather than a coinflip ahead/behind on essentially a tie.
     """
-    def _cumulative(rows: list[dict], cutoff_day_of_year: int) -> tuple[int, int]:
+    def _cumulative(rows: list[dict], cutoff: tuple[int, int]) -> int:
         episodes = 0
-        minutes = 0
         for r in rows:
-            if r["finish_date"].timetuple().tm_yday > cutoff_day_of_year:
+            fd = r["finish_date"]
+            if (fd.month, fd.day) > cutoff:
                 continue  # defensive: a finish_date beyond the cutoff shouldn't
                           # normally occur (both row sets are already scoped to
                           # their own calendar year), but never let one count
                           # towards a cumulative total it's not part of.
-            progress = r["progress"] or 0
-            episodes += progress
-            minutes += progress * (r["duration"] or 24)
-        return episodes, minutes
+            episodes += r["progress"] or 0
+        return episodes
 
-    this_year_episodes, this_year_minutes = _cumulative(this_year_rows, day_of_year)
-    prior_year_episodes, prior_year_minutes = _cumulative(prior_year_rows, day_of_year)
+    this_year_episodes = _cumulative(this_year_rows, cutoff_month_day)
+    prior_year_episodes = _cumulative(prior_year_rows, cutoff_month_day)
 
     if prior_year_episodes == 0:
         status = "no_prior_data"
@@ -4109,11 +4127,8 @@ def _pace_stat(this_year_rows: list[dict], prior_year_rows: list[dict], day_of_y
             status = "behind"
 
     return {
-        "day_of_year": day_of_year,
         "this_year_episodes": this_year_episodes,
-        "this_year_minutes": this_year_minutes,
         "prior_year_episodes": prior_year_episodes,
-        "prior_year_minutes": prior_year_minutes,
         "status": status,
         "diff_pct": diff_pct,
     }
@@ -4131,43 +4146,58 @@ def _compute_wrapped_page(user_id: int, today: date | None = None) -> dict:
     """
     today = today or date.today()
     year = today.year
-    day_of_year = today.timetuple().tm_yday
 
     rows = _yearly_completion_rows(user_id, year)
     prior_rows = _yearly_completion_rows(user_id, year - 1)
 
     total_episodes = sum(r["progress"] or 0 for r in rows)
     total_minutes = sum((r["progress"] or 0) * (r["duration"] or 24) for r in rows)
+    total_hours = total_minutes // 60
+    total_days = round(total_minutes / 1440, 1)
+    # Single source for the >=24h "show days instead of hours" display convention,
+    # rather than re-deriving the same threshold a third time in the template
+    # (stats.html's JS already has it twice, for #wrapup-card and the headlines).
+    total_watch_display = f"{total_days}d" if total_hours >= 24 else f"{total_hours}h"
 
+    # Deterministic tie-breaks below: _yearly_completion_rows() has no ORDER BY,
+    # so Postgres row order for a tied count/score is unspecified — pick*'s dict
+    # iteration would otherwise let the displayed "top genre"/"highest rated"
+    # flip between page loads for identical underlying data.
     genre_counts: Counter = Counter()
     for r in rows:
         for g in (r["genres"] or []):
             genre_counts[g] += 1
-    top_genre = genre_counts.most_common(1)[0][0] if genre_counts else None
+    top_genre = min(genre_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0] if genre_counts else None
+
+    def _title(r: dict) -> str:
+        return r["title_english"] or r["title_romaji"] or ""
 
     scored_rows = [r for r in rows if r["score"] is not None and r["score"] > 0]
     highest_rated = None
     if scored_rows:
-        best = max(scored_rows, key=lambda r: r["score"])
-        highest_rated = {
-            "title": best["title_english"] or best["title_romaji"],
-            "score": best["score"],
-        }
+        best = min(scored_rows, key=lambda r: (-r["score"], _title(r)))
+        highest_rated = {"title": _title(best), "score": best["score"]}
 
     return {
         "year": year,
         "prior_year": year - 1,
-        "has_data": bool(rows),
+        # total_episodes > 0, not just bool(rows): a COMPLETED row with a
+        # finish_date but progress 0/NULL (a data-quality edge case — a sync
+        # glitch, or a row synced before progress was backfilled) would
+        # otherwise render a populated-looking page with all-zero headline
+        # stats instead of the intended empty state.
+        "has_data": total_episodes > 0,
         "total_episodes": total_episodes,
         "total_minutes": total_minutes,
-        "total_hours": total_minutes // 60,
-        "total_days": round(total_minutes / 1440, 1),
+        "total_hours": total_hours,
+        "total_days": total_days,
+        "total_watch_display": total_watch_display,
         "top_genre": top_genre,
         "highest_rated": highest_rated,
         "binge_week": _biggest_binge_week(rows),
         "status_snapshot": _status_distribution_snapshot(rows),
         "score_shift": _score_distribution_shift(rows, prior_rows),
-        "pace": _pace_stat(rows, prior_rows, day_of_year),
+        "pace": _pace_stat(rows, prior_rows, (today.month, today.day)),
     }
 
 
