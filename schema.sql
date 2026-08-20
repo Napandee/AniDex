@@ -317,6 +317,14 @@ CREATE TABLE personal_notes (
     anime_id            INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
     drop_reason         TEXT,                          -- why it got dropped, freeform
     personal_tags       JSONB DEFAULT '[]',            -- ["watch with partner", "background watching", ...]
+    mood_tags           JSONB DEFAULT '[]',            -- ["comfort", "intense", ...] — issue #218, StoryGraph-
+                                                         -- inspired mood-at-log-time. Dedicated column rather than
+                                                         -- folded into personal_tags: mood is a closed, app-defined
+                                                         -- picklist (validated against app/main.py's MOOD_TAGS
+                                                         -- allowlist, same pattern as STREAMING_SITES) so a future
+                                                         -- mood chart/filter (explicitly out of scope for #218
+                                                         -- itself) can group on it directly, unlike personal_tags
+                                                         -- which is arbitrary freeform text.
     notes                TEXT,                          -- general freeform notes
     watch_next_priority  INTEGER,                        -- manual override, lower = higher priority; null = no override
     anilist_id_override  INTEGER,                        -- if set, use this AniList ID for links and AniList-push ops

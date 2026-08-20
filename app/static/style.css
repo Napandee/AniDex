@@ -853,6 +853,34 @@ main {
   color: var(--pill-teal-text);
 }
 
+/* Mood tags (issue #218) — deliberately a different pill color from
+   .personal-tag so mood reads as its own dimension at a glance, not just
+   another freeform tag. */
+.mood-tag {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  background: var(--pill-orange-bg);
+  border: 1px solid var(--pill-orange-border);
+  border-radius: 999px;
+  color: var(--pill-orange-text);
+}
+
+.mood-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.35rem;
+}
+
+.mood-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+
 .stale-tag {
   font-size: 0.7rem;
   padding: 0.15rem 0.5rem;
