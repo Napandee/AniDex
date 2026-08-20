@@ -2142,6 +2142,78 @@ body.auth-page main {
 }
 .streaming-summary-item strong { color: var(--t3); }
 
+/* ── 12-month subscribe/cancel calendar (issue #228) ──────────────────────── */
+
+.streaming-calendar-wrap { overflow-x: auto; margin-top: 0.5rem; }
+
+.streaming-calendar-table { border-collapse: collapse; width: 100%; min-width: 640px; }
+
+.streaming-calendar-service-col { width: 1%; white-space: nowrap; }
+
+.streaming-calendar-month-col {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--t6);
+  text-align: center;
+  padding: 0 0.15rem 0.4rem;
+  white-space: nowrap;
+}
+
+.streaming-calendar-service-cell {
+  padding: 0.3rem 0.75rem 0.3rem 0;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.streaming-calendar-service-name { font-weight: 600; color: var(--t2); font-size: 0.85rem; }
+
+.streaming-calendar-owned-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--pill-info-bg);
+  border-radius: 999px;
+  padding: 0.08rem 0.4rem;
+}
+.streaming-calendar-owned-badge--legend { margin-left: 0; margin-right: 0.3rem; }
+
+.streaming-calendar-tba {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.65rem;
+  color: var(--t6);
+  cursor: help;
+}
+
+.streaming-calendar-cell {
+  width: 2rem;
+  height: 1.5rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-alt);
+}
+.streaming-calendar-cell--needed { background: var(--accent); border-color: var(--accent); }
+
+.streaming-calendar-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  margin-top: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--t6);
+}
+.streaming-calendar-legend-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-alt);
+  border-radius: 2px;
+  margin-right: -0.15rem;
+}
+.streaming-calendar-legend-swatch--needed { background: var(--accent); border-color: var(--accent); }
+
 /* ── Stats: Streaming Coverage summary card (issue #182) ─────────────────── */
 
 .streaming-card-line { font-size: 0.85rem; color: var(--t3); margin: 0 0 0.75rem; }

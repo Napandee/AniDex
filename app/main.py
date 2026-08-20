@@ -3186,6 +3186,176 @@ def _compute_streaming_coverage(user_id: int) -> dict:
     }
 
 
+# ── Streaming Calendar (issue #228, v2 of #182) ──────────────────────────────────
+# "Only pay for months your shows air" — a 12-month subscribe/cancel calendar built
+# entirely from airing_schedule_cache (future episode air dates) + anime.external_links,
+# no new AniList calls or schema. Spun out of #22's brainstorm (idea 7, "cancel
+# candidates", and idea 13, "simulcast urgency"); the actual month-bucketing reuses
+# #182's site-crediting rule (see _credit_streaming_sites) rather than inventing a new
+# one, so the two features stay conceptually consistent even though the calendar is a
+# separate read-model from _compute_streaming_coverage.
+_CALENDAR_HORIZON_MONTHS = 12
+
+
+def _add_months(d: date, n: int) -> date:
+    """First-of-month date `n` months after the first of `d`'s month."""
+    total = d.month - 1 + n
+    year = d.year + total // 12
+    month = total % 12 + 1
+    return date(year, month, 1)
+
+
+def _credit_streaming_sites(sites: set, owned: set) -> set:
+    """Same site-crediting rule _compute_streaming_coverage uses for its
+    marginal/already-covered split, factored out so the calendar can apply it
+    per-month: a title already reachable via an owned service credits every owned
+    service that carries it (the "cancel" side of the calendar — deliberately no
+    set-cover optimization across owned services, same simplification #22 and #182
+    both settled on, see #22's Out of scope); otherwise it credits every un-owned
+    service that carries it (the "subscribe" side, matching the marginal-value
+    ranking's sites - owned)."""
+    owned_hit = sites & owned
+    return owned_hit if owned_hit else sites
+
+
+def _compute_streaming_calendar(user_id: int) -> dict:
+    """12-month subscribe/cancel calendar for this user's WATCHING/PLANNING library.
+
+    For each service touched by that library, computes which of the next 12 UTC
+    calendar months (starting this month) have at least one upcoming episode airing
+    from a title credited to that service via _credit_streaming_sites.
+
+    Two data-shape quirks of airing_schedule_cache drive deliberate handling here —
+    see scripts/sync_airing_schedule.py:
+      1. It only holds NOT-yet-aired episodes for anime.status = 'RELEASING', and is
+         deleted+reinserted on every hourly refresh — an episode that already aired
+         this month is gone from the cache the moment it airs. Left alone, that would
+         make the *current* month look emptier as the month goes on even for a show
+         that's actively mid-season right now. Fix: a RELEASING title whose EARLIEST
+         still-scheduled episode lands in the current or next calendar month also
+         credits the *current* month — "next episode is imminent" stands in for "this
+         show is airing right now." Deliberately bounded to a one-month lookahead
+         rather than "has any future row at all": a RELEASING title whose next known
+         episode is, say, 11 months out (an irregular/long-hiatus schedule) is not
+         "airing right now" in any useful subscribe/cancel sense, and crediting the
+         current month for it would be actively misleading.
+      2. A WATCHING/PLANNING title with NO airing_schedule_cache rows at all is either
+         between cours (RELEASING with a gap the cache hasn't caught) or an announced
+         sequel with no confirmed date yet (NOT_YET_RELEASED). Per issue #228's open
+         question, these go in a separate `tba_titles` bucket per credited service
+         rather than being silently omitted — "don't know when" isn't "not needed."
+         A title that DOES have a known future episode, just one that falls past the
+         12-month horizon, is not TBA (its date isn't unknown) — it's simply absent
+         from every visible month, same as a fully-aired backlog title below.
+      A fully-aired backlog title (status FINISHED, nothing left airing) has no next
+      air date to be TBA about either — it's just deliberately absent from the
+      calendar, since this feature is about air-date-driven urgency, not "when should
+      I get around to my backlog," which the existing marginal-value ranking already
+      covers on this same page.
+    """
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+
+    today = datetime.now(timezone.utc).date()
+    month_starts = [_add_months(date(today.year, today.month, 1), i) for i in range(_CALENDAR_HORIZON_MONTHS)]
+    horizon_end = _add_months(month_starts[0], _CALENDAR_HORIZON_MONTHS)
+
+    entries = db.fetchall(
+        """
+        SELECT le.anime_id, a.title_english, a.title_romaji, a.status, a.external_links
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status IN ('WATCHING', 'PLANNING')
+        """,
+        (user_id,),
+    )
+    if not entries:
+        return {"months": [d.isoformat() for d in month_starts], "services": []}
+
+    anime_ids = [e["anime_id"] for e in entries]
+    schedule_rows = db.fetchall(
+        "SELECT anime_id, airing_at FROM airing_schedule_cache WHERE anime_id = ANY(%s)",
+        (anime_ids,),
+    )
+    schedule_by_anime: dict[int, list] = {}
+    for r in schedule_rows:
+        schedule_by_anime.setdefault(r["anime_id"], []).append(r["airing_at"])
+
+    # matrix[service][month_index] -> {"episodes": int, "anime_ids": set}
+    matrix: dict[str, list[dict]] = {}
+    tba: dict[str, set] = {}
+
+    def _bucket(service: str) -> list[dict]:
+        if service not in matrix:
+            matrix[service] = [{"episodes": 0, "anime_ids": set()} for _ in range(_CALENDAR_HORIZON_MONTHS)]
+        return matrix[service]
+
+    for e in entries:
+        sites = {
+            lnk.get("site") for lnk in (e["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        }
+        if not sites:
+            continue
+
+        credited = _credit_streaming_sites(sites, owned)
+        title = e["title_english"] or e["title_romaji"]
+        airings = schedule_by_anime.get(e["anime_id"], [])
+
+        months_hit: set[int] = set()
+        earliest_gap_months = None
+        for airing_at in airings:
+            airing_date = airing_at.date()
+            gap = (airing_date.year - month_starts[0].year) * 12 + (airing_date.month - month_starts[0].month)
+            if earliest_gap_months is None or gap < earliest_gap_months:
+                earliest_gap_months = gap
+            if 0 <= gap < _CALENDAR_HORIZON_MONTHS:
+                months_hit.add(gap)
+
+        if e["status"] == "RELEASING" and earliest_gap_months is not None and earliest_gap_months <= 1:
+            months_hit.add(0)  # next episode imminent — see docstring quirk 1
+
+        if not months_hit:
+            # `airings` empty -> genuinely unknown next date (quirk 2). `airings`
+            # non-empty but every date beyond the horizon -> known, just not shown;
+            # neither case is "needed" this window, but only the first is TBA.
+            if not airings and e["status"] in ("RELEASING", "NOT_YET_RELEASED"):
+                for service in credited:
+                    tba.setdefault(service, set()).add(title)
+            continue
+
+        for mi in months_hit:
+            for service in credited:
+                b = _bucket(service)[mi]
+                b["episodes"] += 1
+                b["anime_ids"].add(e["anime_id"])
+
+    services = []
+    for service in set(matrix) | set(tba):
+        months = matrix.get(service) or [{"episodes": 0, "anime_ids": set()} for _ in range(_CALENDAR_HORIZON_MONTHS)]
+        total_episodes = sum(m["episodes"] for m in months)
+        services.append({
+            "service": service,
+            "owned": service in owned,
+            "months": [
+                {"needed": m["episodes"] > 0, "episodes": m["episodes"], "titles": len(m["anime_ids"])}
+                for m in months
+            ],
+            "tba_titles": sorted(tba.get(service, set())),
+            "total_episodes": total_episodes,
+        })
+
+    services.sort(key=lambda s: (not s["owned"], -s["total_episodes"], s["service"]))
+
+    return {
+        "months": [d.isoformat() for d in month_starts],
+        "services": services,
+    }
+
+
 @app.get("/streaming", response_class=HTMLResponse)
 def streaming_page(request: Request):
     user, denied = _require_user(request)
@@ -3193,6 +3363,7 @@ def streaming_page(request: Request):
         return denied
 
     coverage = _compute_streaming_coverage(user["id"])
+    calendar = _compute_streaming_calendar(user["id"])
 
     return templates.TemplateResponse(
         request,
@@ -3204,6 +3375,8 @@ def streaming_page(request: Request):
             "total_backlog_remaining": coverage["total_backlog_remaining"],
             "already_covered_remaining": coverage["already_covered_remaining"],
             "last_synced": coverage["last_synced"],
+            "calendar_months": calendar["months"],
+            "calendar_services": calendar["services"],
         },
     )
 

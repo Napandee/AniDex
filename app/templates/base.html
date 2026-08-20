@@ -17,15 +17,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=54 — not the v=53 both #200 (this branch's Collections UI:
-       .collections-group, .collections-select, .collections-manage-* —
-       save/apply/rename/delete saved library filter combinations) and
-       origin/main (#191's rewatch-reminder queue-section CSS plus #188's
-       .cred-* credential-card styles, already merged together at v=53 before
-       this branch caught up) independently landed on; see the v=51 comment
-       this replaced for why that collision matters and can't just be left
-       as-is. -->
-  <link rel="stylesheet" href="/static/style.css?v=54">
+  <!-- v=55 — bumped for #228's .streaming-calendar-* rules (12-month
+       subscribe/cancel calendar on /streaming). Several other issues from the
+       same 2026-08-20 brainstorm batch are landing in parallel and may also
+       touch style.css — re-check this number at rebase time rather than
+       assuming it's still free; see the superseded v=54 comment for why a
+       stale cache-bust number is a real (not just cosmetic) bug here. -->
+  <link rel="stylesheet" href="/static/style.css?v=55">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <script src="/static/script.js?v=25" defer></script>
 </head>
