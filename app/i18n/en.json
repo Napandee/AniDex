@@ -330,6 +330,10 @@
   "stats_day_fri": "Fri",
   "stats_heatmap_less": "Less",
   "stats_heatmap_more": "More",
+  "stats_chart_most_rewatched": "Most rewatched",
+  "stats_chart_rewatch_dist": "Rewatch distribution",
+  "stats_rewatch_list_empty": "No rewatches yet — anything you watch again will show up here.",
+  "stats_rewatch_dist_empty": "Complete a title to see rewatch stats here.",
 
   "title_recommendations": "Recommended — Anime Tracker",
   "rec_page_title": "Recommended for you",

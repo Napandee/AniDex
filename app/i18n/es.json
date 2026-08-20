@@ -330,6 +330,10 @@
   "stats_day_fri": "Vie",
   "stats_heatmap_less": "Menos",
   "stats_heatmap_more": "Más",
+  "stats_chart_most_rewatched": "Más revisionados",
+  "stats_chart_rewatch_dist": "Distribución de revisionados",
+  "stats_rewatch_list_empty": "Aún no hay revisionados: lo que vuelvas a ver aparecerá aquí.",
+  "stats_rewatch_dist_empty": "Completa un título para ver aquí las estadísticas de revisionado.",
 
   "title_recommendations": "Recomendados — Anime Tracker",
   "rec_page_title": "Recomendados para ti",

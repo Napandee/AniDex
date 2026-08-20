@@ -330,6 +330,10 @@
   "stats_day_fri": "शुक्र",
   "stats_heatmap_less": "कम",
   "stats_heatmap_more": "ज़्यादा",
+  "stats_chart_most_rewatched": "सबसे ज़्यादा दोबारा देखे गए",
+  "stats_chart_rewatch_dist": "दोबारा देखने का वितरण",
+  "stats_rewatch_list_empty": "अभी तक कोई दोबारा देखा गया शीर्षक नहीं — जो भी आप फिर से देखेंगे वह यहाँ दिखेगा।",
+  "stats_rewatch_dist_empty": "यहाँ रीवॉच आँकड़े देखने के लिए कोई शीर्षक पूरा करें।",
 
   "title_recommendations": "अनुशंसित — Anime Tracker",
   "rec_page_title": "आपके लिए अनुशंसित",
