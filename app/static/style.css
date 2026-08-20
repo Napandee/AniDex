@@ -971,6 +971,117 @@ main {
 .settings-subsection + .settings-subsection { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px dashed var(--border-subtle); }
 .settings-subsection-title { font-size: 0.85rem; font-weight: 600; color: var(--t5); margin: 0; }
 
+/* Credential cards (#188) — three independent collapsible cards (AniList/
+   Crunchyroll/Netflix) replacing the old flat password-field list. Card body
+   and guide body both reuse .help-disclosure-panel's grid-rows collapse
+   animation (defined above); only the toggle buttons get their own look,
+   driven by the small data-cred-toggle handler in script.js. */
+.cred-cards { display: flex; flex-direction: column; gap: 0.9rem; }
+.cred-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface-alt);
+  overflow: hidden;
+}
+.cred-card-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.cred-icon {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+.cred-icon--anilist     { color: var(--pill-info-text-strong);   background: var(--pill-info-bg); }
+.cred-icon--crunchyroll { color: var(--pill-warning-text-strong); background: var(--pill-warning-bg); }
+.cred-icon--netflix     { color: var(--pill-danger-text-strong);  background: var(--pill-danger-bg); }
+.cred-name { font-size: 0.9rem; font-weight: 600; color: var(--t2); }
+.cred-required-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--pill-info-text);
+  background: var(--pill-info-bg);
+  border: 1px solid var(--pill-info-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+.status-chip--cred-not_connected  { color: var(--pill-neutral-text); border-color: var(--pill-neutral-border); background: var(--pill-neutral-bg); }
+.status-chip--cred-connected      { color: var(--pill-success-text-strong); border-color: var(--pill-success-border); background: var(--pill-success-bg); }
+.status-chip--cred-needs_attention { color: var(--pill-warning-text-strong); border-color: var(--pill-warning-border); background: var(--pill-warning-bg); }
+.cred-chevron { margin-left: auto; flex-shrink: 0; color: var(--t7); transition: transform 0.15s ease; }
+.cred-card-header[aria-expanded="true"] .cred-chevron { transform: rotate(180deg); }
+
+.cred-card-body { border-top: 1px solid var(--border-subtle); }
+.cred-card-body > div { padding: 1rem 1rem 1.1rem; display: flex; flex-direction: column; gap: 1rem; }
+
+.cred-attention-note {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--pill-warning-text-strong);
+  background: var(--pill-warning-bg);
+  border: 1px solid var(--pill-warning-border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  margin: 0;
+}
+
+.cred-guide-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.1rem 0;
+}
+.cred-guide-toggle:hover { text-decoration: underline; }
+.cred-guide-toggle .cred-chevron { margin-left: 0; }
+.cred-guide-toggle[aria-expanded="true"] .cred-chevron { transform: rotate(180deg); }
+.cred-guide > div {
+  background: var(--bg-inset);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.8rem;
+  color: var(--t5);
+  line-height: 1.7;
+}
+.cred-guide-steps { margin: 0; padding-left: 1.1rem; }
+
+.cred-form-actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.btn-test {
+  padding: 0.4rem 0.85rem;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--t3);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.btn-test:hover { border-color: var(--accent); color: var(--accent); }
+.btn-test:disabled { opacity: 0.6; cursor: default; }
+.cred-test-result { font-size: 0.78rem; }
+.cred-test-result--ok { color: var(--pill-success-text); }
+.cred-test-result--fail { color: var(--pill-danger-text); }
+
 .settings-success { font-size: 0.82rem; color: var(--pill-success-text); margin: 0 0 1rem; }
 
 /* Secret input + reveal button */
@@ -1671,6 +1782,17 @@ body.auth-page main {
 }
 .wrapup-empty { color: var(--t6); font-size: 0.85rem; margin: 0; }
 
+/* ── Stats: #wrapup-card year-comparison extras (issue #193) ────────────── */
+.wrapup-extras { margin-top: 1.25rem; }
+.wrapped-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+.wrapped-detail { min-width: 0; }
+.wrapped-detail p { margin: 0; font-size: 0.9rem; color: var(--t2); }
+.wrapped-detail--wide { grid-column: 1 / -1; }
+
 /* ── Stats: watch-activity heatmap (issue #10) ───────────────────────────── */
 .heatmap-wrap {
   display: flex;
@@ -1791,6 +1913,7 @@ body.auth-page main {
 
 @media (max-width: 720px) {
   .drop-patterns-body { grid-template-columns: 1fr; }
+  .wrapped-detail-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Streaming Coverage (issue #182) ─────────────────────────────────────── */

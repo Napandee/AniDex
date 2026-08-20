@@ -17,10 +17,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=52 -- bumped for issue #191's rewatch-reminder queue-section CSS
-       (.btn-start-rewatch, kept as its own class rather than reusing
-       .btn-add-planning -- see the comment on that rule for why). -->
-  <link rel="stylesheet" href="/static/style.css?v=52">
+  <!-- v=53 — not the v=52 both #191 (rewatch-reminder queue-section CSS,
+       .btn-start-rewatch) and this branch (#188's .cred-* credential-card
+       styles) independently landed on; see the v=51 comment this replaced
+       for why that collision matters and can't just be left as-is. -->
+  <link rel="stylesheet" href="/static/style.css?v=53">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <script src="/static/script.js?v=24" defer></script>
 </head>
