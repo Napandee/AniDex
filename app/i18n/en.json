@@ -464,7 +464,7 @@
   "js_done": "Done",
   "js_queuing": "Queuing {n}…",
   "js_bulk_status_failed": "Failed to queue bulk update.",
-  "js_apply_status": "Apply status",
+  "js_apply_status": "Apply",
   "js_adding_to": "Adding to {n}…",
   "js_add_tags": "Add tags",
   "js_bulk_tags_failed": "Failed to add tags.",

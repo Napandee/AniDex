@@ -55,19 +55,28 @@
 
 <div id="bulk-bar" class="bulk-bar" hidden>
   <span id="bulk-count" class="bulk-count">0 selected</span>
-  <div class="bulk-bar-group">
-    <select id="bulk-status-select" class="form-input form-input--narrow bulk-status-select">
-      {% for s in ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'] %}
-      <option value="{{ s }}">{{ t('status_' + s.lower()) }}</option>
-      {% endfor %}
-    </select>
-    <button id="bulk-apply" class="btn-save">{{ t('js_apply_status') }}</button>
+
+  <select id="bulk-status-select" class="form-input form-input--narrow bulk-status-select">
+    {% for s in ['WATCHING','COMPLETED','DROPPED','PLANNING','PAUSED','REPEATING'] %}
+    <option value="{{ s }}">{{ t('status_' + s.lower()) }}</option>
+    {% endfor %}
+  </select>
+  <button id="bulk-apply" class="btn-save">{{ t('js_apply_status') }}</button>
+
+  <div class="bulk-tags-anchor">
+    <button id="bulk-tags-toggle" type="button" class="bulk-icon-btn" title="{{ t('js_add_tags') }}" aria-label="{{ t('js_add_tags') }}" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.15" fill="currentColor" stroke="none"/></svg>
+    </button>
+
+    <div id="bulk-tags-popover" class="bulk-tags-popover" hidden>
+      <input id="bulk-tags-input" class="form-input" type="text" placeholder="{{ t('lib_add_tags_placeholder') }}">
+      <button id="bulk-apply-tags" class="btn-save">{{ t('js_add_tags') }}</button>
+    </div>
   </div>
-  <div class="bulk-bar-group">
-    <input id="bulk-tags-input" class="form-input" type="text" placeholder="{{ t('lib_add_tags_placeholder') }}">
-    <button id="bulk-apply-tags" class="btn-save">{{ t('js_add_tags') }}</button>
-  </div>
-  <button id="bulk-clear" class="filter-btn">{{ t('lib_clear_btn') }}</button>
+
+  <button id="bulk-clear" type="button" class="bulk-icon-btn bulk-clear-btn" title="{{ t('lib_clear_btn') }}" aria-label="{{ t('lib_clear_btn') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
 </div>
 
 {% if entries %}
@@ -256,6 +265,8 @@
   const statusSel = document.getElementById('bulk-status-select');
   const tagsInput = document.getElementById('bulk-tags-input');
   const tagsBtn = document.getElementById('bulk-apply-tags');
+  const tagsToggle = document.getElementById('bulk-tags-toggle');
+  const tagsPopover = document.getElementById('bulk-tags-popover');
   let bulkMode = false;
 
   function getChecked() {
@@ -268,6 +279,32 @@
     bar.hidden = n === 0;
   }
 
+  // ── Tag popover (conditional reveal, #183) ──────────────────────────────
+  // Tag entry only ever costs bar real estate while actually in use — it lives
+  // in a small anchored popover off the tag icon instead of a permanent second
+  // row, so a plain status-only bulk edit (the common case) stays one row.
+  function openTagsPopover() {
+    tagsPopover.hidden = false;
+    tagsToggle.setAttribute('aria-expanded', 'true');
+    tagsInput.focus();
+  }
+  function closeTagsPopover() {
+    tagsPopover.hidden = true;
+    tagsToggle.setAttribute('aria-expanded', 'false');
+  }
+  tagsToggle.addEventListener('click', e => {
+    e.stopPropagation();
+    if (tagsPopover.hidden) openTagsPopover(); else closeTagsPopover();
+  });
+  document.addEventListener('click', e => {
+    if (!tagsPopover.hidden && !tagsPopover.contains(e.target) && e.target !== tagsToggle) {
+      closeTagsPopover();
+    }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !tagsPopover.hidden) closeTagsPopover();
+  });
+
   toggleBtn.addEventListener('click', () => {
     bulkMode = !bulkMode;
     toggleBtn.classList.toggle('active', bulkMode);
@@ -276,7 +313,7 @@
       cb.hidden = !bulkMode;
       if (!bulkMode) cb.checked = false;
     });
-    if (!bulkMode) { bar.hidden = true; }
+    if (!bulkMode) { bar.hidden = true; closeTagsPopover(); }
   });
 
   document.addEventListener('change', e => {
@@ -286,6 +323,7 @@
   clearBtn.addEventListener('click', () => {
     document.querySelectorAll('.bulk-checkbox').forEach(cb => cb.checked = false);
     updateBar();
+    closeTagsPopover();
   });
 
   applyBtn.addEventListener('click', async () => {

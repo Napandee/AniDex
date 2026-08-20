@@ -1221,57 +1221,127 @@ body.auth-page main {
   accent-color: #3b82f6;
 }
 
-/* Wraps onto multiple rows rather than forcing everything onto one — #15 already
-   pushed a single-row layout past comfortable width (status + tags together), and
-   any future third bulk action would make a one-row layout worse again. Controls
-   that belong together (select+apply, input+apply) are grouped in their own flex
-   containers below so a wrap always happens *between* groups, never mid-group. */
+/* Bottom sheet, single row at rest (#183 — replaces the old 5-row bordered-box
+   design flagged as visually clunky on mobile). Rises flush from the screen's
+   bottom edge using the app's real surface/border tokens instead of a bespoke
+   blue outline; rounded top corners only, no floating gap. Only the status
+   select + apply button live in the row permanently — tag entry is a small
+   anchored popover off .bulk-tags-toggle (opened on tap, see the JS below),
+   so a plain status-only bulk edit — the common case per #112's original
+   report — never costs more than one row. The pattern (icon → small anchored
+   popover) is meant to extend cleanly if a third bulk action is ever added,
+   rather than forcing another one-off redesign of this bar. */
 .bulk-bar {
   position: fixed;
-  bottom: 1.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--bg-surface-violet);
-  border: 1px solid #3b82f6;
-  border-radius: 10px;
-  padding: 0.6rem 1.25rem;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 14px 14px 0 0;
+  padding: 0.5rem 0.75rem;
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: center;
-  gap: 0.6rem 1rem;
+  gap: 0.45rem;
   z-index: 200;
-  box-shadow: 0 4px 24px #0008;
-  font-size: 0.85rem;
-  /* width: auto here would let Chromium's "squarish" intrinsic-sizing heuristic for
-     wrapping flex containers force an unwanted 2-line layout even when everything
-     fits on one line with room to spare — max-content forces the real single-row
-     width to be used whenever it fits under max-width, and only actually wraps once
-     that no longer holds (narrow viewport, or a future third control group). */
-  width: max-content;
-  max-width: calc(100vw - 2rem);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+  font-size: 0.8rem;
   box-sizing: border-box;
+  /* No overflow-x here on purpose — every control below is sized to fit one
+     row at the ~360-412px phone widths this bar targets, and `overflow` on
+     this element would clip .bulk-tags-popover (a positioned descendant
+     painted within this box) along with any real overflow, silently hiding
+     the popover instead of scrolling to it. */
 }
 .bulk-bar[hidden] { display: none; }
-.bulk-count { flex: 0 0 auto; }
-.bulk-bar-group {
+
+/* Selection-count chip — violet, matching the add-anime FAB's color family
+   (--accent-violet) instead of the old bespoke blue. */
+.bulk-count {
+  flex: 0 0 auto;
+  background: var(--accent-violet);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.bulk-status-select {
+  flex: 0 0 auto;
+  width: 6.4rem;
+  min-width: 0;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.35rem;
+}
+
+.bulk-bar .btn-save {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Compact circular icon buttons — tag-popover toggle + clear/deselect —
+   styled off the same tokens as the nav's .icon-fab family rather than a new
+   icon style, just smaller to fit a single dense row. */
+.bulk-icon-btn {
+  flex: 0 0 auto;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  border: none;
+  background: var(--icon-fab-bg);
+  color: var(--icon-fab-text);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex: 0 0 auto;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
 }
-.bulk-bar select {
-  font-size: 0.82rem;
-  padding: 0.25rem 0.4rem;
-  min-width: 8rem;
-  flex-shrink: 0;
+.bulk-icon-btn svg { width: 0.85rem; height: 0.85rem; }
+.bulk-icon-btn:hover { background: var(--icon-fab-hover-bg); color: var(--icon-fab-hover-text); }
+/* Active/open state picks up the same violet as the count chip — this is the
+   "generalizes to a future third action" hook: any later popover-triggering
+   icon button can reuse aria-expanded + this rule for its own open state. */
+.bulk-icon-btn[aria-expanded="true"] { background: var(--accent-violet); color: #fff; }
+
+/* Clear sits at the far right, separated from the status controls — reads as
+   the bar's own dismiss action rather than another bulk-edit control. */
+.bulk-clear-btn { margin-left: auto; }
+
+.bulk-tags-anchor { position: relative; flex: 0 0 auto; display: flex; }
+
+.bulk-tags-popover {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  z-index: 210;
+  width: max-content;
+  max-width: calc(100vw - 1.5rem);
 }
-.bulk-bar input[type="text"] {
-  width: 12rem;
-  font-size: 0.82rem;
-  padding: 0.25rem 0.4rem;
-  flex-shrink: 0;
+.bulk-tags-popover[hidden] { display: none; }
+.bulk-tags-popover .form-input {
+  width: min(11rem, 55vw);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.55rem;
 }
+.bulk-tags-popover .btn-save { flex: 0 0 auto; }
+
 .bulk-failed { color: var(--pill-danger-text); }
 
 /* ── Watch queue ─────────────────────────────────────────────────────────── */
@@ -2620,16 +2690,11 @@ body.auth-page main {
   .upcoming-grid { grid-template-columns: 1fr; }
   .upcoming-grid-day-list .upcoming-cover { width: 40px; height: auto; }
 
-  /* ── Bulk select bar — edge-to-edge, groups stack full-width ─────────── */
-  .bulk-bar {
-    left: 1rem;
-    right: 1rem;
-    transform: none;
-    max-width: none;
-    width: auto;
-  }
-  .bulk-bar-group { width: 100%; justify-content: center; flex-wrap: wrap; }
-  .bulk-bar input[type="text"] { width: 100%; flex: 1 1 auto; }
+  /* ── Bulk select bar — already a flush full-width bottom sheet at every
+     width (#183); nothing extra needed at this breakpoint beyond trimming the
+     status select a bit further so the single row has more slack on narrow
+     phones. */
+  .bulk-status-select { width: 5.6rem; }
 
   /* ── Modal — full screen on mobile ───────────────────────────────────── */
   .modal-box {

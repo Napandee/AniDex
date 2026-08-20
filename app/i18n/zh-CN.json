@@ -464,7 +464,7 @@
   "js_done": "完成",
   "js_queuing": "正在加入队列 {n} 项…",
   "js_bulk_status_failed": "批量更新失败。",
-  "js_apply_status": "应用状态",
+  "js_apply_status": "应用",
   "js_adding_to": "正在添加至 {n} 项…",
   "js_add_tags": "添加标签",
   "js_bulk_tags_failed": "添加标签失败。",

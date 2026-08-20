@@ -464,7 +464,7 @@
   "js_done": "完了",
   "js_queuing": "{n}件をキューに追加中…",
   "js_bulk_status_failed": "一括更新に失敗しました。",
-  "js_apply_status": "ステータスを適用",
+  "js_apply_status": "適用",
   "js_adding_to": "{n}件に追加中…",
   "js_add_tags": "タグを追加",
   "js_bulk_tags_failed": "タグの追加に失敗しました。",
