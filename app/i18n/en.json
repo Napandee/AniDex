@@ -324,6 +324,11 @@
   "stats_day_fri": "Fri",
   "stats_heatmap_less": "Less",
   "stats_heatmap_more": "More",
+  "stats_wrapped_planning_completed": "Completed this year",
+  "stats_wrapped_binge": "Biggest binge week",
+  "stats_wrapped_binge_fmt": "{episodes} episodes ({start} – {end})",
+  "stats_wrapped_score_shift": "Score distribution vs. prior year",
+  "stats_wrapped_no_prior_year": "No prior-year data yet — this is your first year with completions on AniDex.",
 
   "title_recommendations": "Recommended — Anime Tracker",
   "rec_page_title": "Recommended for you",

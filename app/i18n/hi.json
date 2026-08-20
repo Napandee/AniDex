@@ -324,6 +324,11 @@
   "stats_day_fri": "शुक्र",
   "stats_heatmap_less": "कम",
   "stats_heatmap_more": "ज़्यादा",
+  "stats_wrapped_planning_completed": "इस साल पूर्ण",
+  "stats_wrapped_binge": "सबसे बड़ा बिंज सप्ताह",
+  "stats_wrapped_binge_fmt": "{episodes} एपिसोड ({start} – {end})",
+  "stats_wrapped_score_shift": "पिछले साल की तुलना में स्कोर वितरण",
+  "stats_wrapped_no_prior_year": "अभी पिछले साल का डेटा नहीं है — AniDex पर यह आपका पूर्ण एंट्री वाला पहला साल है।",
 
   "title_recommendations": "अनुशंसित — Anime Tracker",
   "rec_page_title": "आपके लिए अनुशंसित",

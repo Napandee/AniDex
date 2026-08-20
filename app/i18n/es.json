@@ -324,6 +324,11 @@
   "stats_day_fri": "Vie",
   "stats_heatmap_less": "Menos",
   "stats_heatmap_more": "Más",
+  "stats_wrapped_planning_completed": "Completados este año",
+  "stats_wrapped_binge": "Semana de mayor maratón",
+  "stats_wrapped_binge_fmt": "{episodes} episodios ({start} – {end})",
+  "stats_wrapped_score_shift": "Distribución de puntuaciones vs. año anterior",
+  "stats_wrapped_no_prior_year": "Todavía no hay datos del año anterior — este es tu primer año con completados en AniDex.",
 
   "title_recommendations": "Recomendados — Anime Tracker",
   "rec_page_title": "Recomendados para ti",

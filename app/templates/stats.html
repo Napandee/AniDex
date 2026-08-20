@@ -20,7 +20,14 @@
   <!-- "Year in anime" wrap-up (issue #78) — combines existing /api/stats aggregates
        (watch time, top genre, completion count) into a single filterable summary,
        rather than a new data pipeline. Self-contained block: its own fetch, its own
-       DOM, no changes to the charts/headlines above. -->
+       DOM, no changes to the charts/headlines above.
+
+       Extended by issue #193 with three year-comparison aggregations (biggest binge
+       week, Planning->Completed status snapshot, year-over-year score-distribution
+       shift) — see wrap_extras in /api/stats. Those three are completion-year
+       (finish_date) scoped rather than the release-year (a.season_year) scope the
+       four stats above use, but deliberately reuse this same #wrapup-year selector
+       rather than adding a second one, per #193's explicit instruction. -->
   <div class="chart-card chart-card--wide wrapup-card" id="wrapup-card">
     <div class="wrapup-header">
       <h2 class="chart-title">Year in anime</h2>
@@ -42,6 +49,27 @@
       <div class="wrapup-stat"><span class="stat-num" id="wrapup-rate">—</span><span class="stat-label">Completion rate</span></div>
     </div>
     <p class="wrapup-empty" id="wrapup-empty" hidden>Nothing completed for this year yet.</p>
+
+    <!-- Issue #193's three additions. Shown/hidden together with wrapup-body above
+         (same emptiness gate), but as their own sub-block since they're scoped by
+         finish_date, not a.season_year/a.season like the four stats above. -->
+    <div class="wrapup-extras" id="wrapup-extras">
+      <div class="wrapped-detail-grid">
+        <div class="wrapped-detail">
+          <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_binge') }}</h3>
+          <p id="wrapup-binge">—</p>
+        </div>
+        <div class="wrapped-detail">
+          <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_planning_completed') }}</h3>
+          <p id="wrapup-planning-completed">—</p>
+        </div>
+        <div class="wrapped-detail wrapped-detail--wide">
+          <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_score_shift') }}</h3>
+          <canvas id="chart-wrapup-shift" height="120"></canvas>
+          <p class="wrapup-empty" id="wrapup-no-prior-year" hidden>{{ t('stats_wrapped_no_prior_year') }}</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="stats-grid">
@@ -292,6 +320,8 @@
     yearSelect.innerHTML = sortedYears.map(y => `<option value="${y}">${y}</option>`).join('');
     yearSelect.value = String(sortedYears[0]);
 
+    let shiftChart = null;
+
     async function loadWrapup() {
       const y = yearSelect.value;
       const s = seasonSelect.value;
@@ -300,9 +330,11 @@
       const wrap = await fetch(`/api/stats?${params}`).then(r => r.json());
 
       const body = document.getElementById('wrapup-body');
+      const extras = document.getElementById('wrapup-extras');
       const empty = document.getElementById('wrapup-empty');
       if (!wrap.totals.completed) {
         body.hidden = true;
+        extras.hidden = true;
         empty.hidden = false;
         return;
       }
@@ -316,6 +348,60 @@
       document.getElementById('wrapup-genre').textContent = wrap.top_genre || '—';
       document.getElementById('wrapup-rate').textContent =
         wrap.totals.completion_rate != null ? `${wrap.totals.completion_rate}%` : '—';
+
+      // Issue #193's three additions — completion-year (finish_date) scoped, driven
+      // by this same `y` selector value. Absent (null) if the backend somehow didn't
+      // compute it (shouldn't happen once `year` is set, but guard anyway).
+      const extrasData = wrap.wrap_extras;
+      if (!extrasData) {
+        extras.hidden = true;
+        return;
+      }
+      extras.hidden = false;
+
+      document.getElementById('wrapup-binge').textContent = extrasData.binge_week
+        ? t('stats_wrapped_binge_fmt', {
+            episodes: extrasData.binge_week.episodes,
+            start: extrasData.binge_week.start,
+            end: extrasData.binge_week.end,
+          })
+        : '—';
+
+      document.getElementById('wrapup-planning-completed').textContent =
+        extrasData.status_snapshot.planning_to_completed;
+
+      // Year-over-year score-distribution shift (grouped bar), graceful empty state
+      // when the user has no prior-year data yet (e.g. their first year on AniDex).
+      const shift = extrasData.score_shift;
+      const noPrior = document.getElementById('wrapup-no-prior-year');
+      const canvas = document.getElementById('chart-wrapup-shift');
+      if (shiftChart) { shiftChart.destroy(); shiftChart = null; }
+      if (!shift.has_prior_year_data) {
+        canvas.hidden = true;
+        noPrior.hidden = false;
+      } else {
+        canvas.hidden = false;
+        noPrior.hidden = true;
+        const thisYearMap = Object.fromEntries(shift.this_year.map(d => [d.score, d.count]));
+        const priorYearMap = Object.fromEntries(shift.prior_year.map(d => [d.score, d.count]));
+        shiftChart = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: [1, 2, 3, 4, 5].map(s => STAR_LABELS[s]),
+            datasets: [
+              { label: String(extrasData.prior_year), data: [1, 2, 3, 4, 5].map(s => priorYearMap[s] || 0), backgroundColor: '#64748b', borderRadius: 4 },
+              { label: String(extrasData.year), data: [1, 2, 3, 4, 5].map(s => thisYearMap[s] || 0), backgroundColor: '#2563eb', borderRadius: 4 },
+            ],
+          },
+          options: {
+            ...baseOpts,
+            scales: {
+              x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+              y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+            },
+          },
+        });
+      }
     }
 
     yearSelect.addEventListener('change', loadWrapup);

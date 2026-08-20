@@ -3296,6 +3296,137 @@ def _compute_drop_patterns(user_id: int) -> dict | None:
     }
 
 
+def _yearly_completion_rows(user_id: int, year: int) -> list[dict]:
+    """Every library_entries row whose finish_date falls in the given calendar year
+    (Jan 1 - Dec 31), joined with the anime row. This is the single source query
+    every year-comparison aggregation below is built from — issue #193 (extending
+    #wrapup-card, issue #78) and the "living page" issue it's held for (#196) are
+    both expected to call this directly rather than re-deriving their own row set,
+    so the two surfaces can't silently disagree on what counts as "in year Y".
+
+    Time-boundary choice: `finish_date`, per #163/#193's own decision — it's a live,
+    AniList-synced field (confirmed by #77/#176), not a one-off backfill. It's also
+    the *only* per-entry timestamp this schema has finer than "whenever the row was
+    last synced" — there is no per-episode watched-at log (see schema.sql), so
+    anything finer-grained than "which calendar year did this entry finish in" isn't
+    reconstructable from existing data without a new sync job, which is out of scope
+    per the issue.
+
+    Deliberately independent of #wrapup-card's own `a.season_year`/`a.season` filter:
+    that filter is release-year (when a show originally aired), a different concept
+    from completion-year (when *you* finished it) that this function scopes by. Both
+    happen to be driven by the same selected `year` value from the card's one
+    dropdown per the issue's explicit instruction not to add a second selector.
+    """
+    return db.fetchall(
+        """
+        SELECT le.anime_id, le.finish_date, le.progress, le.score,
+               a.title_english, a.title_romaji, a.genres, a.duration
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+          AND le.finish_date IS NOT NULL
+          AND le.finish_date >= %s AND le.finish_date <= %s
+        """,
+        (user_id, f"{year}-01-01", f"{year}-12-31"),
+    )
+
+
+def _biggest_binge_week(rows: list[dict]) -> dict | None:
+    """Reusable aggregation #1 (issue #193): most episodes credited to any 7-day
+    window within the year, using each entry's finish_date as a proxy for "when
+    those episodes were watched" (see _yearly_completion_rows' docstring for why
+    finish_date is the best available signal — there's no per-episode watched-at
+    timestamp in this schema). Takes the row set _yearly_completion_rows returns —
+    call that first, this is a pure function over its output.
+
+    Standard sliding-window-max argument: the maximizing window's left edge can
+    always be shifted right until it lands on an actual data point without
+    decreasing the window's sum, so it's sufficient (and exact) to only test
+    windows anchored at each distinct finish_date present, rather than every
+    possible day in the year.
+    """
+    by_date: dict = {}
+    for r in rows:
+        d = r["finish_date"]
+        by_date[d] = by_date.get(d, 0) + (r["progress"] or 0)
+    if not by_date:
+        return None
+    dates = sorted(by_date)
+    best_start, best_end, best_sum = None, None, -1
+    for start in dates:
+        end = start + timedelta(days=6)
+        total = sum(cnt for d, cnt in by_date.items() if start <= d <= end)
+        if total > best_sum:
+            best_start, best_end, best_sum = start, end, total
+    return {"start": best_start.isoformat(), "end": best_end.isoformat(), "episodes": best_sum}
+
+
+def _status_distribution_snapshot(rows: list[dict]) -> dict:
+    """Reusable aggregation #2 (issue #193): the "Planning -> Completed
+    status-distribution snapshot" for the year, per #163's own phrasing of what
+    that means — the count of entries that finished (reached a finish_date) in this
+    calendar year. Takes _yearly_completion_rows' output.
+
+    There's no status-transition history table (library_entries.status is
+    current-state-only, see schema.sql), so the count of entries whose finish_date
+    lands in this year is the closest reconstructable proxy for "how many moved
+    from Planning to Completed that year" — every completion necessarily passed
+    through a pre-completion state first. Returned as a dict (not a bare int) so
+    this can grow a real multi-status breakdown later without changing callers'
+    shape.
+    """
+    return {"planning_to_completed": len(rows)}
+
+
+def _score_distribution(rows: list[dict]) -> list[dict]:
+    """Low-level helper: {score: count} histogram (1-5) over any row set with a
+    `score` field. Used by _score_distribution_shift below for both the selected
+    year and the prior year, so the two sides are computed identically."""
+    counts: Counter = Counter()
+    for r in rows:
+        if r["score"] is not None and r["score"] > 0:
+            counts[int(r["score"])] += 1
+    return [{"score": s, "count": c} for s, c in sorted(counts.items())]
+
+
+def _score_distribution_shift(this_year_rows: list[dict], prior_year_rows: list[dict]) -> dict:
+    """Reusable aggregation #3 (issue #193): year-over-year score-distribution
+    shift. Takes two _yearly_completion_rows() results — the selected year's and
+    year-1's — so the caller controls exactly which two years are compared.
+
+    Graceful empty-prior-year handling (a user's first year on AniDex, or simply a
+    year with no scored completions the year before): `has_prior_year_data` is
+    False and `prior_year` is an empty list rather than an error, so callers render
+    an empty state instead of a broken chart.
+    """
+    prior_year_scores = _score_distribution(prior_year_rows)
+    return {
+        "this_year": _score_distribution(this_year_rows),
+        "prior_year": prior_year_scores,
+        "has_prior_year_data": bool(prior_year_scores),
+    }
+
+
+def _year_comparison_extras(user_id: int, year: int) -> dict:
+    """Orchestrates the three reusable aggregations above for #wrapup-card's
+    year-comparison extension (issue #193). `year` is whatever calendar year the
+    card's existing selector currently has picked; comparison is always against
+    year-1. Kept as a thin wrapper — #196 (the living "year so far" page, held
+    until this ships) can call this directly for the current year, or call the
+    three aggregation functions individually if it needs different inputs.
+    """
+    rows = _yearly_completion_rows(user_id, year)
+    prior_rows = _yearly_completion_rows(user_id, year - 1)
+    return {
+        "year": year,
+        "prior_year": year - 1,
+        "binge_week": _biggest_binge_week(rows),
+        "status_snapshot": _status_distribution_snapshot(rows),
+        "score_shift": _score_distribution_shift(rows, prior_rows),
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -3406,6 +3537,17 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     watch_days = round(watch_minutes / 1440, 1)
     genres_out = [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows]
     drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
+
+    # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
+    # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
+    # selector value rather than adding a second one; only computed when that
+    # selector actually has a year picked (same gate `year is not None` already
+    # uses above for the release-year filter). Deliberately completion-year
+    # (finish_date) scoped, not release-year (a.season_year) scoped, per #163's
+    # time-boundary decision — see _yearly_completion_rows' docstring for why the
+    # two concepts differ despite sharing this one input value.
+    wrap_extras = _year_comparison_extras(user["id"], year) if year is not None else None
+
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
         "scores": [{"score": r["score"], "count": r["cnt"]} for r in score_rows],
@@ -3424,6 +3566,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
             "mean_score": float(totals["mean_score"]) if totals["mean_score"] else None,
         },
         "wrap_filter": {"year": year, "season": applied_season},
+        "wrap_extras": wrap_extras,
     })
 
 
