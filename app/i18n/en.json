@@ -349,6 +349,7 @@
 
   "title_stats": "Stats — Anime Tracker",
   "stats_page_title": "Stats",
+  "stats_drilldown_hint": "Click a number, bar, or slice to see the anime behind it.",
   "stats_hl_episodes": "Episodes watched",
   "stats_hl_watchtime": "Watch time",
   "stats_hl_completion": "Completion rate",

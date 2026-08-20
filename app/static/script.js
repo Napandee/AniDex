@@ -457,20 +457,29 @@ function refreshTagFilterOptions() {
     }
   });
 
-  // ── Apply a collection's filters after navigating here via ?collection=ID ───
-  // (see applyCollection above) — the season/tag dropdowns for the new status are
-  // already built by this point, since those IIFEs run earlier in this same file.
+  // ── Apply filters carried in via the URL ────────────────────────────────────
+  // Two callers land here: applyCollection above (?collection=ID, replaying a
+  // saved combination) and, since issue #225, the /stats page's drill-down links
+  // (e.g. a genre bar builds `/?status=COMPLETED&q=Isekai` directly, no saved
+  // collection involved). Both just need these same format/season/tag/score/
+  // rewatch/sort/q keys replayed through the real controls — same
+  // applyFilterValues call either way, nothing #225-specific added here beyond
+  // the trigger condition below no longer requiring `collection` to be present.
+  // The season/tag dropdowns for the new status are already built by this point,
+  // since those IIFEs run earlier in this same file.
   (function applyFromUrl() {
     const params = new URLSearchParams(location.search);
-    if (!params.has('collection')) return;
+    const filterKeys = ['format', 'season', 'tag', 'score', 'rewatch', 'sort', 'q'];
+    const hasFilterParams = filterKeys.some(k => params.has(k));
+    if (!params.has('collection') && !hasFilterParams) return;
     const filters = {};
-    ['format', 'season', 'tag', 'score', 'rewatch', 'sort', 'q'].forEach(k => {
+    filterKeys.forEach(k => {
       if (params.has(k)) filters[k] = params.get(k);
     });
     applyFilterValues(filters);
 
     const url = new URL(location.href);
-    ['collection', 'format', 'season', 'tag', 'score', 'rewatch', 'sort', 'q'].forEach(k => url.searchParams.delete(k));
+    ['collection', ...filterKeys].forEach(k => url.searchParams.delete(k));
     history.replaceState(null, '', url);
   }());
 }());

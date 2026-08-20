@@ -807,6 +807,13 @@ main {
   border-radius: 999px;
   color: var(--t5);
 }
+/* Belt-and-braces: .genre never sets `display` itself so the browser's default
+   `[hidden] { display: none }` UA rule already wins, but this app has shipped a
+   real "author CSS silently un-hides a `[hidden]` element" bug before (i18n
+   effort, 2026-08-18) — make it explicit rather than rely on that staying true.
+   Guards the off-screen 5th+ genre chips added for issue #225's search-based
+   genre drill-down (see library.html). */
+.genre[hidden] { display: none; }
 
 .empty {
   color: var(--t7);
@@ -1839,6 +1846,12 @@ body.auth-page main {
 /* .stats body class no longer used — page now uses normal layout */
 .stats-page { max-width: 960px; margin: 0 auto; }
 
+.stats-drilldown-hint {
+  font-size: 0.8rem;
+  color: var(--t6);
+  margin: -0.5rem 0 1.25rem;
+}
+
 .stats-headlines {
   display: flex;
   gap: 1.5rem;
@@ -1867,6 +1880,49 @@ body.auth-page main {
   margin-top: 0.25rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* ── Stats drill-down (issue #225) ───────────────────────────────────────────
+   Shared affordance for every clickable stat on /stats: headline tiles wrapped
+   in an <a>, plus the per-row drop-genre/drop-tag links built by stats.html's
+   JS. Chart.js bars/wedges get their own cursor:pointer set inline (no DOM
+   element to attach a class to) rather than a CSS rule here. */
+a.stat-headline-link {
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, transform 0.15s;
+}
+a.stat-headline-link:hover,
+a.stat-headline-link:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+/* Applied alongside the existing .drop-rate-row class (which already sets the
+   grid layout) when that row is rendered as an <a> instead of a <div> — just
+   the link-reset + hover, no layout duplicated here. */
+a.drop-rate-row-link {
+  text-decoration: none;
+  color: inherit;
+  border-radius: 6px;
+  margin: -0.15rem -0.3rem;
+  padding: 0.15rem 0.3rem;
+  transition: background 0.15s;
+}
+a.drop-rate-row-link:hover,
+a.drop-rate-row-link:focus-visible {
+  background: var(--bg-surface-hover);
+}
+/* Applied alongside .personal-tag (already a self-contained pill) when that
+   chip is rendered as an <a> — link-reset plus a hover state to match. */
+a.drop-tag-chip-link {
+  display: inline-block;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+a.drop-tag-chip-link:hover,
+a.drop-tag-chip-link:focus-visible {
+  border-color: var(--accent);
+  color: var(--t1);
 }
 
 .stats-grid {
