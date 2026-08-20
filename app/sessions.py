@@ -36,6 +36,14 @@ from app import db
 
 SESSION_TTL_DAYS = 30
 _DEAD_ROW_RETENTION_DAYS = 7
+_LAST_SEEN_THROTTLE_MINUTES = 5  # see resolve_session's docstring
+
+# Both user_agent and ip_address are attacker-controllable (raw headers — the
+# latter via X-Forwarded-For, see app/main.py's _client_ip()) and only ever used
+# cosmetically for the Settings display, so both get the same length cap before
+# storage — nothing about auth depends on either value.
+_USER_AGENT_MAX_LEN = 255
+_IP_ADDRESS_MAX_LEN = 255
 
 
 def create_session(user_id: int, user_agent: str | None, ip_address: str | None) -> str:
@@ -44,14 +52,25 @@ def create_session(user_id: int, user_agent: str | None, ip_address: str | None)
 
     Also opportunistically prunes this same user's own dead session rows older than
     _DEAD_ROW_RETENTION_DAYS — see module docstring. Scoped to user_id (not a
-    table-wide sweep) so this stays a cheap, indexed delete even as the table grows.
+    table-wide sweep), and covered by idx_sessions_user_id (schema.sql /
+    migrations/014_sessions.sql) — verified with EXPLAIN that this is a
+    Bitmap-Heap-Scan-on-that-user's-rows delete, not a sequential scan of the whole
+    table, and that it stays that way as the table grows (idx_sessions_user_active
+    alone doesn't cover this query: it's a partial index over WHERE revoked_at IS
+    NULL, and this DELETE specifically targets revoked_at IS NOT NULL rows too).
     """
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
     db.execute(
         "INSERT INTO sessions (session_token, user_id, user_agent, ip_address, expires_at) "
         "VALUES (%s, %s, %s, %s, %s)",
-        (token, user_id, (user_agent or "")[:255], ip_address, expires_at),
+        (
+            token,
+            user_id,
+            (user_agent or "")[:_USER_AGENT_MAX_LEN],
+            (ip_address or "")[:_IP_ADDRESS_MAX_LEN] or None,
+            expires_at,
+        ),
     )
     # _DEAD_ROW_RETENTION_DAYS is a fixed internal constant (never user input), so
     # interpolating it straight into the interval literal is safe — psycopg2 can't
@@ -67,17 +86,34 @@ def create_session(user_id: int, user_agent: str | None, ip_address: str | None)
 
 
 def resolve_session(token: str) -> int | None:
-    """Return the user_id for an active (not revoked, not expired) session token,
-    touching last_seen_at while it's at it — or None if the token doesn't resolve to
-    a live session (unknown, revoked, or expired; also what every pre-#82 cookie
-    hits, since those never had a token to look up at all)."""
-    row = db.execute_returning(
-        "UPDATE sessions SET last_seen_at = now() "
-        "WHERE session_token = %s AND revoked_at IS NULL AND expires_at > now() "
-        "RETURNING user_id",
+    """Return the user_id for an active (not revoked, not expired) session token, or
+    None if the token doesn't resolve to a live session (unknown, revoked, or
+    expired; also what every pre-#82 cookie hits, since those never had a token to
+    look up at all).
+
+    This runs on every authenticated request (get_current_user calls it once per
+    request, via its own request.state cache), so it's read-mostly on purpose:
+    last_seen_at is only written when it's more than _LAST_SEEN_THROTTLE_MINUTES
+    stale, not unconditionally on every call. Without the throttle, what used to be
+    a pure cookie-decode auth check would turn into a DB write on the hot path of
+    every single page load; a 5-minute-stale last_seen_at is indistinguishable from
+    a fresh one anywhere it's actually shown (Settings' "last active" column), so
+    this trades a little precision for cutting that write volume drastically.
+    """
+    row = db.fetchone(
+        "SELECT user_id, last_seen_at FROM sessions "
+        "WHERE session_token = %s AND revoked_at IS NULL AND expires_at > now()",
         (token,),
     )
-    return row["user_id"] if row else None
+    if not row:
+        return None
+    stale_before = datetime.now(timezone.utc) - timedelta(minutes=_LAST_SEEN_THROTTLE_MINUTES)
+    if row["last_seen_at"] < stale_before:
+        db.execute(
+            "UPDATE sessions SET last_seen_at = now() WHERE session_token = %s",
+            (token,),
+        )
+    return row["user_id"]
 
 
 def revoke_session_by_token(token: str) -> None:

@@ -34,6 +34,7 @@ key at all) is treated as a clean logout, not a crash.
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import psycopg2
@@ -104,6 +105,25 @@ def test_create_session_inserts_a_row(two_users):
     assert token  # a real opaque token was returned
 
 
+def test_create_session_truncates_an_oversized_ip_address(two_users):
+    """Code-review finding: ip_address comes straight from the X-Forwarded-For
+    header (attacker-controllable — no comma at all makes the "first element" the
+    entire, arbitrarily long string), and must be capped the same way user_agent
+    already was."""
+    user_id, _ = two_users
+    huge_ip = "1" * 5000
+    sessions.create_session(user_id, "TestAgent/1.0", huge_ip)
+    active = sessions.list_active_sessions(user_id, current_token=None)
+    assert len(active[0]["ip_address"]) == sessions._IP_ADDRESS_MAX_LEN
+
+
+def test_create_session_handles_missing_ip_address(two_users):
+    user_id, _ = two_users
+    sessions.create_session(user_id, "TestAgent/1.0", None)
+    active = sessions.list_active_sessions(user_id, current_token=None)
+    assert active[0]["ip_address"] is None
+
+
 def test_resolve_session_returns_owning_user_id(two_users):
     user_id, _ = two_users
     token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
@@ -112,6 +132,42 @@ def test_resolve_session_returns_owning_user_id(two_users):
 
 def test_resolve_session_returns_none_for_unknown_token(two_users):
     assert sessions.resolve_session("not-a-real-token") is None
+
+
+def test_resolve_session_does_not_write_last_seen_at_when_already_fresh(two_users, pg_conn):
+    """Code-review finding: resolve_session() runs on every authenticated request,
+    so it must not turn that into an unconditional write on every single call —
+    only when last_seen_at is stale by more than _LAST_SEEN_THROTTLE_MINUTES."""
+    user_id, _ = two_users
+    token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token = %s", (token,))
+        before = cur.fetchone()[0]
+
+    sessions.resolve_session(token)  # freshly created — well within the throttle window
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token = %s", (token,))
+        after = cur.fetchone()[0]
+    assert after == before
+
+
+def test_resolve_session_writes_last_seen_at_once_stale(two_users, pg_conn):
+    user_id, _ = two_users
+    token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
+    stale_time = datetime.now(timezone.utc) - timedelta(minutes=sessions._LAST_SEEN_THROTTLE_MINUTES + 1)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE sessions SET last_seen_at = %s WHERE session_token = %s",
+            (stale_time, token),
+        )
+
+    assert sessions.resolve_session(token) == user_id
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token = %s", (token,))
+        after = cur.fetchone()[0]
+    assert after > stale_time
 
 
 def test_revoked_session_no_longer_resolves(two_users):
@@ -212,6 +268,22 @@ def test_describe_device_distinguishes_common_browsers_and_platforms():
     assert sessions.describe_device(None) == "Unknown device"
 
 
+def test_schema_has_a_plain_user_id_index_for_the_cleanup_delete(pg_conn):
+    """Code-review finding: idx_sessions_user_active is a *partial* index (WHERE
+    revoked_at IS NULL), which the cleanup DELETE in create_session() can't use —
+    it specifically targets revoked_at IS NOT NULL rows too. Verified with EXPLAIN
+    against a seeded table that a plain (non-partial) index on user_id fixes this
+    (Bitmap Heap Scan on ~40 of that user's own rows vs a Seq Scan over the whole
+    table). This just guards against that index silently disappearing later."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT indexdef FROM pg_indexes WHERE tablename = 'sessions' AND indexname = 'idx_sessions_user_id'"
+        )
+        row = cur.fetchone()
+    assert row is not None, "idx_sessions_user_id is missing from schema.sql"
+    assert "WHERE" not in row[0].upper(), "idx_sessions_user_id must stay a plain (non-partial) index"
+
+
 # ── Full-app coverage via TestClient — the real /auth/login, /settings, and
 #    /settings/sessions/{id}/revoke routes, not internal functions directly ────
 
@@ -292,13 +364,49 @@ def test_revoking_another_session_leaves_current_login_intact(app_client):
 
     resp = client.post(f"/settings/sessions/{other_row['id']}/revoke", follow_redirects=False)
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/settings?saved=session_revoked&tab=account"
+    assert resp.headers["location"] == "/settings?saved=session_revoked"
 
     # The revoked (other) session is dead...
     assert m.sessions.resolve_session(other_token) is None
     # ...but the caller's OWN current login still works.
     still_in = client.get("/settings")
     assert still_in.status_code == 200
+
+
+def test_revoking_an_already_revoked_session_does_not_show_a_false_success_message(app_client):
+    """Code-review finding: double-clicking Revoke, or revoking the same session
+    from two open tabs, must not show a false-positive "revoked" confirmation on
+    the second, no-op request."""
+    client, m = app_client
+    m.db.execute(
+        "INSERT INTO users (id, auth_provider, auth_provider_id, email, password_hash, is_active) "
+        "VALUES (1, 'local', 'a@example.com', 'a@example.com', %s, true)",
+        (m.bcrypt.hashpw(b"password123", m.bcrypt.gensalt()).decode(),),
+    )
+    other_token = m.sessions.create_session(1, "OtherDevice/1.0", "5.5.5.5")
+    client.post("/auth/login", data={"email": "a@example.com", "password": "password123"})
+    other_row = m.db.fetchone("SELECT id FROM sessions WHERE session_token = %s", (other_token,))
+
+    first = client.post(f"/settings/sessions/{other_row['id']}/revoke", follow_redirects=False)
+    assert first.headers["location"] == "/settings?saved=session_revoked"
+
+    second = client.post(f"/settings/sessions/{other_row['id']}/revoke", follow_redirects=False)
+    assert second.status_code == 303
+    assert second.headers["location"] == "/settings"  # no saved= param — nothing actually happened
+
+
+def test_revoking_an_unknown_session_id_is_a_silent_no_op(app_client):
+    client, m = app_client
+    m.db.execute(
+        "INSERT INTO users (id, auth_provider, auth_provider_id, email, password_hash, is_active) "
+        "VALUES (1, 'local', 'a@example.com', 'a@example.com', %s, true)",
+        (m.bcrypt.hashpw(b"password123", m.bcrypt.gensalt()).decode(),),
+    )
+    client.post("/auth/login", data={"email": "a@example.com", "password": "password123"})
+
+    resp = client.post("/settings/sessions/999999/revoke", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/settings"
 
 
 def test_revoking_current_session_logs_the_user_out(app_client):

@@ -95,15 +95,20 @@ CREATE TABLE sessions (
     id             SERIAL PRIMARY KEY,
     session_token  TEXT NOT NULL UNIQUE,
     user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    user_agent     TEXT,                      -- best-effort, Settings "device" display only
-    ip_address     TEXT,                      -- best-effort, cosmetic — never used for any access decision
+    user_agent     TEXT,                      -- best-effort, Settings "device" display only, truncated to 255 chars
+    ip_address     TEXT,                      -- best-effort, cosmetic — never used for any access decision, truncated to 255 chars
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),  -- touched roughly every 5 min of activity, not every request — see resolve_session()
     expires_at     TIMESTAMPTZ NOT NULL,
     revoked_at     TIMESTAMPTZ                 -- NULL = still active
 );
 
+-- Partial: serves list_active_sessions()'s read (only ever looks at live rows).
 CREATE INDEX idx_sessions_user_active ON sessions (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
+-- Plain: serves create_session()'s per-user cleanup DELETE, which specifically
+-- targets revoked_at IS NOT NULL rows — exactly what the partial index above
+-- excludes. Verified with EXPLAIN (see migrations/014_sessions.sql's comment).
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 
 -- =========================================================================
 -- ANILIST-SOURCED (rebuildable — sync job upserts these, never hand-edit)

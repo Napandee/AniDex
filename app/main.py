@@ -2167,6 +2167,15 @@ def settings_revoke_session(request: Request, session_id: int):
     finds no matching row and no-ops — there's no separate ownership check needed above
     that. Revoking the session the caller is CURRENTLY using logs them out immediately,
     same as clicking Logout; revoking any other one just removes it from the list.
+
+    Only redirects with the success message (saved=session_revoked) when a row was
+    actually revoked — revoke_session() returns None on a no-op (already revoked, or
+    a stale/tampered id), e.g. a double-click or the same session revoked from two
+    open tabs, and that must NOT show a false "revoked" confirmation.
+
+    No explicit ?tab= on either redirect, matching every other saved=/no-op redirect
+    in this file — script.js's savedTabMap (session_revoked -> account) resolves the
+    tab client-side, and account is also just the default first tab either way.
     """
     user, denied = _require_user(request)
     if denied:
@@ -2176,7 +2185,9 @@ def settings_revoke_session(request: Request, session_id: int):
     if revoked_token and revoked_token == request.session.get("sid"):
         request.session.clear()
         return RedirectResponse(url="/auth/login", status_code=303)
-    return RedirectResponse(url="/settings?saved=session_revoked&tab=account", status_code=303)
+    if revoked_token:
+        return RedirectResponse(url="/settings?saved=session_revoked", status_code=303)
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
