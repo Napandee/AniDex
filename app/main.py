@@ -1916,6 +1916,23 @@ SNOOZE_DAYS = 30  # v1 fixed duration for "not now" (issue #75) — no picker ye
                   # revisit only if a fixed 30 days turns out to not be enough.
 
 
+def _is_uninformative_reason(reason: dict | None) -> bool:
+    """Issue #178: a cold-start user (empty taste profile) gets every seasonal-digest
+    candidate scored at exactly 0 with a fully-null `reason` — real, not broken, but
+    rendering that as a literal "0%" badge with match reasoning reads as a bug. This
+    flags rows where `reason` carries no actual signal (no genre/tag/studio match, no
+    cross-user corroboration) so recommendations() can swap the numeric score badge for
+    honest framing instead. Read/render-time only — never touches score_and_store()'s
+    scoring math or what gets written to recommendation_scores."""
+    reason = reason or {}
+    return (
+        not reason.get("matched_genres")
+        and not reason.get("matched_tags")
+        and not reason.get("matched_studio")
+        and not reason.get("cross_user_count")
+    )
+
+
 def _fetch_visible_recommendations(user_id: int) -> list[dict]:
     """Recommendation rows visible to `user_id`: not permanently dismissed, and not
     currently snoozed (issue #75). Broken out of recommendations() so the exclusion
@@ -1999,6 +2016,10 @@ def recommendations(request: Request):
             seasonal_count += 1
         else:
             entry["season_label"] = None
+        # Issue #178 — cold-start rows (empty taste profile, no library history)
+        # carry a real but uninformative score=0/reason=null pair. Flag it here so
+        # the template can swap the "0%" score badge for honest framing instead.
+        entry["uninformative"] = _is_uninformative_reason(entry.get("reason"))
         entries.append(entry)
 
     return templates.TemplateResponse(

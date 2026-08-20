@@ -1748,6 +1748,12 @@ body.auth-page main {
   backdrop-filter: blur(4px);
 }
 
+/* Issue #178 — cold-start/uninformative score, no numeric match confidence to show.
+   Neutral gray rather than the "real score" blue so it doesn't read as a low score. */
+.rec-score-badge--neutral {
+  background: rgba(100, 116, 139, 0.9);
+}
+
 /* Seasonal discovery digest badge (issue #13) — "Fall 2026" pill, top-left so it
    never collides with the score badge above. */
 .rec-season-badge {
