@@ -139,6 +139,19 @@ def _run_sync_task(
     except Exception as e:
         log.error("Failed to send sync-outcome notification for user %s: %s", user_id, e)
 
+    # Issue #229 — only worth checking if anilist_postgres itself actually refreshed
+    # `anime`/`library_entries` this run; state["last_result"] == "ok" reflects
+    # run_full_sync.py's exit code, which is 0 for both an "ok" and a "partial"
+    # overall status (partial only ever means a *provider* step — crunchyroll/netflix
+    # — failed, not anilist_postgres) and 1 when anilist_postgres itself failed. See
+    # run_full_sync.py's _compute_overall_status. Wrapped separately for the same
+    # reason as the block above — a failure here must never look like a skipped check.
+    if state["last_result"] == "ok":
+        try:
+            _check_streaming_availability(user_id)
+        except Exception as e:
+            log.error("Streaming-availability check failed for user %s: %s", user_id, e)
+
 
 def _notify_sync_outcome(user_id: int, force_full_resync: bool, run_started_at: datetime) -> None:
     """Alert the user on a genuine sync failure — distinct from an expected per-step
@@ -180,6 +193,74 @@ def _notify_sync_outcome(user_id: int, force_full_resync: bool, run_started_at: 
         body = (f"One or more sync steps failed:\n{steps_text}"
                 if steps_text else (row["error_msg"] or "Anime Tracker — sync failed. Check container logs."))
         notify(user_id, "❌ Sync failed", body)
+
+
+def _check_streaming_availability(user_id: int) -> None:
+    """Issue #229 — notify when a Planning-list title gains its first AniList
+    `externalLinks` streaming entry. Poll+diff over the community-curated
+    `external_links` data every AniList sync already writes onto `anime` — no new
+    external dependency, no changes to the sync scripts themselves; this runs
+    entirely from the app side, reading whatever the sync that just finished wrote.
+
+    State lives in `planning_availability_state` (migration 022) rather than being
+    derived from some other stored snapshot — see that migration's header. A title
+    seen for the very first time is only ever recorded as a baseline, never notified:
+    a Planning title that already had availability the first time this check ever
+    runs isn't a "gained" event, matching the issue's explicit "no notification for
+    titles that already had availability" scope. Once a baseline exists, a
+    false -> true flip fires exactly one notification; true -> false (a link
+    disappearing again) is still recorded so a later re-gain is treated as a fresh
+    transition rather than being silently swallowed forever by a fire-once-ever flag.
+    """
+    rows = db.fetchall(
+        """
+        SELECT le.anime_id, a.title_english, a.title_romaji, a.external_links,
+               pas.had_availability
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN planning_availability_state pas
+            ON pas.user_id = le.user_id AND pas.anime_id = le.anime_id
+        WHERE le.user_id = %s AND le.status = 'PLANNING'
+        """,
+        (user_id,),
+    )
+    for row in rows:
+        has_link = any(
+            lnk.get("site") in STREAMING_SITES for lnk in (row["external_links"] or [])
+        )
+        had_availability = row["had_availability"]
+
+        if had_availability is None:
+            # First time we've ever checked this (user, anime) pair — just record the
+            # baseline, don't notify (see docstring).
+            db.execute(
+                "INSERT INTO planning_availability_state (user_id, anime_id, had_availability) "
+                "VALUES (%s, %s, %s) ON CONFLICT (user_id, anime_id) DO NOTHING",
+                (user_id, row["anime_id"], has_link),
+            )
+            continue
+
+        if has_link == had_availability:
+            continue  # no transition this sync
+
+        if has_link:  # false -> true: the notification-worthy transition
+            title = row["title_english"] or row["title_romaji"]
+            notify(
+                user_id,
+                "📺 Now streaming",
+                f"{title} just gained streaming availability — it's on your Planning list.",
+            )
+            db.execute(
+                "UPDATE planning_availability_state SET had_availability = true, notified_at = now(), "
+                "updated_at = now() WHERE user_id = %s AND anime_id = %s",
+                (user_id, row["anime_id"]),
+            )
+        else:  # true -> false: record it, no notification
+            db.execute(
+                "UPDATE planning_availability_state SET had_availability = false, updated_at = now() "
+                "WHERE user_id = %s AND anime_id = %s",
+                (user_id, row["anime_id"]),
+            )
 
 
 def _users_with_sync_credentials() -> list[dict]:
