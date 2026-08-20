@@ -34,7 +34,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n, sessions
+from app import db, config, privacy, outbox, i18n, sessions, credential_check
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -2687,6 +2687,26 @@ def streaming_page(request: Request):
     )
 
 
+def _credential_connection_status(configured: bool, service: str, user_id: int) -> str:
+    """One of 'not_connected' / 'connected' / 'needs_attention' for a Settings →
+    Credentials status pill (#188). Mirrors /api/sync/status's own lookup of the
+    latest full_sync/force_full_resync row's steps[] — a credential that's set
+    but whose most recent sync step for that service came back 'error' is shown
+    as needing attention rather than a false-positive "Connected"."""
+    if not configured:
+        return "not_connected"
+    row = db.fetchone(
+        "SELECT steps FROM sync_log WHERE user_id = %s AND type IN ('full_sync', 'force_full_resync') "
+        "ORDER BY run_at DESC LIMIT 1",
+        (user_id,),
+    )
+    steps = (row["steps"] if row else None) or []
+    step = next((s for s in steps if s.get("service") == service), None)
+    if step and step.get("status") == "error":
+        return "needs_attention"
+    return "connected"
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request, link_error: str = "", password_error: str = "", saved: str = "",
@@ -2726,11 +2746,31 @@ def settings_page(
         )
     }
 
+    # Issue #188 — status pill per credential card. "not_connected" purely from
+    # whether the value is set; "needs_attention" layers in the most recent
+    # full_sync/force_full_resync run's per-service step, the same steps[] the
+    # sync-history table and step chips already read — so a card doesn't keep
+    # showing "Connected" after a credential has visibly started failing sync.
+    cred_status = {
+        "anilist": _credential_connection_status(
+            bool(current.get("anilist_username")) and bool(current.get("anilist_token")),
+            "anilist_postgres", user["id"],
+        ),
+        "crunchyroll": _credential_connection_status(
+            bool(current.get("cr_etp_rt")), "crunchyroll", user["id"],
+        ),
+        "netflix": _credential_connection_status(
+            bool(current.get("netflix_cookie_header")) and bool(current.get("netflix_profile_guid")),
+            "netflix", user["id"],
+        ),
+    }
+
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "settings": current,
+            "cred_status": cred_status,
             "timezones": COMMON_TIMEZONES,
             "languages": i18n.SUPPORTED_LOCALES,
             "language_labels": i18n.LOCALE_LABELS,
@@ -2825,12 +2865,46 @@ def settings_save_display(
     return RedirectResponse(url="/settings?saved=display", status_code=303)
 
 
-@app.post("/settings/credentials")
-def settings_save_credentials(
+@app.post("/settings/credentials/anilist")
+def settings_save_credentials_anilist(
     request: Request,
     anilist_username: str = Form(""),
     anilist_token: str = Form(""),
+):
+    """Issue #188 — one endpoint per credential card, so each card's own Save
+    action only ever touches that card's fields. A single shared endpoint (the
+    pre-#188 shape) would need every field resubmitted on every save, or a
+    now-absent field would read as "user cleared this" and silently wipe out
+    a different card's already-saved value."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    config.set_value(user["id"], "anilist_username", anilist_username.strip())
+    if anilist_token.strip():
+        config.set_value(user["id"], "anilist_token", anilist_token.strip())
+
+    return RedirectResponse(url="/settings?saved=credentials_anilist", status_code=303)
+
+
+@app.post("/settings/credentials/crunchyroll")
+def settings_save_credentials_crunchyroll(
+    request: Request,
     cr_etp_rt: str = Form(""),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    if cr_etp_rt.strip():
+        config.set_value(user["id"], "cr_etp_rt", cr_etp_rt.strip())
+
+    return RedirectResponse(url="/settings?saved=credentials_crunchyroll", status_code=303)
+
+
+@app.post("/settings/credentials/netflix")
+def settings_save_credentials_netflix(
+    request: Request,
     netflix_cookie_header: str = Form(""),
     netflix_profile_guid: str = Form(""),
 ):
@@ -2838,19 +2912,47 @@ def settings_save_credentials(
     if denied:
         return denied
 
-    config.set_value(user["id"], "anilist_username", anilist_username.strip())
-
-    # Only overwrite token if a non-empty value was submitted (empty = leave unchanged)
-    if anilist_token.strip():
-        config.set_value(user["id"], "anilist_token", anilist_token.strip())
-    if cr_etp_rt.strip():
-        config.set_value(user["id"], "cr_etp_rt", cr_etp_rt.strip())
     if netflix_cookie_header.strip():
         config.set_value(user["id"], "netflix_cookie_header", netflix_cookie_header.strip())
     if netflix_profile_guid.strip():
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
-    return RedirectResponse(url="/settings?saved=credentials", status_code=303)
+    return RedirectResponse(url="/settings?saved=credentials_netflix", status_code=303)
+
+
+@app.post("/api/credentials/test/{provider}")
+async def test_credential(provider: str, request: Request):
+    """Issue #188 — "Test connection" per credential card. Validates whatever
+    value is currently in the form (falling back to the already-saved one for
+    any field left blank, matching the Save endpoints' own "blank = keep
+    existing" convention) against the live service, using the exact same
+    login/auth code the real sync scripts run — see app/credential_check.py's
+    module docstring for why. Read-only: never writes anything, whether the
+    check passes or fails."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    if provider not in ("anilist", "crunchyroll", "netflix"):
+        return JSONResponse({"ok": False, "message": "Unknown provider."}, status_code=404)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    def _field(name: str) -> str:
+        submitted = (payload.get(name) or "").strip()
+        return submitted or config.get(user["id"], name)
+
+    if provider == "anilist":
+        ok, detail = credential_check.check_anilist(_field("anilist_username"), _field("anilist_token"))
+    elif provider == "crunchyroll":
+        ok, detail = credential_check.check_crunchyroll(_field("cr_etp_rt"))
+    else:
+        ok, detail = credential_check.check_netflix(_field("netflix_cookie_header"), _field("netflix_profile_guid"))
+
+    return JSONResponse({"ok": ok, "detail": detail})
 
 
 @app.post("/settings/cr-overrides")
