@@ -89,6 +89,19 @@
           </span>
           {% else %}<span class="match-empty">—</span>{% endif %}
         </div>
+        {% if reason.anilist_vote_count %}
+        {# Issue #226 — AniList's own per-edge recommendation vote count, real data
+           already in the recommender's payload. Only ever present for candidates
+           actually discovered via AniList's `recommendations` edge — never shown
+           for PLANNING-list or cross-user-sourced candidates, so this row is
+           entirely absent (not a "—" placeholder) rather than fabricate a count. #}
+        <div class="match-row">
+          <span class="match-label">{{ t('rec_match_anilist_votes') }}</span>
+          <span class="genre match" title="{{ t('rec_anilist_votes_title', count=reason.anilist_vote_count) }}">
+            {% if reason.anilist_vote_count == 1 %}{{ t('rec_anilist_votes_display_singular', count=reason.anilist_vote_count) }}{% else %}{{ t('rec_anilist_votes_display_plural', count=reason.anilist_vote_count) }}{% endif %}
+          </span>
+        </div>
+        {% endif %}
       </div>
 
       <div class="rec-footer">
