@@ -288,6 +288,51 @@ def _weekly_airing_digest() -> None:
         notify(user_id, "Anime this week", "\n".join(lines))
 
 
+# Issue #196 — periodic nudge pointing users at the living "year so far" page
+# (/stats/wrapped), via #51's existing notify() fan-out. Timing choice, documented
+# here since the issue explicitly asked for the reasoning to be written down:
+#
+# A single once-a-year "reveal" notification (the natural choice for a static
+# year-END recap) doesn't fit a page whose whole point is that it's ALWAYS
+# current — there's no one moment where it "unlocks". Two occasions instead:
+#   - Mid-year check-in (Jul 1): the most natural "how's my year going" moment —
+#     half the year's data is in, genre/pace/binge-week are all meaningfully
+#     populated by then, not just a handful of January completions.
+#   - Pre-year-end reminder (Dec 20): while there's still real runway (~11 days)
+#     to finish something before the year closes and #wrapup-card's comparison
+#     view takes over as the more useful lens — a Dec 31 ping would arrive too
+#     late to act on.
+# Both skip a user with zero completions so far this year (has_data is False) —
+# nudging someone toward an empty page reads as noise, not a check-in.
+def _notify_wrapped_checkin(occasion: str) -> None:
+    for user in db.fetchall("SELECT id FROM users"):
+        user_id = user["id"]
+        try:
+            wrapped = _compute_wrapped_page(user_id)
+            if not wrapped["has_data"]:
+                continue
+            if occasion == "midyear":
+                body = (
+                    f"You're {wrapped['total_episodes']} episodes into {wrapped['year']} so far — "
+                    "see your top genre, biggest binge week, and pace vs. last year at /stats/wrapped."
+                )
+            else:  # "year_end"
+                body = (
+                    f"{wrapped['year']} is almost over — see how your year stacked up at /stats/wrapped."
+                )
+            notify(user_id, "📊 Your year so far", body)
+        except Exception as e:
+            log.error("Wrapped %s check-in notification failed for user %s: %s", occasion, user_id, e)
+
+
+def _scheduled_wrapped_midyear_checkin() -> None:
+    _notify_wrapped_checkin("midyear")
+
+
+def _scheduled_wrapped_year_end_reminder() -> None:
+    _notify_wrapped_checkin("year_end")
+
+
 def _scheduled_full_sync() -> None:
     """Loop every user with sync credentials configured. One user's failure is caught
     and logged to that user's own sync_log, not allowed to stop anyone else's sync."""
@@ -406,6 +451,20 @@ def _apply_schedule() -> None:
         _weekly_airing_digest,
         CronTrigger(day_of_week="mon", hour=7, minute=0, timezone="UTC"),
         id="weekly_digest", replace_existing=True,
+    )
+    # Issue #196 — "your year so far" (/stats/wrapped) check-in nudges. Fixed
+    # calendar dates, instance-wide like every other cron trigger here — see
+    # _notify_wrapped_checkin's docstring for why two dates (mid-year + pre-year-end)
+    # rather than the single annual "reveal" a static recap would use.
+    _scheduler.add_job(
+        _scheduled_wrapped_midyear_checkin,
+        CronTrigger(month=7, day=1, hour=9, minute=0, timezone="UTC"),
+        id="wrapped_midyear_checkin", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _scheduled_wrapped_year_end_reminder,
+        CronTrigger(month=12, day=20, hour=9, minute=0, timezone="UTC"),
+        id="wrapped_year_end_reminder", replace_existing=True,
     )
 
 
@@ -3990,6 +4049,128 @@ def _year_comparison_extras(user_id: int, year: int) -> dict:
     }
 
 
+# ── "Your year so far" living page (issue #196, held on #193 above) ─────────────
+#
+# A dedicated, always-current-calendar-year destination — no year picker, unlike
+# #wrapup-card's selector. Every one of the three metrics #193 built as reusable
+# functions (_biggest_binge_week, _status_distribution_snapshot,
+# _score_distribution_shift) is called directly here rather than through
+# _year_comparison_extras, so this page doesn't pay for a second
+# _yearly_completion_rows() query on top of the one it needs anyway for the
+# top-genre/highest-rated/pace metrics that are new to this issue. That still
+# means every shared metric goes through the exact same aggregation code #193
+# shipped — nothing here reimplements binge-week/status-snapshot/score-shift logic.
+
+
+def _pace_stat(this_year_rows: list[dict], prior_year_rows: list[dict], day_of_year: int) -> dict:
+    """Issue #164's pace stat, folded into #196: "on pace to match last year",
+    framed as ahead/behind/on-pace rather than a numeric target (see #164's own
+    gut-check against a nagging pace nudge — this is passive/visual only, no
+    notification tied to it specifically).
+
+    Compares this year's cumulative episodes/minutes as of `day_of_year` against
+    the prior year's cumulative total at that SAME day-of-year cutoff — not the
+    prior year's full-year total, which would always read as "behind" until
+    Dec 31. Pure function over two _yearly_completion_rows() row sets plus a
+    day-of-year cutoff (rather than reaching for date.today() itself), so it's
+    directly unit-testable with known rows/cutoffs for two different years
+    without needing a real "today" or a DB.
+
+    Anything within 5 percentage points either side of the prior year counts as
+    "on_pace" rather than a coinflip ahead/behind on essentially a tie.
+    """
+    def _cumulative(rows: list[dict], cutoff_day_of_year: int) -> tuple[int, int]:
+        episodes = 0
+        minutes = 0
+        for r in rows:
+            if r["finish_date"].timetuple().tm_yday > cutoff_day_of_year:
+                continue  # defensive: a finish_date beyond the cutoff shouldn't
+                          # normally occur (both row sets are already scoped to
+                          # their own calendar year), but never let one count
+                          # towards a cumulative total it's not part of.
+            progress = r["progress"] or 0
+            episodes += progress
+            minutes += progress * (r["duration"] or 24)
+        return episodes, minutes
+
+    this_year_episodes, this_year_minutes = _cumulative(this_year_rows, day_of_year)
+    prior_year_episodes, prior_year_minutes = _cumulative(prior_year_rows, day_of_year)
+
+    if prior_year_episodes == 0:
+        status = "no_prior_data"
+        diff_pct = None
+    else:
+        diff_pct = round((this_year_episodes - prior_year_episodes) / prior_year_episodes * 100)
+        if abs(diff_pct) <= 5:
+            status = "on_pace"
+        elif diff_pct > 0:
+            status = "ahead"
+        else:
+            status = "behind"
+
+    return {
+        "day_of_year": day_of_year,
+        "this_year_episodes": this_year_episodes,
+        "this_year_minutes": this_year_minutes,
+        "prior_year_episodes": prior_year_episodes,
+        "prior_year_minutes": prior_year_minutes,
+        "status": status,
+        "diff_pct": diff_pct,
+    }
+
+
+def _compute_wrapped_page(user_id: int, today: date | None = None) -> dict:
+    """Full data set for GET /stats/wrapped. `today` is injectable for tests
+    (defaults to date.today()) — everything else is a pure function of it plus
+    _yearly_completion_rows()' output for the current year and year-1.
+
+    top_genre/highest_rated/total_episodes/total_minutes are new to this issue —
+    computed directly off the same row set _yearly_completion_rows() already
+    returns rather than a second query. binge_week/status_snapshot/score_shift
+    are #193's three functions, called unmodified.
+    """
+    today = today or date.today()
+    year = today.year
+    day_of_year = today.timetuple().tm_yday
+
+    rows = _yearly_completion_rows(user_id, year)
+    prior_rows = _yearly_completion_rows(user_id, year - 1)
+
+    total_episodes = sum(r["progress"] or 0 for r in rows)
+    total_minutes = sum((r["progress"] or 0) * (r["duration"] or 24) for r in rows)
+
+    genre_counts: Counter = Counter()
+    for r in rows:
+        for g in (r["genres"] or []):
+            genre_counts[g] += 1
+    top_genre = genre_counts.most_common(1)[0][0] if genre_counts else None
+
+    scored_rows = [r for r in rows if r["score"] is not None and r["score"] > 0]
+    highest_rated = None
+    if scored_rows:
+        best = max(scored_rows, key=lambda r: r["score"])
+        highest_rated = {
+            "title": best["title_english"] or best["title_romaji"],
+            "score": best["score"],
+        }
+
+    return {
+        "year": year,
+        "prior_year": year - 1,
+        "has_data": bool(rows),
+        "total_episodes": total_episodes,
+        "total_minutes": total_minutes,
+        "total_hours": total_minutes // 60,
+        "total_days": round(total_minutes / 1440, 1),
+        "top_genre": top_genre,
+        "highest_rated": highest_rated,
+        "binge_week": _biggest_binge_week(rows),
+        "status_snapshot": _status_distribution_snapshot(rows),
+        "score_shift": _score_distribution_shift(rows, prior_rows),
+        "pace": _pace_stat(rows, prior_rows, day_of_year),
+    }
+
+
 # ── Recommend -> outcome hit-rate + dismiss-reason distribution (issue #185) ────
 #
 # The recommender (scripts/run_recommender.py) has never had a feedback loop:
@@ -4325,6 +4506,22 @@ def stats(request: Request):
             "streaming_owned_count": len(coverage["owned"]),
         },
     )
+
+
+@app.get("/stats/wrapped", response_class=HTMLResponse)
+def stats_wrapped(request: Request):
+    """Issue #196 — "Your year so far": the living, always-current-calendar-year
+    counterpart to #wrapup-card's year-picker on /stats. Fully server-rendered
+    (unlike /stats' charts, which fetch /api/stats) since there's no client-side
+    filtering here — every visit just reflects wherever the current year is today.
+    """
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    wrapped = _compute_wrapped_page(user["id"])
+
+    return templates.TemplateResponse(request, "wrapped.html", {"wrapped": wrapped})
 
 
 def _export_user_library(user_id: int) -> list:

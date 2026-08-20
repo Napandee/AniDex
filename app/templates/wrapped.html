@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ t('title_stats_wrapped') }}{% endblock %}
+
+{% block content %}
+{#
+  Issue #196 — "Your year so far": a living, always-current-calendar-year
+  destination. No year picker (that's #wrapup-card on /stats, issue #193) — this
+  page always reflects wherever the current year is today, on every visit.
+
+  Every metric below except top_genre/highest_rated/pace is computed in
+  app.main._compute_wrapped_page by calling issue #193's exact three reusable
+  functions (_biggest_binge_week, _status_distribution_snapshot,
+  _score_distribution_shift) against _yearly_completion_rows(user_id, this_year) —
+  nothing here reimplements that aggregation logic.
+#}
+<div class="wrapped-page">
+
+  <div class="page-header">
+    <h1 class="page-title">{{ t('stats_wrapped_page_title', year=wrapped.year) }}</h1>
+    <p class="page-sub">{{ t('stats_wrapped_page_sub') }}</p>
+  </div>
+
+  {% if not wrapped.has_data %}
+  <p class="wrapup-empty">{{ t('stats_wrapped_empty', year=wrapped.year) }}</p>
+  {% else %}
+
+  {# ── Pace vs. last year (issue #164, folded in) — passive/visual only, no
+       notification tied specifically to this stat. ───────────────────────────── #}
+  <div class="wrapped-pace-card pace-{{ wrapped.pace.status }}">
+    <span class="wrapped-pace-icon" aria-hidden="true">
+      {% if wrapped.pace.status == 'ahead' %}↑{% elif wrapped.pace.status == 'behind' %}↓{% elif wrapped.pace.status == 'on_pace' %}→{% else %}—{% endif %}
+    </span>
+    <span>
+      {% if wrapped.pace.status == 'no_prior_data' %}
+        {{ t('stats_wrapped_pace_no_data', prior_year=wrapped.prior_year) }}
+      {% elif wrapped.pace.status == 'ahead' %}
+        {{ t('stats_wrapped_pace_ahead', pct=(wrapped.pace.diff_pct|abs), episodes=wrapped.pace.this_year_episodes, prior_episodes=wrapped.pace.prior_year_episodes) }}
+      {% elif wrapped.pace.status == 'behind' %}
+        {{ t('stats_wrapped_pace_behind', pct=(wrapped.pace.diff_pct|abs), episodes=wrapped.pace.this_year_episodes, prior_episodes=wrapped.pace.prior_year_episodes) }}
+      {% else %}
+        {{ t('stats_wrapped_pace_on_pace', episodes=wrapped.pace.this_year_episodes, prior_episodes=wrapped.pace.prior_year_episodes) }}
+      {% endif %}
+    </span>
+  </div>
+
+  <div class="stats-headlines">
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.total_episodes }}</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{% if wrapped.total_hours >= 24 %}{{ wrapped.total_days }}d{% else %}{{ wrapped.total_hours }}h{% endif %}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.top_genre or '—' }}</span><span class="stat-label">{{ t('stats_wrapped_hl_top_genre') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.status_snapshot.planning_to_completed }}</span><span class="stat-label">{{ t('stats_wrapped_planning_completed') }}</span></div>
+  </div>
+
+  <div class="chart-card chart-card--wide">
+    <div class="wrapped-detail-grid">
+      <div class="wrapped-detail">
+        <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_hl_highest_rated') }}</h3>
+        {% if wrapped.highest_rated %}
+        <p>{{ wrapped.highest_rated.title }} — {{ wrapped.highest_rated.score }} ★</p>
+        {% else %}
+        <p>{{ t('stats_wrapped_highest_rated_empty') }}</p>
+        {% endif %}
+      </div>
+      <div class="wrapped-detail">
+        <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_binge') }}</h3>
+        <p>
+          {% if wrapped.binge_week %}
+          {{ t('stats_wrapped_binge_fmt', episodes=wrapped.binge_week.episodes, start=wrapped.binge_week.start, end=wrapped.binge_week.end) }}
+          {% else %}—{% endif %}
+        </p>
+      </div>
+      <div class="wrapped-detail wrapped-detail--wide">
+        <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_score_shift') }}</h3>
+        {% if wrapped.score_shift.has_prior_year_data %}
+        <div class="genre-list wrapped-score-list">
+          {% for s in wrapped.score_shift.this_year %}
+          <span class="genre">{{ s.score }} ★ · {{ s.count }} ({{ wrapped.year }})</span>
+          {% endfor %}
+          {% for s in wrapped.score_shift.prior_year %}
+          <span class="genre">{{ s.score }} ★ · {{ s.count }} ({{ wrapped.prior_year }})</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="wrapup-empty">{{ t('stats_wrapped_no_prior_year') }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+
+</div>
+{% endblock %}
