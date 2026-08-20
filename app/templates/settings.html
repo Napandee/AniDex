@@ -70,6 +70,35 @@
       </div>
     </div>
 
+    {# ── Two-factor authentication (issue #83) ──────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('twofa_title') }}</h2>
+      <p class="settings-section-desc">{{ t('twofa_desc') }}</p>
+      {% if twofa_error %}<p class="settings-error">{{ twofa_error }}</p>{% endif %}
+      {% if saved == 'twofa_disabled' %}<p class="settings-success">{{ t('twofa_disabled_success') }}</p>{% endif %}
+
+      <div class="linked-account-row">
+        <span class="linked-account-name">{{ t('twofa_status_label') }}</span>
+        {% if account.totp_enabled %}
+        <span class="linked-account-status linked-account-status--on">{{ t('twofa_status_enabled') }}</span>
+        {% else %}
+        <span class="linked-account-status">{{ t('twofa_status_disabled') }}</span>
+        {% endif %}
+      </div>
+
+      {% if account.totp_enabled %}
+      <form method="post" action="/settings/2fa/disable" class="password-form">
+        <input class="form-input" type="password" name="password" required autocomplete="current-password"
+               placeholder="{{ t('twofa_disable_password_placeholder') }}">
+        <button type="submit" class="btn-unlink">{{ t('twofa_disable_btn') }}</button>
+      </form>
+      {% elif account.has_password %}
+      <a href="/settings/2fa/setup" class="btn-save">{{ t('twofa_enable_btn') }}</a>
+      {% else %}
+      <p class="settings-section-desc">{{ t('twofa_needs_password') }}</p>
+      {% endif %}
+    </div>
+
     {# ── Active sessions (issue #82) ──────────────────────────────────── #}
     <div class="settings-section">
       <h2 class="settings-section-title">{{ t('account_sessions_title') }}</h2>
@@ -599,12 +628,12 @@ document.addEventListener('DOMContentLoaded', function () {
       display: 'preferences', credentials: 'sync', netflix_csv_import: 'sync',
       cr_override: 'sync', cr_override_deleted: 'sync',
       notifications: 'notifications', privacy: 'privacy',
-      session_revoked: 'account',
+      twofa_disabled: 'account', session_revoked: 'account',
     };
     const saved = params.get('saved');
     if (saved && savedTabMap[saved]) return savedTabMap[saved];
     if (params.get('csv_import_error') || params.get('cr_override_error')) return 'sync';
-    if (params.get('password_error') || params.get('link_error')) return 'account';
+    if (params.get('password_error') || params.get('link_error') || params.get('twofa_error')) return 'account';
     return null;
   });
 });

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ t('title_2fa_login') }}{% endblock %}
+{% block bodyclass %}auth-page{% endblock %}
+{% block nav_extra %}{% endblock %}
+
+{% block content %}
+<div class="auth-card">
+  <h1 class="auth-title">{{ t('login_2fa_heading') }}</h1>
+  <p class="settings-section-desc">{{ t('login_2fa_intro') }}</p>
+
+  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+
+  <form method="post" action="/auth/login/2fa" class="auth-form">
+    <div class="form-field">
+      <label class="form-label" for="code">{{ t('login_2fa_code_label') }}</label>
+      <input class="form-input" type="text" id="code" name="code"
+             inputmode="text" autocomplete="one-time-code"
+             placeholder="{{ t('login_2fa_code_placeholder') }}" maxlength="16" required autofocus>
+    </div>
+    <button type="submit" class="btn-save">{{ t('login_2fa_submit_btn') }}</button>
+  </form>
+
+  <p class="auth-links">{{ t('login_2fa_recovery_hint') }}</p>
+</div>
+{% endblock %}

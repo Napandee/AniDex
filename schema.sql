@@ -31,8 +31,13 @@ CREATE TABLE users (
     is_active             BOOLEAN NOT NULL DEFAULT true,   -- soft deactivation (#85); false blocks login and drops any existing session
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_login_at         TIMESTAMPTZ,
-    failed_login_attempts INTEGER NOT NULL DEFAULT 0,  -- local login only; resets on success
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,  -- PASSWORD guesses only (login + /settings/2fa/disable re-auth) — resets on success or a password reset; see totp_failed_attempts below for the separate TOTP-code guess budget
     locked_until          TIMESTAMPTZ,                  -- set after 5 failures, cleared on success or reset
+    totp_secret           TEXT,                         -- base32 TOTP secret; only set once setup is confirmed (issue #83)
+    totp_enabled          BOOLEAN NOT NULL DEFAULT false,
+    totp_enabled_at       TIMESTAMPTZ,
+    totp_failed_attempts  INTEGER NOT NULL DEFAULT 0,   -- separate from failed_login_attempts (see column comment on that one) — this is the TOTP-code guess budget, not the password guess budget; a password reset never clears this one
+    totp_locked_until     TIMESTAMPTZ,
     UNIQUE (auth_provider, auth_provider_id)
 );
 
@@ -67,6 +72,21 @@ CREATE TABLE password_resets (
     expires_at  TIMESTAMPTZ NOT NULL,
     used_at     TIMESTAMPTZ
 );
+
+-- One-time TOTP recovery/backup codes (issue #83) — the recovery mechanism for a lost
+-- authenticator, so 2FA can never permanently lock an account out. Hashed with bcrypt,
+-- same standard as users.password_hash — plaintext codes are shown to the user exactly
+-- once, at enable time, and never stored anywhere. A NULL used_at row is still valid;
+-- consuming a code sets used_at so it can't be replayed.
+CREATE TABLE totp_recovery_codes (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash   TEXT NOT NULL,
+    used_at     TIMESTAMPTZ,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_totp_recovery_codes_user ON totp_recovery_codes(user_id) WHERE used_at IS NULL;
 
 -- Chronological trail of admin actions (issue #89). admin_user_id is who performed
 -- the action; target_user_id is who it was taken against, when the action has a
