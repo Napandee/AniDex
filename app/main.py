@@ -3558,6 +3558,115 @@ def _compute_drop_patterns(user_id: int) -> dict | None:
     }
 
 
+# ── Recommend -> outcome hit-rate + dismiss-reason distribution (issue #185) ────
+#
+# The recommender (scripts/run_recommender.py) has never had a feedback loop:
+# recommendation_scores.dismissed/dismiss_reason is captured but never aggregated,
+# and there's no positive signal linking "we recommended X" to "the user later
+# added/rated X". This is pure instrumentation — it reads recommendation_scores
+# and library_entries, computes a metric, and never writes to either table. It
+# does not touch build_taste_profile(), candidate discovery, or scoring weights;
+# see #146/#185 for the full audit and scope decision this is spun out of.
+#
+# "Hit" definition (documented here since it's the number every future
+# recommender-quality change gets judged against — see #185's acceptance
+# criteria):
+#   A non-dismissed recommendation is a HIT if the same (user, anime) shows up in
+#   library_entries with status WATCHING/PLANNING/COMPLETED, and the best
+#   available evidence of *when* that happened — COALESCE(anilist_updated_at,
+#   synced_at); AniList's own last-modified timestamp when we have it (most
+#   accurate — set by sync_anilist.py's upsert whenever a pull-sync detects a
+#   real change), falling back to our local synced_at (guaranteed non-null,
+#   defaults on INSERT, and per issue #46's IS DISTINCT FROM guard only ever
+#   advances on a genuine change, not a routine sync heartbeat) — falls within
+#   HIT_WINDOW_DAYS of recommendation_scores.first_shown_at (issue #185/migration
+#   017; NOT computed_at, which gets bumped to now() on every recommender rerun
+#   and would make a long-lived recommendation look "just recommended" forever).
+#   Optionally weighted by whether that entry was later rated >= 4 stars
+#   (hits_rated_highly), per the issue's "optionally weighted by whether it was
+#   later rated highly" suggestion.
+#
+#   Dismissed recommendations are excluded from both the numerator and the
+#   denominator — the user explicitly said "not for me", so whatever they did
+#   with the anime afterward (including a later independent add) isn't
+#   attributable to the recommendation having worked, and must not inflate the
+#   hit rate.
+#
+# HIT_WINDOW_DAYS = 30: the recommender's built-in scheduler reruns weekly, so a
+# 30-day window covers roughly four rescoring cycles of visibility on the
+# /recommendations page before an eventual add stops being reasonably
+# attributable to having been recommended at all.
+HIT_WINDOW_DAYS = 30
+
+
+def _compute_recommendation_outcomes(user_id: int) -> dict | None:
+    """Recommend->outcome hit-rate + dismiss-reason distribution for `user_id`.
+    Returns None if this user has no recommendation_scores rows at all yet (never
+    had a recommender run), so the stats-page card can stay hidden rather than
+    show an empty/zero panel for a brand-new instance."""
+    row = db.fetchone(
+        """
+        SELECT
+            COUNT(*)                          AS total,
+            COUNT(*) FILTER (WHERE NOT rs.dismissed) AS eligible,
+            COUNT(*) FILTER (WHERE rs.dismissed)     AS dismissed_total,
+            COUNT(*) FILTER (
+                WHERE NOT rs.dismissed
+                  AND le.status IN ('WATCHING', 'PLANNING', 'COMPLETED')
+                  AND COALESCE(le.anilist_updated_at, le.synced_at) >= rs.first_shown_at
+                  AND COALESCE(le.anilist_updated_at, le.synced_at)
+                      <= rs.first_shown_at + make_interval(days => %s)
+            ) AS hits,
+            COUNT(*) FILTER (
+                WHERE NOT rs.dismissed
+                  AND le.status IN ('WATCHING', 'PLANNING', 'COMPLETED')
+                  AND COALESCE(le.anilist_updated_at, le.synced_at) >= rs.first_shown_at
+                  AND COALESCE(le.anilist_updated_at, le.synced_at)
+                      <= rs.first_shown_at + make_interval(days => %s)
+                  AND le.score >= 4
+            ) AS hits_rated_highly
+        FROM recommendation_scores rs
+        LEFT JOIN library_entries le
+               ON le.user_id = rs.user_id AND le.anime_id = rs.anime_id
+        WHERE rs.user_id = %s
+        """,
+        (HIT_WINDOW_DAYS, HIT_WINDOW_DAYS, user_id),
+    )
+    total = int(row["total"])
+    if total == 0:
+        return None
+
+    eligible = int(row["eligible"])
+    hits = int(row["hits"])
+
+    # NOTE: the output alias here deliberately isn't "reason" — recommendation_scores
+    # already has a real `reason` column (the JSONB genre/tag/studio match reason from
+    # scoring), which takes precedence over an output alias of the same name in a
+    # GROUP BY clause. Naming it "reason" here silently grouped by that unrelated JSONB
+    # column instead of dismiss_reason, collapsing every dismissed row into one bucket.
+    dismiss_rows = db.fetchall(
+        """
+        SELECT COALESCE(NULLIF(btrim(dismiss_reason), ''), 'no_reason') AS dismiss_bucket,
+               COUNT(*) AS cnt
+        FROM recommendation_scores
+        WHERE user_id = %s AND dismissed = true
+        GROUP BY dismiss_bucket
+        ORDER BY cnt DESC
+        """,
+        (user_id,),
+    )
+
+    return {
+        "window_days": HIT_WINDOW_DAYS,
+        "eligible": eligible,
+        "hits": hits,
+        "hit_rate": round(hits / eligible * 100) if eligible else None,
+        "hits_rated_highly": int(row["hits_rated_highly"]),
+        "dismissed_total": int(row["dismissed_total"]),
+        "dismiss_reasons": [{"reason": r["dismiss_bucket"], "count": int(r["cnt"])} for r in dismiss_rows],
+    }
+
+
 REWATCH_MOST_REWATCHED_LIMIT = 10
 
 
@@ -3724,6 +3833,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     watch_days = round(watch_minutes / 1440, 1)
     genres_out = [{"genre": r["genre"], "count": r["cnt"]} for r in genre_rows]
     drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
+    recommendation_outcomes = _compute_recommendation_outcomes(user["id"])  # issue #185, None if never recommended anything
     rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
     return JSONResponse({
         "status": [{"label": r["status"].title(), "value": r["cnt"]} for r in status_rows],
@@ -3733,6 +3843,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "by_year": [{"year": r["year"], "count": r["cnt"]} for r in year_rows],
         "heatmap": [{"date": r["day"].isoformat(), "count": int(r["cnt"])} for r in heatmap_rows],
         "drop_patterns": drop_patterns,
+        "recommendation_outcomes": recommendation_outcomes,
         "rewatch": rewatch_stats,
         "totals": {
             "completed": completed,
