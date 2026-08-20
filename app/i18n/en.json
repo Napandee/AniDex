@@ -396,6 +396,19 @@
   "stats_studio_loyalty_tooltip_titles": "titles",
   "stats_studio_loyalty_tooltip_rated": "rated",
 
+  "stats_format_split_title": "Watch time by format",
+  "stats_format_split_sub": "Episode-based and movie-runtime watch time kept separate, instead of blended into one estimated-minutes figure.",
+  "stats_format_split_episodes_label": "Episodes watched",
+  "stats_format_split_movie_minutes_label": "Movie minutes watched",
+  "stats_format_split_movie_count_label": "Movies watched",
+
+  "stats_seasonal_card_title": "Seasonal follow-through",
+  "stats_seasonal_sub": "Of {judged} shows you started watching during their original airing window, {followed} were kept up with and {dropped} were dropped or never caught up.",
+  "stats_seasonal_excluded_line": "{count} more are still airing — too early to call yet.",
+  "stats_seasonal_rate_label": "Follow-through rate",
+  "stats_seasonal_followed_label": "Kept up with",
+  "stats_seasonal_dropped_label": "Dropped / fell behind",
+
   "stats_streaming_card_title": "Streaming Coverage",
   "stats_streaming_no_owned": "Set which streaming services you already own to see which one would unlock the most of your backlog.",
   "stats_streaming_covered": "Your Watching/Planning backlog is already covered by the services you own.",

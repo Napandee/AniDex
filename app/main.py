@@ -4896,6 +4896,163 @@ def _compute_studio_loyalty(user_id: int) -> dict | None:
     }
 
 
+# Anime movies genuinely have a meaningful per-title runtime (a.duration is the
+# real film length from AniList) -- 24 minutes (the TV-episode fallback used
+# elsewhere for anime.duration) would badly understate a ~90-100 minute movie
+# with no recorded duration, so format-split watch time gets its own default.
+MOVIE_DEFAULT_DURATION_MINUTES = 100
+
+
+def _compute_format_watch_time(user_id: int) -> dict:
+    """Anime-native watch-time split (issue #224): episode count for
+    TV/OVA/ONA/SPECIAL-format entries vs. movie-runtime minutes for MOVIE-format
+    entries, instead of blending both into one "minutes" figure via a single
+    assumed per-episode duration (the existing totals.watch_hours/watch_minutes
+    stat in this same endpoint does that blending and is left as-is for
+    backward compatibility with existing consumers of /api/stats, notably
+    app/mcp_server.py's stats tool and the /stats "Year in anime" card -- this
+    is an additive, separately-rendered stat, not a replacement).
+
+    Always renders, no minimum-sample gate -- same reasoning as
+    _compute_rewatch_stats: a user's own watch counts carry no small-sample or
+    privacy concern, it just falls back to a zero/empty display.
+    """
+    row = db.fetchone(
+        """
+        SELECT
+            COALESCE(SUM(le.progress) FILTER (WHERE a.format IS DISTINCT FROM 'MOVIE'), 0) AS episode_count,
+            COUNT(*) FILTER (WHERE a.format = 'MOVIE' AND le.progress > 0) AS movie_count,
+            COALESCE(SUM(le.progress * COALESCE(a.duration, %s)) FILTER (WHERE a.format = 'MOVIE'), 0) AS movie_minutes
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+        """,
+        (MOVIE_DEFAULT_DURATION_MINUTES, user_id),
+    )
+    movie_minutes = int(row["movie_minutes"])
+    return {
+        "episode_count": int(row["episode_count"]),
+        "movie_count": int(row["movie_count"]),
+        "movie_minutes": movie_minutes,
+        "movie_hours": round(movie_minutes / 60, 1),
+    }
+
+
+# Season -> approximate real-world start month of that AniList season, used only
+# to anchor the "started while airing" window below (a.season/a.season_year are
+# quarter-level, not a real air-start date field on `anime`).
+SEASONAL_FOLLOW_THROUGH_SEASON_START_MONTH = {
+    "WINTER": 1, "SPRING": 4, "SUMMER": 7, "FALL": 10,
+}
+
+# A show can start airing up to ~10 days before the "official" quarter boundary
+# (e.g. a late-March premiere counted as a SPRING show); a viewer who joins the
+# simulcast anywhere in the first two months of a ~12-13 week cour is still
+# reasonably "following it seasonally" even if they weren't watching week 1.
+# Past this grace window, treat it as a later binge rather than a seasonal watch
+# -- per issue #224's explicit out-of-scope note: someone who Plans a show for
+# months then binges it later must NOT be counted as having followed it.
+SEASONAL_FOLLOW_THROUGH_PRE_BUFFER_DAYS = 10
+SEASONAL_FOLLOW_THROUGH_GRACE_WEEKS = 8
+
+# Matches DROP_PATTERN_MIN_SAMPLES's precedent/rationale above: below this a
+# percentage is more noise than signal, so the section stays hidden rather than
+# showing a misleadingly precise-looking rate off 1-2 data points.
+SEASONAL_FOLLOW_THROUGH_MIN_SAMPLES = 5
+
+
+def _compute_seasonal_follow_through(user_id: int) -> dict | None:
+    """Of the anime this user started watching during its original airing
+    window, what fraction actually got kept up with (issue #224) -- the
+    anime-native counterpart to a general completion-rate stat, since TV/general
+    trackers have no equivalent "simulcast" concept.
+
+    Why this isn't built from airing_schedule_cache (as the issue's Context
+    section initially suggested): that table is a forward-looking cache only --
+    scripts/sync_airing_schedule.py's AniList query is `notYetAired: true`, and
+    each refresh DELETEs and re-inserts only still-upcoming episodes for
+    currently-RELEASING anime. Once an episode airs (or the whole show
+    finishes), its row is gone -- there is no historical per-episode air-date
+    record anywhere in this schema for a show that has already finished
+    airing, which is most of a typical library. `anime.season`/`season_year`
+    are the only *persistent* signal of an anime's original airing window, so
+    that's what this uses instead, anchored to a real calendar date via
+    SEASONAL_FOLLOW_THROUGH_SEASON_START_MONTH.
+
+    "Started while airing" = library_entries.start_date (AniList's own
+    startedAt, real user watch-start data, not a sync artifact) falls within
+    [season_start - PRE_BUFFER_DAYS, season_start + GRACE_WEEKS]. Movies are
+    excluded (format = 'MOVIE') -- "following seasonally" is a weekly-release
+    concept that doesn't apply to a single-sitting watch. PLANNING entries are
+    excluded -- no real watch has started yet.
+
+    Each qualifying entry is then classified:
+      - followed through: status COMPLETED or REPEATING (finished it, possibly
+        more than once)
+      - dropped or stalled: status DROPPED, or status WATCHING/PAUSED where the
+        anime itself has already finished airing (anime.status = 'FINISHED') --
+        the show is over and they still haven't caught up, which is a "didn't
+        keep up" outcome even without an explicit drop
+      - excluded (no verdict yet): status WATCHING/PAUSED while the anime is
+        still RELEASING -- can't say whether they kept up until the season
+        actually finishes airing
+
+    Returns None below SEASONAL_FOLLOW_THROUGH_MIN_SAMPLES judged entries (not
+    still-airing-excluded ones) -- same small-sample gating rationale as
+    _compute_drop_patterns.
+    """
+    rows = db.fetchall(
+        """
+        SELECT le.status AS entry_status, le.start_date,
+               a.status AS anime_status, a.season, a.season_year
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+          AND le.status != 'PLANNING'
+          AND le.start_date IS NOT NULL
+          AND a.season IS NOT NULL
+          AND a.season_year IS NOT NULL
+          AND a.format IS DISTINCT FROM 'MOVIE'
+        """,
+        (user_id,),
+    )
+
+    followed_through = 0
+    dropped_or_stalled = 0
+    excluded_still_airing = 0
+    for row in rows:
+        start_month = SEASONAL_FOLLOW_THROUGH_SEASON_START_MONTH.get(row["season"])
+        if start_month is None:
+            continue
+        season_start = date(row["season_year"], start_month, 1)
+        window_start = season_start - timedelta(days=SEASONAL_FOLLOW_THROUGH_PRE_BUFFER_DAYS)
+        window_end = season_start + timedelta(weeks=SEASONAL_FOLLOW_THROUGH_GRACE_WEEKS)
+        if not (window_start <= row["start_date"] <= window_end):
+            continue  # started well outside the airing window -- a later binge, not seasonal
+
+        status = row["entry_status"]
+        if status in ("COMPLETED", "REPEATING"):
+            followed_through += 1
+        elif status == "DROPPED":
+            dropped_or_stalled += 1
+        elif status in ("WATCHING", "PAUSED") and row["anime_status"] == "FINISHED":
+            dropped_or_stalled += 1
+        else:
+            excluded_still_airing += 1
+
+    judged = followed_through + dropped_or_stalled
+    if judged < SEASONAL_FOLLOW_THROUGH_MIN_SAMPLES:
+        return None
+
+    return {
+        "rate": round(followed_through / judged * 100),
+        "followed_through": followed_through,
+        "dropped_or_stalled": dropped_or_stalled,
+        "judged": judged,
+        "excluded_still_airing": excluded_still_airing,
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -5010,6 +5167,8 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
     taste_drift = _compute_taste_drift(user["id"])  # issue #176, None if no usable finish_date yet
     studio_loyalty = _compute_studio_loyalty(user["id"])  # issue #223, None below the per-studio title threshold
+    format_split = _compute_format_watch_time(user["id"])  # issue #224
+    seasonal_follow_through = _compute_seasonal_follow_through(user["id"])  # issue #224, None below the sample-size gate
 
     # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
     # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
@@ -5033,6 +5192,8 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "rewatch": rewatch_stats,
         "taste_drift": taste_drift,
         "studio_loyalty": studio_loyalty,
+        "format_split": format_split,
+        "seasonal_follow_through": seasonal_follow_through,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),

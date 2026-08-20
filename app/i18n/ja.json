@@ -396,6 +396,19 @@
   "stats_studio_loyalty_tooltip_titles": "作品",
   "stats_studio_loyalty_tooltip_rated": "評価済み",
 
+  "stats_format_split_title": "フォーマット別視聴時間",
+  "stats_format_split_sub": "エピソード数と映画の再生時間を1つの推定分数にまとめず、別々に集計しています。",
+  "stats_format_split_episodes_label": "視聴したエピソード数",
+  "stats_format_split_movie_minutes_label": "視聴した映画の分数",
+  "stats_format_split_movie_count_label": "視聴した映画数",
+
+  "stats_seasonal_card_title": "シーズン追走率",
+  "stats_seasonal_sub": "本放送期間中に視聴を開始した{judged}作品のうち、{followed}作品は最後まで追いかけ、{dropped}作品は途中で切ったか追いつけませんでした。",
+  "stats_seasonal_excluded_line": "さらに{count}作品は放送中のため、まだ判定できません。",
+  "stats_seasonal_rate_label": "追走率",
+  "stats_seasonal_followed_label": "最後まで追った",
+  "stats_seasonal_dropped_label": "切った／追いつけなかった",
+
   "stats_streaming_card_title": "ストリーミングカバレッジ",
   "stats_streaming_no_owned": "契約中の配信サービスを設定すると、どのサービスがバックログを最も多く解放するかがわかります。",
   "stats_streaming_covered": "視聴中/視聴予定のバックログは、すでに契約中のサービスでカバーされています。",

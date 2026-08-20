@@ -169,6 +169,43 @@
     </div>
   </div>
 
+  <!-- Anime-native format split + seasonal follow-through (issue #224) — the
+       existing blended totals.watch_hours stat above stays as-is (other
+       consumers like app/mcp_server.py depend on it); these are additive,
+       separately-rendered cards. Format split always renders (no minimum-sample
+       gate, same reasoning as the rewatch panel below — a user's own watch
+       counts carry no small-sample concern). Seasonal follow-through is hidden
+       entirely when data.seasonal_follow_through is null (fewer than
+       SEASONAL_FOLLOW_THROUGH_MIN_SAMPLES judged entries) — see
+       app/main.py's _compute_seasonal_follow_through docstring for the full
+       "started while airing" definition and why it can't be built from
+       airing_schedule_cache (that table only ever holds not-yet-aired
+       episodes). -->
+  <div class="stats-grid">
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">{{ t('stats_format_split_title') }}</h2>
+      <p class="drop-patterns-sub">{{ t('stats_format_split_sub') }}</p>
+      <div class="stats-headlines" id="format-split-headlines">
+        <div class="stat-headline"><span class="stat-num" id="fs-hl-episodes">—</span><span class="stat-label">{{ t('stats_format_split_episodes_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="fs-hl-movie-minutes">—</span><span class="stat-label">{{ t('stats_format_split_movie_minutes_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="fs-hl-movie-count">—</span><span class="stat-label">{{ t('stats_format_split_movie_count_label') }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-grid" id="seasonal-follow-through-section" hidden>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">{{ t('stats_seasonal_card_title') }}</h2>
+      <p class="drop-patterns-sub" id="seasonal-sub"></p>
+      <p class="drop-patterns-sub" id="seasonal-excluded-line" hidden></p>
+      <div class="stats-headlines" id="seasonal-headlines">
+        <div class="stat-headline"><span class="stat-num" id="seasonal-hl-rate">—</span><span class="stat-label">{{ t('stats_seasonal_rate_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="seasonal-hl-followed">—</span><span class="stat-label">{{ t('stats_seasonal_followed_label') }}</span></div>
+        <div class="stat-headline"><span class="stat-num" id="seasonal-hl-dropped">—</span><span class="stat-label">{{ t('stats_seasonal_dropped_label') }}</span></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Rewatch data (issue #189) — built entirely from library_entries.repeat_count,
        already synced from AniList's `repeat` field, no new data collection. Unlike
        the drop-patterns panel below, this always renders (no minimum-sample gate) —
@@ -460,6 +497,42 @@
       list.appendChild(row);
     });
   })(data.studio_loyalty);
+
+  // Anime-native format split (issue #224) — episode count for TV/OVA/ONA/
+  // Special vs. movie-runtime minutes for MOVIE-format entries, kept separate
+  // rather than blended into one estimated-minutes figure (see the existing
+  // hl-watchtime headline above, which still uses the blended figure for
+  // backward compatibility). Always renders, no minimum-sample gate.
+  (function renderFormatSplit(fs) {
+    document.getElementById('fs-hl-episodes').textContent = fs.episode_count.toLocaleString();
+    document.getElementById('fs-hl-movie-count').textContent = fs.movie_count.toLocaleString();
+    document.getElementById('fs-hl-movie-minutes').textContent =
+      fs.movie_minutes >= 60 ? `${fs.movie_hours}h` : `${fs.movie_minutes}m`;
+  })(data.format_split);
+
+  // Seasonal follow-through rate (issue #224) — of the shows this user started
+  // watching during their original airing window, what fraction were kept up
+  // with vs. dropped/stalled. Hidden entirely when data.seasonal_follow_through
+  // is null (fewer than SEASONAL_FOLLOW_THROUGH_MIN_SAMPLES judged entries) —
+  // see app/main.py's _compute_seasonal_follow_through docstring for the full
+  // "started while airing" definition.
+  (function renderSeasonalFollowThrough(sft) {
+    if (!sft) return;
+    document.getElementById('seasonal-follow-through-section').hidden = false;
+    document.getElementById('seasonal-hl-rate').textContent = `${sft.rate}%`;
+    document.getElementById('seasonal-hl-followed').textContent = sft.followed_through.toLocaleString();
+    document.getElementById('seasonal-hl-dropped').textContent = sft.dropped_or_stalled.toLocaleString();
+    document.getElementById('seasonal-sub').textContent = t('stats_seasonal_sub', {
+      judged: sft.judged,
+      followed: sft.followed_through,
+      dropped: sft.dropped_or_stalled,
+    });
+    if (sft.excluded_still_airing > 0) {
+      const line = document.getElementById('seasonal-excluded-line');
+      line.textContent = t('stats_seasonal_excluded_line', { count: sft.excluded_still_airing });
+      line.hidden = false;
+    }
+  })(data.seasonal_follow_through);
 
   // Watch-activity heatmap (issue #10) — one cell per day, shaded by episodes
   // watched that day (approximated via completions' finish_date, see /api/stats).

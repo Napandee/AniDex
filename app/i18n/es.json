@@ -396,6 +396,19 @@
   "stats_studio_loyalty_tooltip_titles": "títulos",
   "stats_studio_loyalty_tooltip_rated": "puntuados",
 
+  "stats_format_split_title": "Tiempo de visionado por formato",
+  "stats_format_split_sub": "El tiempo de visionado basado en episodios y en la duración de películas se mantiene separado, en lugar de combinarse en una sola cifra estimada de minutos.",
+  "stats_format_split_episodes_label": "Episodios vistos",
+  "stats_format_split_movie_minutes_label": "Minutos de película vistos",
+  "stats_format_split_movie_count_label": "Películas vistas",
+
+  "stats_seasonal_card_title": "Seguimiento por temporada",
+  "stats_seasonal_sub": "De {judged} series que empezaste a ver durante su emisión original, {followed} las seguiste hasta el final y {dropped} las abandonaste o nunca las alcanzaste.",
+  "stats_seasonal_excluded_line": "{count} más siguen en emisión — aún es pronto para saberlo.",
+  "stats_seasonal_rate_label": "Tasa de seguimiento",
+  "stats_seasonal_followed_label": "Seguidas hasta el final",
+  "stats_seasonal_dropped_label": "Abandonadas / atrasadas",
+
   "stats_streaming_card_title": "Cobertura de Streaming",
   "stats_streaming_no_owned": "Indica qué servicios de streaming ya tienes para ver cuál desbloquearía más de tu lista pendiente.",
   "stats_streaming_covered": "Tu lista de Viendo/Planeando ya está cubierta por los servicios que tienes.",
