@@ -38,6 +38,7 @@
 
   "settings_page_title": "सेटिंग्स",
   "settings_page_sub": "इस ट्रैकर के लिए प्राथमिकताएँ और क्रेडेंशियल।",
+  "settings_about_version_label": "चल रहा संस्करण:",
   "settings_section_display": "डिस्प्ले",
   "settings_saved": "सहेजा गया।",
   "settings_timezone_label": "समय क्षेत्र",
@@ -447,6 +448,11 @@
   "lib_notes_notes_placeholder": "कोई भी फ्रीफ़ॉर्म नोट्स…",
   "lib_notes_priority_placeholder": "1 = कतार में सबसे ऊपर",
   "lib_ep_unit": "एप",
+  "lib_ep_note_btn_title": "एपिसोड नोट",
+  "lib_ep_note_placeholder": "इस एपिसोड के लिए एक नोट लिखें…",
+  "lib_ep_note_delete_btn": "हटाएं",
+  "lib_ep_note_modal_title": "एपिसोड {ep} — {title}",
+  "lib_ep_note_prompt_text": "एपिसोड {ep} के लिए नोट जोड़ें?",
 
   "title_admin": "एडमिन — Anime Tracker",
   "admin_page_title": "एडमिन",
@@ -455,6 +461,7 @@
   "admin_tab_invites": "आमंत्रण",
   "admin_tab_instance_config": "इंस्टेंस कॉन्फ़िग",
   "admin_tab_operability": "संचालन क्षमता",
+  "admin_tab_data_quality": "डेटा गुणवत्ता",
 
   "admin_users_title": "उपयोगकर्ता",
   "admin_users_desc": "लॉगिन गतिविधि और प्रत्येक उपयोगकर्ता का नवीनतम सिंक रन।",
@@ -525,6 +532,39 @@
   "admin_backup_desc": "हर उपयोगकर्ता का लाइब्रेरी डेटा (हर उपयोगकर्ता की अपनी सेटिंग्स → डेटा निर्यात जैसी ही क्वेरी) एक zip के रूप में निर्यात करें, प्रति उपयोगकर्ता एक JSON फ़ाइल। केवल मैनुअल ट्रिगर — शेड्यूल नहीं है।",
   "admin_export_all_btn": "सभी उपयोगकर्ता निर्यात करें",
 
+  "admin_col_updated": "अपडेट किया गया",
+
+  "admin_dq_provider_sync_title": "प्रत्येक प्रदाता का अंतिम सफल सिंक",
+  "admin_dq_provider_sync_desc": "sync_log से प्राप्त, वह सबसे हालिया फुल-सिंक रन जिसमें हर प्रदाता का चरण सफल रहा — कोई अलग प्रति-प्रदाता ट्रैकिंग नहीं।",
+  "admin_dq_not_configured": "कॉन्फ़िगर नहीं किया गया",
+  "admin_dq_last_attempt_failed": "अंतिम प्रयास विफल — {when}",
+
+  "admin_dq_failure_history_title": "सिंक विफलता दर और इतिहास",
+  "admin_dq_failure_history_desc": "पिछले {days} दिनों में हर उपयोगकर्ता के फुल-सिंक रन।",
+  "admin_dq_col_total_runs": "कुल रन",
+  "admin_dq_col_failed_runs": "विफल रन",
+  "admin_dq_col_failure_rate": "विफलता दर",
+  "admin_dq_recent_failures_label": "हाल की विफलताएं",
+  "admin_dq_no_failures": "कोई नहीं",
+  "admin_dq_no_runs": "पिछले {days} दिनों में कोई सिंक रन नहीं।",
+
+  "admin_dq_orphaned_notes_title": "अनाथ व्यक्तिगत नोट्स",
+  "admin_dq_orphaned_notes_desc": "personal_notes की वे पंक्तियां जिनके लिए कोई मेल खाती library_entries पंक्ति नहीं है — सामान्य स्थिति में यह असंभव होना चाहिए; आमतौर पर इसका मतलब है कि लाइब्रेरी एंट्री हटा दी गई पर नोट को साथ में साफ़ नहीं किया गया।",
+  "admin_dq_col_user": "उपयोगकर्ता",
+  "admin_dq_col_anime": "एनीमे",
+  "admin_dq_no_orphaned_notes": "कोई अनाथ व्यक्तिगत नोट नहीं मिला।",
+
+  "admin_dq_stale_recs_title": "पुरानी सिफारिशें",
+  "admin_dq_stale_recs_desc": "recommendation_scores के वे उम्मीदवार जिन्हें उपयोगकर्ता की लाइब्रेरी में जोड़ा जा चुका है लेकिन हटाया नहीं गया — यह शाब्दिक \"कोई मेल खाती लाइब्रेरी एंट्री नहीं\" जांच के विपरीत है, क्योंकि डिज़ाइन के अनुसार हर सिफारिश उम्मीदवार उस एनीमे के लिए बनाया जाता है जो अभी तक लाइब्रेरी में नहीं है (देखें run_recommender.py)। ये वे हैं जिन्हें होना चाहिए था।",
+  "admin_dq_col_library_status": "लाइब्रेरी स्थिति",
+  "admin_dq_col_computed": "गणना की गई",
+  "admin_dq_no_stale_recs": "कोई पुरानी सिफारिश नहीं मिली।",
+
+  "admin_dq_drift_title": "ड्रिफ्ट उम्मीदवार",
+  "admin_dq_drift_desc": "देख रहे/दोहरा रहे स्टेटस की लाइब्रेरी एंट्रीज़ जिनका AniList-साइड लास्ट-अपडेटेड टाइमस्टैंप {days} दिनों से अधिक समय से नहीं बदला — यह संकेत हो सकता है कि किसी प्रदाता का सिंक उस शो को पकड़ना चुपचाप बंद कर चुका है।",
+  "admin_dq_col_last_updated": "AniList पर अंतिम अपडेट",
+  "admin_dq_no_drift": "कोई ड्रिफ्ट उम्मीदवार नहीं मिला।",
+
   "js_bulk_selected": "{n} चयनित",
   "js_select": "चुनें",
   "js_done": "हो गया",
@@ -594,5 +634,20 @@
   "pat_created_heading": "अपना टोकन सुरक्षित रखें",
   "pat_created_desc": "व्यक्तिगत एक्सेस टोकन \"{name}\" बना दिया गया है।",
   "pat_created_warning": "यह टोकन केवल एक बार दिखाया जाता है। इसे अभी कॉपी करें और सुरक्षित स्थान पर रखें — आप इसे दोबारा नहीं देख पाएंगे। अगर आप इसे खो देते हैं, तो इसे रद्द करें और एक नया बनाएं।",
-  "pat_created_continue_btn": "मैंने यह टोकन सुरक्षित रख लिया है — जारी रखें"
+  "pat_created_continue_btn": "मैंने यह टोकन सुरक्षित रख लिया है — जारी रखें",
+
+  "lib_collections_placeholder": "कलेक्शन…",
+  "lib_collections_save_btn": "फ़िल्टर सहेजें",
+  "lib_collections_manage_btn": "प्रबंधित करें",
+  "lib_collections_save_modal_title": "कलेक्शन के रूप में सहेजें",
+  "lib_collections_name_label": "नाम",
+  "lib_collections_name_placeholder": "जैसे, छोटी आरामदायक सीरीज़",
+  "lib_collections_manage_modal_title": "कलेक्शन प्रबंधित करें",
+  "lib_collections_empty": "अभी तक कोई सहेजा गया कलेक्शन नहीं है।",
+  "lib_collections_rename_btn": "नाम बदलें",
+  "lib_collections_delete_btn": "हटाएं",
+  "js_collection_save_failed": "कलेक्शन सहेजने में विफल।",
+  "js_collection_rename_failed": "नाम बदलने में विफल।",
+  "js_collection_delete_failed": "हटाने में विफल।",
+  "js_collection_delete_confirm": "\"{name}\" कलेक्शन हटाएं? इसे वापस नहीं किया जा सकता।"
 }

@@ -440,6 +440,32 @@ main {
   gap: 0.25rem;
 }
 
+.collections-group { display: flex; align-items: center; gap: 0.25rem; }
+.collections-select {
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--t2);
+  font-size: 0.8rem;
+  cursor: pointer;
+  outline: none;
+  max-width: 160px;
+}
+.collections-select:focus { border-color: var(--accent); }
+
+.collections-manage-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; }
+.collections-manage-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.collections-manage-row:first-child { border-top: none; }
+.collections-manage-name-input { flex: 1 1 auto; min-width: 0; }
+.collections-manage-row .filter-btn { flex: 0 0 auto; }
+
 .season-filter-group { display: flex; align-items: center; }
 .season-filter-select {
   padding: 0.3rem 0.6rem;
@@ -599,6 +625,111 @@ main {
 .prog-val { min-width: 1.5ch; text-align: center; font-variant-numeric: tabular-nums; }
 .prog-total { color: var(--t7); }
 .prog-unit { color: var(--t7); }
+
+/* ── Episode notes (#210) ────────────────────────────────────────────────── */
+/* Small icon button next to the progress stepper, mirroring .prog-btn's own
+   sizing/tokens so it reads as part of the same control cluster rather than a
+   bolted-on extra. Opens a single shared modal (#ep-note-modal, bottom of
+   library.html) rather than a per-card popover: a popover positioned relative
+   to the icon would sit inside .card, which is `overflow: hidden` (needed
+   elsewhere so long titles/genre chips don't spill past the card's rounded
+   corners) — anything absolutely positioned past the card's edge would get
+   silently clipped, especially likely on the narrow 2-column mobile grid.
+   The shared modal reuses .modal-backdrop/.modal, the same proven pattern
+   #notes-modal and recommendations.html's #seen-it-backdrop already use, so
+   it's unaffected by any single card's overflow and needs no new escape hatch.
+   The same modal is reused, unchanged, for the auto-suggest prompt fired from
+   script.js's progress-stepper handler on a plain +1 (see .ep-note-hint below)
+   — one editing surface for both the deliberate "add a note" click and the
+   gentle post-increment nudge, instead of building two separate UI pieces for
+   what's ultimately the same action. */
+.ep-note-anchor { flex: 0 0 auto; display: inline-flex; }
+
+.ep-note-btn {
+  background: var(--bg-surface-hover);
+  border: 1px solid var(--t9);
+  border-radius: 4px;
+  color: var(--t7);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  transition: background 0.1s, color 0.1s;
+}
+.ep-note-btn:hover { background: var(--chip-hover-bg); color: #fff; }
+.ep-note-btn:disabled { opacity: 0.4; cursor: default; }
+/* Filled state — this episode already has a note. Same accent family as the
+   star rating's filled state, so "has content" reads consistently across the
+   card's small icon controls. */
+.ep-note-btn.has-note { color: var(--pill-warning-text); border-color: var(--pill-warning-text); }
+
+/* Only shown when the modal opened itself (the auto-suggest case) rather than
+   the user tapping the icon — see openEpisodeNoteModal({suggested}) in script.js. */
+.ep-note-hint {
+  font-size: 0.78rem;
+  color: var(--pill-info-text-strong);
+  margin: 0 0 0.25rem;
+}
+.ep-note-hint[hidden] { display: none; }
+
+.ep-note-field {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--t2);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.5rem;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.ep-note-field:focus { border-color: var(--accent); }
+.ep-note-field:disabled { opacity: 0.6; }
+
+/* .modal-actions already gives display:flex + gap — this just adds wrap, since
+   this modal has a third (delete) button the other modals here don't. */
+.ep-note-modal-actions { flex-wrap: wrap; }
+
+.ep-note-save {
+  background: var(--pill-info-border);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  color: var(--pill-info-text-strong);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  transition: background 0.15s;
+}
+.ep-note-save:hover { background: var(--accent); color: #fff; }
+.ep-note-save:disabled { opacity: 0.5; cursor: default; }
+
+.ep-note-delete {
+  background: none;
+  border: 1px solid var(--pill-danger-text);
+  border-radius: 5px;
+  color: var(--pill-danger-text);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  transition: background 0.15s, color 0.15s;
+}
+.ep-note-delete:hover { background: var(--pill-danger-text); color: #fff; }
+.ep-note-delete:disabled { opacity: 0.5; cursor: default; }
+
+.ep-note-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--t6);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  transition: color 0.15s;
+}
+.ep-note-cancel:hover { color: var(--t4); }
 
 /* ── Star rating ─────────────────────────────────────────────────────────── */
 .star-rating {
@@ -921,6 +1052,20 @@ main {
 .settings-section-title { font-size: 1rem; font-weight: 600; color: var(--t2); margin: 0 0 0.4rem; }
 .settings-section-desc { font-size: 0.85rem; color: var(--t6); margin: 0 0 1rem; line-height: 1.5; }
 .settings-section form { display: flex; flex-direction: column; gap: 1.25rem; }
+
+/* Issue #204 — small "what's deployed" footer, outside the tab panels so it shows
+   regardless of which settings tab is active. Deliberately quiet: a single line, not
+   its own section heading — this isn't a feature, just a link out to GitHub. */
+.settings-about {
+  max-width: 640px;
+  margin: 2.5rem auto 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.settings-about-text { font-size: 0.8rem; color: var(--t7); margin: 0; }
+.settings-about-text a { color: var(--t7); text-decoration: underline; }
+.settings-about-text code { font-size: 0.8rem; }
 
 /* Help disclosure (#141) — small "i" button next to a section heading or inline in a
    field label; click/tap toggles the panel below it open. Click/tap only, deliberately
@@ -2841,6 +2986,14 @@ body.auth-page main {
   .prog-btn { width: 26px; height: 26px; font-size: 0.8rem; }
   .prog-val { font-size: 0.8rem; }
   .prog-total, .prog-unit { font-size: 0.75rem; }
+
+  /* ── Episode note icon — same touch-target bump as .prog-btn above, same
+     reasoning (#12/#210): a ~15-20px icon is an easy mis-tap on a phone. The
+     editor itself is the shared #ep-note-modal — the same .modal-backdrop/.modal
+     centered-dialog pattern #notes-modal already uses at every width (padded
+     backdrop, width:100% up to a max-width box), so nothing further is needed
+     here beyond the icon's own tap target. */
+  .ep-note-btn { width: 26px; height: 26px; font-size: 0.85rem; }
 
   /* ── Queue items ──────────────────────────────────────────────────────── */
   .queue-item { gap: 0.6rem; padding: 0.65rem 0.75rem; }

@@ -1,4 +1,11 @@
--- Migration 018: personal access tokens for the MCP server (issue #207).
+-- Migration 020: personal access tokens for the MCP server (issue #207).
+--
+-- (Originally numbered 018 during development; renumbered to 020 after #211's
+-- Collections migration (018_collections.sql) and #214's episode-notes migration
+-- (019_episode_notes.sql) both merged to main first, while this branch was still
+-- cut from an older main — collided on both 018 and 019 once rebased/merged
+-- forward. See the sequential-numbering convention this repo follows for
+-- migrations/, same as 017's and 019's own renumbering notes.)
 --
 -- GitHub-PAT-style credential: a random token is generated server-side, shown to the
 -- user exactly once at creation, and stored here only as a bcrypt hash — same standard

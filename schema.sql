@@ -313,6 +313,25 @@ CREATE TABLE rewatch_notes (
 
 CREATE INDEX idx_rewatch_notes_user_anime ON rewatch_notes (user_id, anime_id);
 
+-- A note attached to a specific episode (issue #210), surfaced next to the progress
+-- stepper. Same shape/rationale as rewatch_notes above — one-row-per-episode doesn't
+-- fit personal_notes' flat single-row-per-anime shape. Sync jobs must never write
+-- here, only the app's own episode-note routes.
+CREATE TABLE episode_notes (
+    id                  SERIAL PRIMARY KEY,
+    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anime_id            INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    -- Which episode this note is for, matching library_entries.progress. Only valid
+    -- for an episode already watched — see _save_episode_note()'s range check.
+    episode_number      INTEGER NOT NULL CHECK (episode_number >= 1),
+    note                TEXT NOT NULL,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, anime_id, episode_number)
+);
+
+CREATE INDEX idx_episode_notes_user_anime ON episode_notes (user_id, anime_id);
+
 -- Output of the recommender job. Fully rebuildable, but kept as a table (not computed
 -- on every page load) so scores are stable and dismissals persist between runs.
 CREATE TABLE recommendation_scores (
@@ -428,6 +447,21 @@ CREATE TABLE user_streaming_services (
     PRIMARY KEY (user_id, service)
 );
 
+-- Named, saved filter combinations over the library view's existing tag/status/
+-- score/format/season/rewatch/sort controls (issue #200). `filters` is a
+-- whitelisted snapshot of that client-side filter/sort state, not a list of
+-- anime ids — a collection is a shortcut to a filter state, never a place an
+-- anime is manually added. See app/main.py's COLLECTION_FILTER_KEYS.
+CREATE TABLE collections (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    filters     JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, name)
+);
+
 -- =========================================================================
 -- PER-USER SETTINGS (timezone, credentials, sync schedule — key/value for extensibility)
 -- =========================================================================
@@ -472,4 +506,5 @@ CREATE INDEX idx_recommendation_scores_score ON recommendation_scores(user_id, s
 CREATE INDEX idx_anime_genres ON anime USING GIN (genres);
 CREATE INDEX idx_anime_tags ON anime USING GIN (tags);
 CREATE INDEX idx_invites_email ON invites(email) WHERE accepted_at IS NULL;
+CREATE INDEX idx_collections_user ON collections (user_id);
 CREATE INDEX idx_admin_audit_log_created_at ON admin_audit_log(created_at DESC);

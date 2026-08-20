@@ -14,6 +14,7 @@
     <button type="button" class="tab" data-tab="invites" role="tab">{{ t('admin_tab_invites') }}</button>
     <button type="button" class="tab" data-tab="instance-config" role="tab">{{ t('admin_tab_instance_config') }}</button>
     <button type="button" class="tab" data-tab="operability" role="tab">{{ t('admin_tab_operability') }}</button>
+    <button type="button" class="tab" data-tab="data-quality" role="tab">{{ t('admin_tab_data_quality') }}</button>
   </div>
 
   {# ══════════════════════════════════════════════════════════════════════
@@ -347,6 +348,178 @@
       </p>
       <div class="form-actions">
         <a href="/admin/export-all" class="btn-save" download>{{ t('admin_export_all_btn') }}</a>
+      </div>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════════════════════════════════
+     Data Quality tab (issue #202) — read-only aggregation of sync health and
+     data-integrity signals already computed in _data_quality_signals(); see
+     that function's docstring in app/main.py for exactly what each section
+     means and why, especially the stale-recommendations interpretation note.
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="data-quality" hidden>
+
+    {# ── Last successful sync per provider ────────────────────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">{{ t('admin_dq_provider_sync_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_dq_provider_sync_desc') }}</p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>{{ t('admin_col_email') }}</th>
+            {% for p in data_quality.providers %}
+            <th>{{ p }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.email }}</td>
+            {% for p in data_quality.providers %}
+            {% set entry = data_quality.last_sync_by_provider.get(u.id, {}).get(p) %}
+            <td>
+              {% if not entry %}
+              <span class="status-empty">{{ t('admin_dq_not_configured') }}</span>
+              {% else %}
+                {% if entry.last_ok_at %}
+                <span class="status-ok">{{ entry.last_ok_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                {% else %}
+                <span class="status-empty">{{ t('admin_never_synced') }}</span>
+                {% endif %}
+                {% if entry.last_attempt_status == 'error' %}
+                <br><span class="status-error">{{ t('admin_dq_last_attempt_failed', when=entry.last_attempt_at.strftime('%Y-%m-%d %H:%M')) }}</span>
+                {% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    {# ── Recent sync failure rate/history ─────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('admin_dq_failure_history_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_dq_failure_history_desc', days=data_quality.failure_window_days) }}</p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>{{ t('admin_col_email') }}</th>
+            <th>{{ t('admin_dq_col_total_runs') }}</th>
+            <th>{{ t('admin_dq_col_failed_runs') }}</th>
+            <th>{{ t('admin_dq_col_failure_rate') }}</th>
+            <th>{{ t('admin_dq_recent_failures_label') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          {% set agg = data_quality.failure_history.get(u.id) %}
+          <tr>
+            <td>{{ u.email }}</td>
+            {% if agg %}
+            <td>{{ agg.total }}</td>
+            <td>{{ agg.failed }}</td>
+            <td>
+              <span class="{% if agg.failure_rate > 0 %}status-error{% else %}status-ok{% endif %}">
+                {{ '%.0f'|format(agg.failure_rate * 100) }}%
+              </span>
+            </td>
+            <td>
+              {% for f in agg.failures %}
+              <div>
+                <span class="status-error" title="{{ f.error_msg or '' }}">{{ f.run_at.strftime('%Y-%m-%d %H:%M') if f.run_at else '' }}{% if f.error_msg %} — {{ f.error_msg[:60] }}{% if f.error_msg|length > 60 %}…{% endif %}{% endif %}</span>
+              </div>
+              {% else %}
+              <span class="status-empty">{{ t('admin_dq_no_failures') }}</span>
+              {% endfor %}
+            </td>
+            {% else %}
+            <td colspan="4" class="status-empty">{{ t('admin_dq_no_runs', days=data_quality.failure_window_days) }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    {# ── Orphaned personal_notes ───────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('admin_dq_orphaned_notes_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_dq_orphaned_notes_desc') }}</p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr><th>{{ t('admin_dq_col_user') }}</th><th>{{ t('admin_dq_col_anime') }}</th><th>{{ t('admin_col_updated') }}</th></tr>
+        </thead>
+        <tbody>
+          {% for n in data_quality.orphaned_personal_notes %}
+          <tr>
+            <td>{{ n.user_email or '—' }}</td>
+            <td>{{ n.title_romaji or n.anime_id }}</td>
+            <td>{{ n.updated_at.strftime('%Y-%m-%d %H:%M') if n.updated_at else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="status-empty">{{ t('admin_dq_no_orphaned_notes') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    {# ── Stale recommendation_scores ───────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('admin_dq_stale_recs_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_dq_stale_recs_desc') }}</p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr><th>{{ t('admin_dq_col_user') }}</th><th>{{ t('admin_dq_col_anime') }}</th><th>{{ t('admin_dq_col_library_status') }}</th><th>{{ t('admin_dq_col_computed') }}</th></tr>
+        </thead>
+        <tbody>
+          {% for r in data_quality.stale_recommendations %}
+          <tr>
+            <td>{{ r.user_email or '—' }}</td>
+            <td>{{ r.title_romaji or r.anime_id }}</td>
+            <td>{{ r.library_status }}</td>
+            <td>{{ r.computed_at.strftime('%Y-%m-%d %H:%M') if r.computed_at else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="status-empty">{{ t('admin_dq_no_stale_recs') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    {# ── Drift candidates ──────────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('admin_dq_drift_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_dq_drift_desc', days=data_quality.drift_threshold_days) }}</p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr><th>{{ t('admin_dq_col_user') }}</th><th>{{ t('admin_dq_col_anime') }}</th><th>{{ t('admin_col_status') }}</th><th>{{ t('admin_dq_col_last_updated') }}</th></tr>
+        </thead>
+        <tbody>
+          {% for d in data_quality.drift_candidates %}
+          <tr>
+            <td>{{ d.user_email or '—' }}</td>
+            <td>{{ d.title_romaji or d.anime_id }}</td>
+            <td>{{ d.status }}</td>
+            <td><span class="status-error">{{ d.anilist_updated_at.strftime('%Y-%m-%d') if d.anilist_updated_at else '—' }}</span></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="status-empty">{{ t('admin_dq_no_drift') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
       </div>
     </div>
   </div>

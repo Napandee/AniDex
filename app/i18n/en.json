@@ -38,6 +38,7 @@
 
   "settings_page_title": "Settings",
   "settings_page_sub": "Preferences and credentials for this tracker.",
+  "settings_about_version_label": "Running:",
   "settings_section_display": "Display",
   "settings_saved": "Saved.",
   "settings_timezone_label": "Timezone",
@@ -447,6 +448,11 @@
   "lib_notes_notes_placeholder": "Freeform notes…",
   "lib_notes_priority_placeholder": "1 = top of queue",
   "lib_ep_unit": "ep",
+  "lib_ep_note_btn_title": "Episode note",
+  "lib_ep_note_placeholder": "Write a note for this episode…",
+  "lib_ep_note_delete_btn": "Delete",
+  "lib_ep_note_modal_title": "Episode {ep} — {title}",
+  "lib_ep_note_prompt_text": "Add a note for episode {ep}?",
 
   "title_admin": "Admin — Anime Tracker",
   "admin_page_title": "Admin",
@@ -455,6 +461,7 @@
   "admin_tab_invites": "Invites",
   "admin_tab_instance_config": "Instance Config",
   "admin_tab_operability": "Operability",
+  "admin_tab_data_quality": "Data Quality",
 
   "admin_users_title": "Users",
   "admin_users_desc": "Login activity and each user's most recent sync run.",
@@ -525,6 +532,39 @@
   "admin_backup_desc": "Export every user's library data (same query as each user's own Settings → Data export) as one zip, one JSON file per user. Manual trigger only — not scheduled.",
   "admin_export_all_btn": "Export all users",
 
+  "admin_col_updated": "Updated",
+
+  "admin_dq_provider_sync_title": "Last successful sync per provider",
+  "admin_dq_provider_sync_desc": "Most recent full-sync run at which each provider's step succeeded, derived from sync_log — no separate per-provider tracking.",
+  "admin_dq_not_configured": "not configured",
+  "admin_dq_last_attempt_failed": "last attempt failed — {when}",
+
+  "admin_dq_failure_history_title": "Sync failure rate & history",
+  "admin_dq_failure_history_desc": "Full-sync runs in the last {days} days, per user.",
+  "admin_dq_col_total_runs": "Total runs",
+  "admin_dq_col_failed_runs": "Failed runs",
+  "admin_dq_col_failure_rate": "Failure rate",
+  "admin_dq_recent_failures_label": "Recent failures",
+  "admin_dq_no_failures": "none",
+  "admin_dq_no_runs": "No sync runs in the last {days} days.",
+
+  "admin_dq_orphaned_notes_title": "Orphaned personal notes",
+  "admin_dq_orphaned_notes_desc": "personal_notes rows with no matching library_entries row — should be impossible in steady state; usually means the library entry was removed without the note being cleaned up alongside it.",
+  "admin_dq_col_user": "User",
+  "admin_dq_col_anime": "Anime",
+  "admin_dq_no_orphaned_notes": "No orphaned personal notes found.",
+
+  "admin_dq_stale_recs_title": "Stale recommendations",
+  "admin_dq_stale_recs_desc": "recommendation_scores candidates that have since been added to the user's library but weren't cleared out — the inverse of a literal \"no matching library entry\" check, since every recommendation candidate is generated for an anime NOT yet in the library by design (see run_recommender.py). These are the ones that should have been.",
+  "admin_dq_col_library_status": "Library status",
+  "admin_dq_col_computed": "Computed",
+  "admin_dq_no_stale_recs": "No stale recommendations found.",
+
+  "admin_dq_drift_title": "Drift candidates",
+  "admin_dq_drift_desc": "Watching/Repeating library entries whose AniList-side last-updated timestamp hasn't moved in over {days} days — a possible sign a provider sync has silently stopped picking up that show.",
+  "admin_dq_col_last_updated": "AniList last updated",
+  "admin_dq_no_drift": "No drift candidates found.",
+
   "js_bulk_selected": "{n} selected",
   "js_select": "Select",
   "js_done": "Done",
@@ -594,5 +634,20 @@
   "pat_created_heading": "Save your token",
   "pat_created_desc": "Personal access token \"{name}\" has been created.",
   "pat_created_warning": "This token is shown only once. Copy it now and store it somewhere safe — you won't be able to see it again. If you lose it, revoke it and create a new one.",
-  "pat_created_continue_btn": "I've saved this token — continue"
+  "pat_created_continue_btn": "I've saved this token — continue",
+
+  "lib_collections_placeholder": "Collections…",
+  "lib_collections_save_btn": "Save filters",
+  "lib_collections_manage_btn": "Manage",
+  "lib_collections_save_modal_title": "Save as collection",
+  "lib_collections_name_label": "Name",
+  "lib_collections_name_placeholder": "e.g. Short comfort watches",
+  "lib_collections_manage_modal_title": "Manage collections",
+  "lib_collections_empty": "No saved collections yet.",
+  "lib_collections_rename_btn": "Rename",
+  "lib_collections_delete_btn": "Delete",
+  "js_collection_save_failed": "Failed to save collection.",
+  "js_collection_rename_failed": "Rename failed.",
+  "js_collection_delete_failed": "Delete failed.",
+  "js_collection_delete_confirm": "Delete the \"{name}\" collection? This can't be undone."
 }

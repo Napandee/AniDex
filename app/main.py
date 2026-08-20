@@ -1647,25 +1647,214 @@ def _log_admin_action(admin_user_id: int, action: str, target_user_id: int | Non
     )
 
 
+GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
+
+
+def _build_version() -> str | None:
+    """The short git SHA baked into the image via the Dockerfile's GIT_SHA build
+    arg (see Dockerfile), if any. Shared by the admin-only Operability tab
+    (_instance_health below) and the user-facing "currently deployed commit" link
+    on every user's own Settings page (issue #204) — one place reads GIT_SHA,
+    not two."""
+    git_sha = os.environ.get("GIT_SHA", "").strip()
+    return git_sha[:12] if git_sha else None
+
+
 def _instance_health() -> dict:
     """Read-only instance-health data for the admin panel (issue #86): running
     build version (if baked into the image via the Dockerfile's GIT_SHA build
     arg — see Dockerfile), Postgres database size, and row counts for a few key
     tables. Display only — deliberately no write/control actions here."""
-    git_sha = os.environ.get("GIT_SHA", "").strip()
-
     db_size_row = db.fetchone(
         "SELECT pg_size_pretty(pg_database_size(current_database())) AS size"
     )
 
     return {
-        "build_version": git_sha[:12] if git_sha else None,
+        "build_version": _build_version(),
         "db_size": db_size_row["size"] if db_size_row else None,
         "row_counts": {
             "library_entries": db.fetchone("SELECT COUNT(*) AS n FROM library_entries")["n"],
             "anime": db.fetchone("SELECT COUNT(*) AS n FROM anime")["n"],
             "users": db.fetchone("SELECT COUNT(*) AS n FROM users")["n"],
         },
+    }
+
+
+# Issue #202 — drift-detection threshold: how many days a WATCHING/REPEATING
+# library_entries row's anilist_updated_at can go without moving before it's flagged
+# as a drift candidate. The default full sync runs daily (see the Sync schedule
+# section of the Instance Config tab), so 30 days is roughly 30x that cadence —
+# comfortably longer than "hasn't watched anything for a couple of weeks" (which is
+# completely normal and shouldn't page anyone), but still tight enough to surface a
+# genuine multi-week sync gap well before a user notices and files a bug (the #159
+# CR season-mismatch bug — progress silently written to the wrong AniList entry
+# while the real one sat stalled — is exactly the shape of problem this is meant to
+# catch). Deliberately a single fixed threshold, not a per-user adaptive one — see
+# #202's scope note against over-engineering v1.
+DATA_QUALITY_DRIFT_DAYS = 30
+
+# Only actively-progressing statuses are checked for drift. COMPLETED/DROPPED/PAUSED/
+# PLANNING rows aren't expected to see anilist_updated_at move regardless of sync
+# health, so including them would just be noise.
+_DRIFT_STATUSES = ("WATCHING", "REPEATING")
+
+# sync_log.steps (full_sync/force_full_resync only — see schema.sql's column comment)
+# records one entry per provider; these are the provider names that appear there.
+_SYNC_PROVIDERS = ("crunchyroll", "netflix", "anilist_postgres")
+
+# Lookback window for the failure-rate/history section — long enough to show a real
+# pattern, short enough that a since-fixed problem ages out of view on its own.
+DATA_QUALITY_FAILURE_WINDOW_DAYS = 30
+
+
+def _data_quality_signals() -> dict:
+    """Read-only aggregation for issue #202's admin Data Quality tab. Every section
+    here is computed from tables/columns that already exist — sync_log,
+    library_entries, recommendation_scores, personal_notes — nothing here is new
+    tracking infrastructure, and nothing here writes anything back (display only,
+    same contract as _instance_health() above).
+
+    Four sections, matching #202's acceptance criteria:
+
+    1. last_sync_by_provider: per (user_id, provider), the most recent full_sync/
+       force_full_resync run at which that provider's step succeeded
+       (`last_ok_at`), plus the status/timestamp of the single most recent attempt
+       regardless of outcome (`last_attempt_at`/`last_attempt_status`). Providers
+       are read out of sync_log.steps rather than tracked in any new column — a
+       provider a user has never configured (no CR/Netflix credentials) only ever
+       shows up with a 'skipped' status, never 'ok'/'error', and the template
+       renders that as "not configured".
+
+    2. failure_history: for each user, sync_log rows of type full_sync/
+       force_full_resync from the last DATA_QUALITY_FAILURE_WINDOW_DAYS days,
+       aggregated into a total/failed run count and failure rate, plus the
+       individual failed runs (most recent 10) for drill-down.
+
+    3. orphaned_personal_notes: personal_notes rows with no matching
+       library_entries row for the same (user_id, anime_id). This should be
+       impossible in steady state — personal_notes is meant to always describe an
+       anime that's actually in the user's library, see every join against it
+       elsewhere in this file (e.g. the /notes and /library routes) — but nothing
+       at the DB level enforces it, so a library_entries row deleted out from
+       under it (an AniList-side removal synced locally) would leave exactly this
+       kind of orphan behind.
+
+    4. stale_recommendations: recommendation_scores rows (dismissed = false) for
+       an anime_id that NOW has a matching library_entries row. This is
+       deliberately the inverse of "no matching library_entries row" — unlike
+       personal_notes, recommendation_scores candidates are only ever generated
+       for anime NOT already in the user's library (see
+       scripts/run_recommender.py's fetch_recommendation_candidates/
+       get_library_ids, which explicitly excludes every anime_id already in
+       library_entries, any status, before scoring). So "no matching
+       library_entries row" is true of essentially every recommendation_scores
+       row by design and would be pure noise here — the actually-orphaned case is
+       the opposite: a candidate the user has since acted on (added to their
+       library) that score_and_store() never removes, since it only upserts on
+       each weekly re-run rather than reacting to library changes in between.
+       See the PR for #202 for this explicit interpretation note.
+    """
+    # ── 1. Last successful sync per provider ────────────────────────────────────
+    sync_step_rows = db.fetchall(
+        """
+        SELECT user_id, run_at, steps
+        FROM sync_log
+        WHERE type IN ('full_sync', 'force_full_resync') AND steps IS NOT NULL
+        ORDER BY user_id, run_at DESC
+        """
+    )
+    last_sync_by_provider: dict[int, dict[str, dict]] = {}
+    for row in sync_step_rows:
+        per_provider = last_sync_by_provider.setdefault(row["user_id"], {})
+        for step in row["steps"] or []:
+            provider = step.get("service")
+            if provider not in _SYNC_PROVIDERS:
+                continue
+            entry = per_provider.setdefault(provider, {})
+            # Rows arrive newest-first per user, so the first one seen for a given
+            # provider is that provider's most recent attempt.
+            if "last_attempt_at" not in entry:
+                entry["last_attempt_at"] = row["run_at"]
+                entry["last_attempt_status"] = step.get("status")
+            if step.get("status") == "ok" and "last_ok_at" not in entry:
+                entry["last_ok_at"] = row["run_at"]
+
+    # ── 2. Recent sync failure rate/history ─────────────────────────────────────
+    window_start = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_FAILURE_WINDOW_DAYS)
+    recent_runs = db.fetchall(
+        """
+        SELECT user_id, run_at, status, error_msg, type
+        FROM sync_log
+        WHERE type IN ('full_sync', 'force_full_resync') AND run_at >= %s
+        ORDER BY user_id, run_at DESC
+        """,
+        (window_start,),
+    )
+    failure_history: dict[int, dict] = {}
+    for row in recent_runs:
+        agg = failure_history.setdefault(row["user_id"], {"total": 0, "failed": 0, "failures": []})
+        agg["total"] += 1
+        if row["status"] == "error":
+            agg["failed"] += 1
+            agg["failures"].append(row)
+    for agg in failure_history.values():
+        agg["failure_rate"] = (agg["failed"] / agg["total"]) if agg["total"] else 0.0
+        agg["failures"] = agg["failures"][:10]
+
+    # ── 3. Orphaned personal_notes ───────────────────────────────────────────────
+    orphaned_personal_notes = db.fetchall(
+        """
+        SELECT pn.id, pn.user_id, u.email AS user_email, pn.anime_id,
+               a.title_romaji, pn.updated_at
+        FROM personal_notes pn
+        LEFT JOIN library_entries le ON le.user_id = pn.user_id AND le.anime_id = pn.anime_id
+        LEFT JOIN users u ON u.id = pn.user_id
+        LEFT JOIN anime a ON a.id = pn.anime_id
+        WHERE le.id IS NULL
+        ORDER BY pn.updated_at DESC
+        """
+    )
+
+    # ── 4. Stale recommendation_scores (see docstring for why this is inverted) ─
+    stale_recommendations = db.fetchall(
+        """
+        SELECT rs.id, rs.user_id, u.email AS user_email, rs.anime_id,
+               a.title_romaji, rs.computed_at, le.status AS library_status
+        FROM recommendation_scores rs
+        JOIN library_entries le ON le.user_id = rs.user_id AND le.anime_id = rs.anime_id
+        LEFT JOIN users u ON u.id = rs.user_id
+        LEFT JOIN anime a ON a.id = rs.anime_id
+        WHERE rs.dismissed = false
+        ORDER BY rs.computed_at DESC
+        """
+    )
+
+    # ── Drift candidates ─────────────────────────────────────────────────────────
+    drift_threshold = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_DRIFT_DAYS)
+    drift_candidates = db.fetchall(
+        """
+        SELECT le.id, le.user_id, u.email AS user_email, le.anime_id,
+               a.title_romaji, le.status, le.anilist_updated_at, le.synced_at
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN users u ON u.id = le.user_id
+        WHERE le.status = ANY(%s)
+          AND le.anilist_updated_at IS NOT NULL
+          AND le.anilist_updated_at < %s
+        ORDER BY le.anilist_updated_at ASC
+        """,
+        (list(_DRIFT_STATUSES), drift_threshold),
+    )
+
+    return {
+        "providers": _SYNC_PROVIDERS,
+        "last_sync_by_provider": last_sync_by_provider,
+        "failure_history": failure_history,
+        "failure_window_days": DATA_QUALITY_FAILURE_WINDOW_DAYS,
+        "orphaned_personal_notes": orphaned_personal_notes,
+        "stale_recommendations": stale_recommendations,
+        "drift_candidates": drift_candidates,
+        "drift_threshold_days": DATA_QUALITY_DRIFT_DAYS,
     }
 
 
@@ -1676,6 +1865,7 @@ def admin_page(request: Request, saved: str = ""):
         return denied
 
     instance_health = _instance_health()
+    data_quality = _data_quality_signals()
 
     # Sync schedule (issue #96) — moved here from Settings since it's instance-wide,
     # not per-user. Same instance_config fields _apply_schedule() reads.
@@ -1753,6 +1943,7 @@ def admin_page(request: Request, saved: str = ""):
         "admin.html",
         {
             "instance_health": instance_health,
+            "data_quality": data_quality,
             "invites": invites,
             "users": users_view,
             "google_status": _provider_status("google"),
@@ -2373,6 +2564,86 @@ def save_rewatch_note(
     return RedirectResponse(url=f"/anime/{anime_id}/notes?back={back}", status_code=303)
 
 
+def _get_episode_note(user_id: int, anime_id: int, episode_number: int) -> str:
+    """Fetch the note text for one episode (issue #210), or '' if none exists yet.
+    Deliberately a single lookup rather than _get_rewatch_notes' whole-range list —
+    an anime can have hundreds of episodes, so the card only ever asks for the one
+    episode it currently needs (the progress-stepper's current value) instead of
+    pre-fetching a blank-filled row per episode."""
+    row = db.fetchone(
+        "SELECT note FROM episode_notes WHERE user_id = %s AND anime_id = %s AND episode_number = %s",
+        (user_id, anime_id, episode_number),
+    )
+    return row["note"] if row else ""
+
+
+def _save_episode_note(user_id: int, anime_id: int, episode_number: int, note: str) -> bool:
+    """Attach a note to one specific episode (issue #210) — same shape/rules as
+    _save_rewatch_note. Only valid for an episode that's actually been watched —
+    episode_number must be between 1 and the user's current library_entries.progress
+    for this anime, inclusive. Blank note deletes any existing row for that episode.
+    Returns True if the write was applied, False if episode_number was out of range
+    (no library entry, or noting an episode not yet reached)."""
+    if episode_number < 1:
+        return False
+
+    entry = db.fetchone(
+        "SELECT progress FROM library_entries WHERE anime_id = %s AND user_id = %s",
+        (anime_id, user_id),
+    )
+    if not entry or not entry["progress"] or episode_number > entry["progress"]:
+        return False
+
+    note_val = note.strip()
+    if note_val:
+        db.execute(
+            """
+            INSERT INTO episode_notes (user_id, anime_id, episode_number, note)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, anime_id, episode_number) DO UPDATE SET
+                note = EXCLUDED.note,
+                updated_at = now()
+            """,
+            (user_id, anime_id, episode_number, note_val),
+        )
+    else:
+        db.execute(
+            "DELETE FROM episode_notes WHERE user_id = %s AND anime_id = %s AND episode_number = %s",
+            (user_id, anime_id, episode_number),
+        )
+    return True
+
+
+@app.get("/api/anime/{anime_id}/episode-notes/{episode_number}")
+def get_episode_note_api(anime_id: int, episode_number: int, request: Request):
+    """Read-only lookup backing the note popover's prefill and the auto-suggest
+    prompt's "does this episode already have a note?" check (see script.js) —
+    inline, JSON, no page navigation, unlike rewatch notes' whole-page form."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+    return JSONResponse({"note": _get_episode_note(user["id"], anime_id, episode_number)})
+
+
+@app.post("/api/anime/{anime_id}/episode-notes/{episode_number}")
+async def save_episode_note_api(anime_id: int, episode_number: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    note = body.get("note")
+    if note is None:
+        note = ""
+    if not isinstance(note, str):
+        return JSONResponse({"error": "note must be a string"}, status_code=400)
+
+    applied = _save_episode_note(user["id"], anime_id, episode_number, note)
+    if not applied:
+        return JSONResponse({"error": "episode not yet watched"}, status_code=400)
+    return JSONResponse({"ok": True, "note": note.strip()})
+
+
 _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
                    "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
 
@@ -2799,6 +3070,12 @@ def settings_page(
         ),
     }
 
+    # Issue #204 — same GIT_SHA value the admin-only Operability tab already
+    # surfaces as plain text (_instance_health's build_version), reused here as a
+    # real link to the commit on GitHub so every user, not just admins, can see
+    # exactly what's deployed.
+    build_version = _build_version()
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2809,6 +3086,8 @@ def settings_page(
             "languages": i18n.SUPPORTED_LOCALES,
             "language_labels": i18n.LOCALE_LABELS,
             "last_synced": last_synced,
+            "build_version": build_version,
+            "build_commit_url": f"{GITHUB_REPO_URL}/commit/{build_version}" if build_version else None,
             "account": {
                 "has_password": bool(user["password_hash"]),
                 "google_linked": bool(user["google_id"]),
@@ -4513,6 +4792,156 @@ def search(request: Request, q: str = ""):
     )
 
 
+# ── Collections (issue #200) ────────────────────────────────────────────────────
+# Named, saved filter combinations over the library view's existing tag/status/
+# score/format/season/rewatch/sort controls — no new organizing primitive, no new
+# per-anime relationship. A collection is a shortcut to a filter *state*; applying
+# one just re-drives the same client-side filter controls a user would click by
+# hand (see library.html/script.js), it never looks up which anime "belong" to it.
+COLLECTION_FILTER_KEYS = {"format", "season", "tag", "score", "rewatch", "sort", "status", "q"}
+COLLECTION_NAME_MAX_LEN = 100
+
+
+def _sanitize_collection_filters(raw) -> dict:
+    """Whitelist to exactly the library view's own filter/sort/search keys — a
+    collection stores filter criteria only, never anime ids or anything from
+    personal_notes. Every value is coerced to a stripped str since that's what the
+    client-side filter functions compare against (button dataset values and select
+    option values are always strings)."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key in COLLECTION_FILTER_KEYS:
+        val = raw.get(key)
+        if val is None:
+            continue
+        val = str(val).strip()
+        if val:
+            out[key] = val
+    return out
+
+
+@app.get("/api/collections")
+def list_collections(request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    rows = db.fetchall(
+        "SELECT id, name, filters FROM collections WHERE user_id = %s ORDER BY name",
+        (user["id"],),
+    )
+    return JSONResponse({"items": [dict(r) for r in rows]})
+
+
+@app.post("/api/collections")
+async def create_collection(request: Request):
+    """Save the library view's current active filter/sort state as a named
+    collection."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if len(name) > COLLECTION_NAME_MAX_LEN:
+        return JSONResponse({"error": "name too long"}, status_code=400)
+    filters = _sanitize_collection_filters(body.get("filters"))
+
+    existing = db.fetchone(
+        "SELECT id FROM collections WHERE user_id = %s AND name = %s",
+        (user["id"], name),
+    )
+    if existing:
+        return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+
+    try:
+        row = db.execute_returning(
+            """
+            INSERT INTO collections (user_id, name, filters)
+            VALUES (%s, %s, %s::jsonb)
+            RETURNING id, name, filters
+            """,
+            (user["id"], name, json.dumps(filters)),
+        )
+    except psycopg2.errors.UniqueViolation:
+        # Backstop for a same-name race against the pre-check above — the UNIQUE
+        # (user_id, name) constraint is the real guarantee, this just turns it
+        # into the same clean 409 instead of a 500.
+        return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+
+    return JSONResponse({"ok": True, "collection": dict(row)})
+
+
+@app.patch("/api/collections/{collection_id}")
+async def update_collection(collection_id: int, request: Request):
+    """Rename and/or re-save the filter criteria of an existing collection —
+    scoped to the owning user like every other personal-layer write."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    sets = []
+    params = []
+
+    if "name" in body:
+        name = (body.get("name") or "").strip()
+        if not name:
+            return JSONResponse({"error": "name required"}, status_code=400)
+        if len(name) > COLLECTION_NAME_MAX_LEN:
+            return JSONResponse({"error": "name too long"}, status_code=400)
+        dup = db.fetchone(
+            "SELECT id FROM collections WHERE user_id = %s AND name = %s AND id != %s",
+            (user["id"], name, collection_id),
+        )
+        if dup:
+            return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+        sets.append("name = %s")
+        params.append(name)
+
+    if "filters" in body:
+        filters = _sanitize_collection_filters(body.get("filters"))
+        sets.append("filters = %s::jsonb")
+        params.append(json.dumps(filters))
+
+    if not sets:
+        return JSONResponse({"error": "nothing to update"}, status_code=400)
+
+    sets.append("updated_at = now()")
+    params.extend([collection_id, user["id"]])
+
+    try:
+        row = db.execute_returning(
+            f"UPDATE collections SET {', '.join(sets)} WHERE id = %s AND user_id = %s "
+            "RETURNING id, name, filters",
+            tuple(params),
+        )
+    except psycopg2.errors.UniqueViolation:
+        return JSONResponse({"error": "a collection with that name already exists"}, status_code=409)
+
+    if not row:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"ok": True, "collection": dict(row)})
+
+
+@app.delete("/api/collections/{collection_id}")
+def delete_collection(collection_id: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    row = db.execute_returning(
+        "DELETE FROM collections WHERE id = %s AND user_id = %s RETURNING id",
+        (collection_id, user["id"]),
+    )
+    if not row:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/", response_class=HTMLResponse)
 def library(request: Request, response: Response, status: str = None):
     user, denied = _require_user(request)
@@ -4548,7 +4977,8 @@ def library(request: Request, response: Response, status: str = None):
             pn.notes,
             pn.watch_next_priority,
             next_ep.episode AS next_episode,
-            next_ep.airing_at AS next_airing_at
+            next_ep.airing_at AS next_airing_at,
+            (en.note IS NOT NULL) AS has_episode_note
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
@@ -4559,6 +4989,8 @@ def library(request: Request, response: Response, status: str = None):
             ORDER BY airing_at
             LIMIT 1
         ) next_ep ON true
+        LEFT JOIN episode_notes en
+            ON en.anime_id = a.id AND en.user_id = le.user_id AND en.episode_number = le.progress
         WHERE le.status = %s AND le.user_id = %s
         ORDER BY le.score DESC NULLS LAST, a.title_romaji
         """,
@@ -4597,6 +5029,20 @@ def library(request: Request, response: Response, status: str = None):
             entry["next_airing_label"] = None
         entries.append(entry)
 
+    collection_rows = db.fetchall(
+        "SELECT id, name, filters FROM collections WHERE user_id = %s ORDER BY name",
+        (user["id"],),
+    )
+    # Same pattern as base.html's window.I18N (issue #147): a small JSON payload
+    # embedded via a `<script>` + `|safe`, with `<` escaped so a collection name
+    # containing e.g. "</script>" can never break out of the block it's embedded
+    # in. Jinja's normal HTML-attribute autoescaping doesn't apply inside a
+    # <script> body, so this can't rely on that the way an ordinary `{{ }}` would.
+    collections_json = json.dumps(
+        [{"id": c["id"], "name": c["name"], "filters": c["filters"]} for c in collection_rows],
+        ensure_ascii=False,
+    ).replace("<", "\\u003c")
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -4604,6 +5050,7 @@ def library(request: Request, response: Response, status: str = None):
             "entries": entries,
             "statuses": statuses,
             "active_status": active_status,
+            "collections_json": collections_json,
         },
     )
 
