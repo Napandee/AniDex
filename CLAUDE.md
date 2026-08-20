@@ -28,6 +28,14 @@ it all into one self-hosted page.
   explicit scope decision — not in scope yet.
 - In-library search, plus a quick-add-by-title lookup against AniList (not a full catalog
   browse UI — see Out of scope below)
+- Streaming Coverage (issue #182, milestone/tracking issue #22): per-user "services I
+  own" input (`user_streaming_services`, edited from Settings), scored against
+  Watching/Planning `library_entries` by episodes-remaining as marginal-value
+  coverage ("adding service X would unlock N more episodes") on its own `/streaming`
+  page, with a small summary card cross-linked from `/stats`. Region-aware
+  availability, a "cancel candidates" inverted framing, household aggregate view, and
+  set-cover framing were all considered in #22's brainstorm and deliberately deferred
+  past v1 — see #22 for the full list.
 
 **Out of scope — do not build these:**
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
@@ -52,17 +60,23 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
 - **AniList-sourced** (`anime`, `library_entries`, `airing_schedule_cache`,
   `anilist_title_search_cache`) — fully rebuildable by the sync job. Never hand-edit rows
   in these tables.
-- **Personal layer** (`personal_notes`, `rewatch_notes`, `recommendation_scores`) — the
-  actual reason this app exists. Sync jobs must never write to `personal_notes` or
-  `rewatch_notes`; `recommendation_scores` is rebuilt by the recommender job but must
-  preserve the `dismissed` flag across rebuilds.
+- **Personal layer** (`personal_notes`, `rewatch_notes`, `recommendation_scores`,
+  `user_streaming_services`) — the actual reason this app exists. Sync jobs must never
+  write to `personal_notes` or `rewatch_notes`; `recommendation_scores` is rebuilt by
+  the recommender job but must preserve the `dismissed` flag across rebuilds.
+  `user_streaming_services` (issue #182) is a per-user "services I own" set, edited
+  from Settings and scored against Watching/Planning `library_entries` by
+  episodes-remaining on the `/streaming` page — `service` is free TEXT validated
+  against `app/main.py`'s `STREAMING_SITES` allowlist in application code (same
+  allowlist that already filters `anime.external_links`), not a DB-level CHECK/FK.
 - **Auth/instance** (`users`, `invites`, `instance_config`, `password_resets`,
   `notified_episodes`, `admin_audit_log`) — added for multi-user (Aug 2026). Neither
   AniList-sourced nor personal-layer; sync jobs never touch these either. `library_entries`
   / `personal_notes` / `recommendation_scores` / `cr_sync_state` / `netflix_sync_state` /
-  `sync_log` / `settings` / `notified_episodes` / `status_sync_outbox` all carry a
-  `user_id` scoping every row to one account. `admin_audit_log` is instance-wide, not
-  per-user — it records which admin took an action, not whose data it affected.
+  `sync_log` / `settings` / `notified_episodes` / `status_sync_outbox` /
+  `user_streaming_services` all carry a `user_id` scoping every row to one account.
+  `admin_audit_log` is instance-wide, not per-user — it records which admin took an
+  action, not whose data it affected.
 
 ## Architecture
 

@@ -1779,6 +1779,56 @@ body.auth-page main {
   .drop-patterns-body { grid-template-columns: 1fr; }
 }
 
+/* ── Streaming Coverage (issue #182) ─────────────────────────────────────── */
+
+.streaming-page { max-width: 720px; margin: 0 auto; }
+
+.streaming-disclosure {
+  font-size: 0.78rem;
+  color: var(--t7);
+  margin: -0.5rem 0 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+}
+.streaming-disclosure-ts { color: var(--t6); }
+
+.streaming-owned-list { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.4rem; }
+
+.streaming-services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0.75rem 0 1rem;
+}
+.streaming-service-checkbox { font-size: 0.82rem; }
+.streaming-manage-link { margin-top: 0.75rem; }
+.streaming-manage-link a { font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+.streaming-manage-link a:hover { text-decoration: underline; }
+
+.streaming-rank-list { margin-top: 0.5rem; }
+.streaming-rank-label { font-weight: 600; color: var(--t2); }
+.streaming-rank-bar-fill { background: var(--accent); }
+.streaming-rank-value { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; }
+
+.streaming-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--t6);
+}
+.streaming-summary-item strong { color: var(--t3); }
+
+/* ── Stats: Streaming Coverage summary card (issue #182) ─────────────────── */
+
+.streaming-card-line { font-size: 0.85rem; color: var(--t3); margin: 0 0 0.75rem; }
+.streaming-card-cta { font-size: 0.82rem; color: var(--accent); text-decoration: none; }
+.streaming-card-cta:hover { text-decoration: underline; }
+
 /* ── Recommendations ─────────────────────────────────────────────────────── */
 
 .page-header { margin-bottom: 2rem; }

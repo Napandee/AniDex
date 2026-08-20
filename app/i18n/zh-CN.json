@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "覆盖已保存。",
   "sync_cr_override_deleted": "覆盖已移除。",
 
+  "streaming_services_title": "你已拥有的流媒体服务",
+  "streaming_services_help": "用于计算流媒体覆盖页面上的边际价值排名 — 请勾选你当前已订阅的每项服务。",
+  "streaming_services_saved": "流媒体服务已保存。",
+  "streaming_services_save_btn": "保存服务",
+  "streaming_services_view_link": "查看流媒体覆盖 →",
+
   "sync_history_title": "同步历史",
   "sync_history_col_time": "时间",
   "sync_history_col_type": "类型",
@@ -334,6 +340,13 @@
   "stats_chart_rewatch_dist": "重刷次数分布",
   "stats_rewatch_list_empty": "暂无重刷记录——再次观看的作品会显示在这里。",
   "stats_rewatch_dist_empty": "完成一部作品后即可在此查看重刷统计。",
+
+  "stats_streaming_card_title": "流媒体覆盖",
+  "stats_streaming_no_owned": "设置你已拥有的流媒体服务，即可查看哪项服务能解锁你积压剧集中最多的内容。",
+  "stats_streaming_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖。",
+  "stats_streaming_top_line_singular": "添加 {service} 将从你的积压剧集中解锁 {count} 集。",
+  "stats_streaming_top_line_plural": "添加 {service} 将从你的积压剧集中解锁 {count} 集。",
+  "stats_streaming_cta": "查看完整明细 →",
 
   "title_recommendations": "推荐 — Anime Tracker",
   "rec_page_title": "为你推荐",
@@ -503,5 +516,28 @@
   "season_spring": "春季",
   "season_summer": "夏季",
   "season_fall": "秋季",
-  "js_season_label": "{year}年{season}"
+  "js_season_label": "{year}年{season}",
+
+  "streaming_page_title": "流媒体覆盖",
+  "streaming_page_sub": "按剩余集数排序，显示哪项你尚未拥有的流媒体服务能解锁最多的“观看中/计划中”积压剧集。",
+  "streaming_disclosure": "AniList 的流媒体链接由社区维护，可能滞后于实际可用情况 — 请仅作参考，而非保证。",
+
+  "streaming_owned_title": "你拥有的服务",
+  "streaming_owned_empty": "你还没有设置自己拥有哪些流媒体服务。",
+  "streaming_owned_manage_link": "前往设置管理 →",
+
+  "streaming_ranked_title": "如果你添加…",
+  "streaming_ranked_empty_no_owned": "请在设置中填写你已拥有的流媒体服务，以查看个性化的覆盖情况。",
+  "streaming_ranked_empty_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖 — 没有可解锁的内容了。",
+  "streaming_already_covered_label": "已被你拥有的服务覆盖",
+  "streaming_backlog_remaining_label": "“观看中/计划中”剩余集数总计",
+
+  "streaming_episodes_singular": "{count} 集",
+  "streaming_episodes_plural": "{count} 集",
+  "streaming_titles_singular": "{count} 部作品",
+  "streaming_titles_plural": "{count} 部作品",
+
+  "streaming_footprint_title": "历史足迹（已完成 / 已弃坑）",
+  "streaming_footprint_desc": "仅供参考 — 不影响上方的排名。",
+  "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。"
 }

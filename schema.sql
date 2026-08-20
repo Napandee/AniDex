@@ -382,6 +382,20 @@ CREATE TABLE netflix_sync_state (
 );
 
 -- =========================================================================
+-- STREAMING COVERAGE (issue #182) — "services I own", scored against the library by
+-- episodes-remaining. See migrations/016_streaming_coverage.sql for the schema-choice
+-- rationale (free TEXT service name validated against app/main.py's STREAMING_SITES
+-- allowlist in application code, not a DB-level CHECK/FK).
+-- =========================================================================
+
+CREATE TABLE user_streaming_services (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    service    TEXT NOT NULL,
+    added_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, service)
+);
+
+-- =========================================================================
 -- PER-USER SETTINGS (timezone, credentials, sync schedule — key/value for extensibility)
 -- =========================================================================
 

@@ -2557,6 +2557,136 @@ def queue(request: Request, status: str = None):
     )
 
 
+# ── Streaming Coverage (issue #182) ─────────────────────────────────────────────
+# V2 marginal-value framing chosen over a raw per-service % (see issue #22's
+# brainstorm, idea 3): for each service the user does NOT already own, how many
+# additional Watching/Planning episodes-remaining would become newly covered by
+# adding it. An entry already reachable via a service the user owns doesn't count
+# toward any other service's marginal total — it's already unlocked, so adding a
+# second service that also carries it wouldn't unlock anything new.
+#
+# Weighted by list status (issue #22 idea 4, carried into #182 as a hard
+# requirement): only WATCHING/PLANNING drive the marginal-value ranking.
+# COMPLETED/DROPPED entries are tallied separately as "historical footprint" —
+# informational only (which services carried what you've already watched/dropped),
+# never blended into the marginal-value numbers.
+_STREAMING_ACTIVE_STATUSES = {"WATCHING", "PLANNING"}
+
+
+def _episodes_remaining(progress, total_episodes) -> int:
+    """total_episodes is null for anything AniList doesn't have a final episode
+    count for yet (RELEASING with an unannounced order, e.g. One Piece). Treat that
+    case as "at least 1 episode at stake" rather than 0 — an ongoing show with an
+    unknown remaining count still represents real marginal value, and silently
+    scoring it 0 would make every currently-airing un-owned-service title
+    invisible to this ranking."""
+    progress = progress or 0
+    if total_episodes:
+        return max(total_episodes - progress, 0)
+    return 1
+
+
+def _compute_streaming_coverage(user_id: int) -> dict:
+    """Shared by GET /streaming and GET /stats (small summary card) — see
+    _export_user_library for the same one-function/two-callers precedent (#90)."""
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+
+    rows = db.fetchall(
+        """
+        SELECT le.status, le.progress, a.episodes, a.external_links
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status IN ('WATCHING', 'PLANNING', 'COMPLETED', 'DROPPED')
+        """,
+        (user_id,),
+    )
+
+    marginal: dict[str, dict] = {}
+    footprint: dict[str, dict] = {}
+    total_backlog_remaining = 0
+    already_covered_remaining = 0
+
+    for row in rows:
+        sites = {
+            lnk.get("site") for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        }
+
+        if row["status"] in _STREAMING_ACTIVE_STATUSES:
+            remaining = _episodes_remaining(row["progress"], row["episodes"])
+            total_backlog_remaining += remaining
+            if sites & owned:
+                already_covered_remaining += remaining
+            else:
+                for site in sites - owned:
+                    bucket = marginal.setdefault(site, {"episodes": 0, "titles": 0})
+                    bucket["episodes"] += remaining
+                    bucket["titles"] += 1
+        else:
+            # Historical footprint (COMPLETED/DROPPED) — title counts only, on every
+            # site the title is available on (owned or not). Not weighted by
+            # episodes-remaining (a completed show has ~0 remaining, which would
+            # make this section trivially empty) and never merged into `marginal`.
+            for site in sites:
+                bucket = footprint.setdefault(site, {"titles": 0})
+                bucket["titles"] += 1
+
+    ranked = sorted(
+        ({"service": s, **v} for s, v in marginal.items()),
+        key=lambda x: (-x["episodes"], -x["titles"], x["service"]),
+    )
+    footprint_ranked = sorted(
+        ({"service": s, **v} for s, v in footprint.items()),
+        key=lambda x: (-x["titles"], x["service"]),
+    )
+
+    ts_row = db.fetchone(
+        """
+        SELECT MAX(a.last_synced_at) AS ts
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+        """,
+        (user_id,),
+    )
+    last_synced = ts_row["ts"].isoformat() if ts_row and ts_row["ts"] else None
+
+    return {
+        "owned": sorted(owned),
+        "ranked": ranked,
+        "footprint": footprint_ranked,
+        "total_backlog_remaining": total_backlog_remaining,
+        "already_covered_remaining": already_covered_remaining,
+        "last_synced": last_synced,
+    }
+
+
+@app.get("/streaming", response_class=HTMLResponse)
+def streaming_page(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    coverage = _compute_streaming_coverage(user["id"])
+
+    return templates.TemplateResponse(
+        request,
+        "streaming.html",
+        {
+            "owned_services": coverage["owned"],
+            "ranked": coverage["ranked"],
+            "footprint": coverage["footprint"],
+            "total_backlog_remaining": coverage["total_backlog_remaining"],
+            "already_covered_remaining": coverage["already_covered_remaining"],
+            "last_synced": coverage["last_synced"],
+        },
+    )
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request, link_error: str = "", password_error: str = "", saved: str = "",
@@ -2588,6 +2718,14 @@ def settings_page(
     # session token into the rendered page.
     active_sessions = sessions.list_active_sessions(user["id"], request.session.get("sid"))
 
+    # Issue #182 — "services I own", edited from this tab, scored against the
+    # library on the separate /streaming page.
+    owned_streaming_services = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user["id"],)
+        )
+    }
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2614,6 +2752,8 @@ def settings_page(
             "twofa_error": twofa_error,
             "cr_overrides": cr_overrides,
             "active_sessions": active_sessions,
+            "all_streaming_services": sorted(STREAMING_SITES),
+            "owned_streaming_services": owned_streaming_services,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
@@ -2766,6 +2906,37 @@ def settings_delete_cr_override(request: Request, override_id: int):
         (override_id, user["id"]),
     )
     return RedirectResponse(url="/settings?saved=cr_override_deleted", status_code=303)
+
+
+@app.post("/settings/streaming-services")
+async def settings_update_streaming_services(request: Request):
+    """Issue #182 — replaces this user's full "services I own" set in one submit
+    (a checkbox group over STREAMING_SITES, not a one-at-a-time add/delete flow like
+    cr-overrides above) — read via request.form().getlist() rather than a typed
+    FastAPI Form(list[str]) parameter, since the field name repeats once per checked
+    box and this sidesteps any FastAPI/Starlette version-specific behavior around
+    that. Silently drops any submitted value not in STREAMING_SITES (a tampered
+    request, or a site since removed from the allowlist) rather than erroring —
+    same allowlist enforcement point as every other STREAMING_SITES filter in this
+    file, just on write instead of read."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    form = await request.form()
+    selected = sorted({s for s in form.getlist("service") if s in STREAMING_SITES})
+
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM user_streaming_services WHERE user_id = %s", (user["id"],))
+            for service in selected:
+                cur.execute(
+                    "INSERT INTO user_streaming_services (user_id, service) VALUES (%s, %s)",
+                    (user["id"], service),
+                )
+        conn.commit()
+
+    return RedirectResponse(url="/settings?saved=streaming_services", status_code=303)
 
 
 def _parse_csv_import_summary(stdout: str) -> dict | None:
@@ -3581,7 +3752,24 @@ def stats(request: Request):
     user, denied = _require_user(request)
     if denied:
         return denied
-    return templates.TemplateResponse(request, "stats.html")
+
+    # Issue #182 — small summary card only (top un-owned-service pick), not the
+    # full ranked list — that stays on the dedicated /streaming page. Computed
+    # server-side here rather than via its own fetch()/API endpoint like the rest
+    # of this page's charts: it's a single top-of-list lookup, not worth a second
+    # round trip, and unlike the chart data below it doesn't need client-side
+    # filtering (year/season pickers etc).
+    coverage = _compute_streaming_coverage(user["id"])
+    streaming_top = coverage["ranked"][0] if coverage["ranked"] else None
+
+    return templates.TemplateResponse(
+        request,
+        "stats.html",
+        {
+            "streaming_top": streaming_top,
+            "streaming_owned_count": len(coverage["owned"]),
+        },
+    )
 
 
 def _export_user_library(user_id: int) -> list:

@@ -169,6 +169,12 @@
   "sync_cr_override_saved": "Override saved.",
   "sync_cr_override_deleted": "Override removed.",
 
+  "streaming_services_title": "Streaming services you own",
+  "streaming_services_help": "Used to score the marginal-value coverage ranking on the Streaming Coverage page — check every service you currently subscribe to.",
+  "streaming_services_saved": "Streaming services saved.",
+  "streaming_services_save_btn": "Save services",
+  "streaming_services_view_link": "View streaming coverage →",
+
   "sync_history_title": "Sync history",
   "sync_history_col_time": "Time",
   "sync_history_col_type": "Type",
@@ -334,6 +340,13 @@
   "stats_chart_rewatch_dist": "Rewatch distribution",
   "stats_rewatch_list_empty": "No rewatches yet — anything you watch again will show up here.",
   "stats_rewatch_dist_empty": "Complete a title to see rewatch stats here.",
+
+  "stats_streaming_card_title": "Streaming Coverage",
+  "stats_streaming_no_owned": "Set which streaming services you already own to see which one would unlock the most of your backlog.",
+  "stats_streaming_covered": "Your Watching/Planning backlog is already covered by the services you own.",
+  "stats_streaming_top_line_singular": "Adding {service} would unlock {count} more episode from your Watching/Planning backlog.",
+  "stats_streaming_top_line_plural": "Adding {service} would unlock {count} more episodes from your Watching/Planning backlog.",
+  "stats_streaming_cta": "See full breakdown →",
 
   "title_recommendations": "Recommended — Anime Tracker",
   "rec_page_title": "Recommended for you",
@@ -503,5 +516,28 @@
   "season_spring": "Spring",
   "season_summer": "Summer",
   "season_fall": "Fall",
-  "js_season_label": "{season} {year}"
+  "js_season_label": "{season} {year}",
+
+  "streaming_page_title": "Streaming Coverage",
+  "streaming_page_sub": "Which un-owned streaming service would unlock the most of your Watching/Planning backlog, ranked by episodes remaining.",
+  "streaming_disclosure": "AniList's streaming links are community-curated and can lag real availability — treat this as a guide, not a guarantee.",
+
+  "streaming_owned_title": "Services you own",
+  "streaming_owned_empty": "You haven't set which streaming services you own yet.",
+  "streaming_owned_manage_link": "Manage in Settings →",
+
+  "streaming_ranked_title": "If you added…",
+  "streaming_ranked_empty_no_owned": "Set which streaming services you already own in Settings to see personalized coverage.",
+  "streaming_ranked_empty_covered": "Your Watching/Planning backlog is already covered by the services you own — nothing left to unlock.",
+  "streaming_already_covered_label": "Already covered by services you own",
+  "streaming_backlog_remaining_label": "Total Watching/Planning episodes remaining",
+
+  "streaming_episodes_singular": "{count} episode",
+  "streaming_episodes_plural": "{count} episodes",
+  "streaming_titles_singular": "{count} title",
+  "streaming_titles_plural": "{count} titles",
+
+  "streaming_footprint_title": "Historical footprint (Completed / Dropped)",
+  "streaming_footprint_desc": "Informational only — doesn't affect the ranking above.",
+  "streaming_footprint_empty": "No Completed or Dropped titles with streaming links yet."
 }

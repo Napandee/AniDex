@@ -44,6 +44,24 @@
     <p class="wrapup-empty" id="wrapup-empty" hidden>Nothing completed for this year yet.</p>
   </div>
 
+  {# Issue #182 — small summary card only, linking out to the dedicated /streaming
+     page for the full ranked breakdown (not a duplicate of it here). Rendered
+     server-side directly (unlike the charts below, which fetch /api/stats) since
+     it's a single top-of-list lookup already computed in the /stats route. #}
+  <div class="chart-card chart-card--wide" id="streaming-coverage-card">
+    <h2 class="chart-title">{{ t('stats_streaming_card_title') }}</h2>
+    {% if streaming_owned_count == 0 %}
+    <p class="streaming-card-line">{{ t('stats_streaming_no_owned') }}</p>
+    {% elif streaming_top %}
+    <p class="streaming-card-line">
+      {% if streaming_top.episodes == 1 %}{{ t('stats_streaming_top_line_singular', service=streaming_top.service, count=streaming_top.episodes) }}{% else %}{{ t('stats_streaming_top_line_plural', service=streaming_top.service, count=streaming_top.episodes) }}{% endif %}
+    </p>
+    {% else %}
+    <p class="streaming-card-line">{{ t('stats_streaming_covered') }}</p>
+    {% endif %}
+    <a href="/streaming" class="streaming-card-cta">{{ t('stats_streaming_cta') }}</a>
+  </div>
+
   <div class="stats-grid">
     <div class="chart-card">
       <h2 class="chart-title">{{ t('stats_chart_status') }}</h2>
