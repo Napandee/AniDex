@@ -263,6 +263,12 @@
   "queue_no_matches": "Sin coincidencias.",
   "queue_rec_match": "coincidencia",
   "queue_resumed_at": "reanudado en el ep {num}",
+  "queue_rewatch_heading": "Pendientes de revisión",
+  "queue_rewatch_sub": "Series completadas hace {months}+ meses, ordenadas de más a menos tiempo transcurrido.",
+  "queue_rewatch_empty": "Nada pendiente de revisión todavía.",
+  "queue_rewatch_finished_singular": "Terminado hace {months} mes",
+  "queue_rewatch_finished_plural": "Terminado hace {months} meses",
+  "queue_rewatch_start_btn": "↺ Revisar",
 
   "notes_title": "Notas — {title} — Anime Tracker",
   "notes_your_score": "Tu puntuación",

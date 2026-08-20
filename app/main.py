@@ -12,7 +12,7 @@ import tempfile
 import threading
 import zipfile
 from collections import Counter
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
 import httpx
@@ -491,6 +491,32 @@ query ($mediaId: Int!) {
 
 VALID_STATUSES = {"WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"}
 STATUS_TO_ANILIST = {"WATCHING": "CURRENT"}
+
+# Issue #191 -- rewatch queue/reminder surface. Time-based trigger: a completed show
+# whose most recent completion (`library_entries.finish_date`) is at least this many
+# months in the past is surfaced as a rewatch candidate. `finish_date` is synced
+# straight from AniList's own `completedAt` (see sync_anilist.py), which AniList
+# updates every time an entry is (re)marked COMPLETED -- including finishing a
+# rewatch -- so this single field already captures "time since last watched all the
+# way through", original watch or rewatch alike, with no separate rewatch-recency
+# check needed. Fixed threshold rather than a per-user setting, deliberately, to
+# keep v1 simple (see issue #191 / #162's scoping notes); 6 months balances "long
+# enough to plausibly want a rewatch" against "the section isn't dominated by every
+# show ever finished".
+REWATCH_REMINDER_MONTHS = 6
+
+
+def rewatch_due(finish_date, months=REWATCH_REMINDER_MONTHS, today=None):
+    """Pure trigger-logic helper for issue #191 -- kept separate from the /queue
+    route so it's unit-testable without a database. Returns True when `finish_date`
+    (a date or None) is far enough in the past to surface a rewatch reminder.
+    30-day months, matching the "N months ago" display the UI derives from the same
+    field -- deliberately approximate, not calendar-exact, consistent with how
+    `months_since` is computed for display in the /queue route below."""
+    if finish_date is None:
+        return False
+    today = today or date.today()
+    return (today - finish_date).days >= months * 30
 
 STREAMING_SITES = {
     "Crunchyroll", "Netflix", "Hulu", "Amazon Prime Video", "HIDIVE",
@@ -2455,6 +2481,48 @@ def queue(request: Request, status: str = None):
         entry["matched"] = matched
         entries.append(entry)
 
+    # Issue #191 -- rewatch reminder section, independent of the PLANNING/PAUSED
+    # tabs above (it's driven by COMPLETED entries, a different slice of the
+    # library entirely). See rewatch_due() for the trigger-logic decision.
+    completed_rows = db.fetchall(
+        """
+        SELECT
+            a.id,
+            a.title_english,
+            a.title_romaji,
+            a.cover_image_url,
+            a.format,
+            a.episodes,
+            a.genres,
+            a.external_links,
+            a.average_score,
+            le.repeat_count,
+            le.finish_date,
+            pn.personal_tags
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
+        WHERE le.status = 'COMPLETED' AND le.user_id = %s AND le.finish_date IS NOT NULL
+        """,
+        (user["id"],),
+    )
+
+    today = date.today()
+    rewatch_entries = []
+    for row in completed_rows:
+        if not rewatch_due(row["finish_date"], today=today):
+            continue
+        entry = dict(row)
+        entry["months_since"] = (today - row["finish_date"]).days // 30
+        entry["streaming_links"] = [
+            lnk for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        ]
+        rewatch_entries.append(entry)
+
+    # Most overdue (oldest finish_date) first.
+    rewatch_entries.sort(key=lambda e: e["finish_date"])
+
     return templates.TemplateResponse(
         request,
         "queue.html",
@@ -2462,6 +2530,8 @@ def queue(request: Request, status: str = None):
             "entries": entries,
             "queue_statuses": queue_statuses,
             "active_status": active_status,
+            "rewatch_entries": rewatch_entries,
+            "rewatch_reminder_months": REWATCH_REMINDER_MONTHS,
         },
     )
 

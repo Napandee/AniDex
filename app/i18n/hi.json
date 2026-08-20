@@ -263,6 +263,12 @@
   "queue_no_matches": "कोई मेल नहीं मिला।",
   "queue_rec_match": "मेल",
   "queue_resumed_at": "एप {num} से फिर शुरू किया",
+  "queue_rewatch_heading": "फिर से देखने लायक",
+  "queue_rewatch_sub": "{months}+ महीने पहले पूरी हुई सीरीज़, सबसे लंबे समय से न देखी गई पहले।",
+  "queue_rewatch_empty": "अभी फिर से देखने लायक कुछ नहीं है।",
+  "queue_rewatch_finished_singular": "{months} महीने पहले पूरी हुई",
+  "queue_rewatch_finished_plural": "{months} महीने पहले पूरी हुई",
+  "queue_rewatch_start_btn": "↺ फिर से देखें",
 
   "notes_title": "नोट्स — {title} — Anime Tracker",
   "notes_your_score": "आपका स्कोर",
