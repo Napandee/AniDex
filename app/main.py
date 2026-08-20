@@ -5226,6 +5226,83 @@ def _compute_seasonal_follow_through(user_id: int) -> dict | None:
     }
 
 
+def _compute_watch_activity_times(user_id: int) -> dict | None:
+    """Hour-of-day / day-of-week watch-activity breakdown for /stats (issue #222),
+    Trakt-style, alongside the existing date-based heatmap (issue #10). Purely a
+    query over library_entries -- no schema change.
+
+    Timestamp choice: anilist_updated_at is the only library_entries column with
+    real time-of-day resolution -- start_date/finish_date are DATE-only, and the
+    schema has no per-episode watch-event log. This measures "when AniList last
+    recorded a change to this entry" (progress, status, or score), not a literal
+    per-episode watch instant -- the closest available proxy for "when a user
+    watched", and the same field _compute_recommendation_outcomes already leans on
+    for similar "when did this happen" reasoning. Unlike that call site though,
+    this function deliberately does NOT fall back to COALESCE(anilist_updated_at,
+    synced_at): synced_at is when *our sync job* ran, not the user, and since sync
+    runs on a fixed schedule, falling back to it here would artificially stack
+    every such entry at the sync cron's hour/weekday and distort the very
+    distribution this chart exists to show. Entries with no anilist_updated_at are
+    simply excluded instead.
+
+    Entries that are still PLANNING with zero progress are excluded too -- for
+    those, anilist_updated_at only reflects "added to my list", not "watched
+    something", so counting them would mix in list-curation activity as if it were
+    viewing activity.
+
+    Timezone: converted to this user's own configured timezone
+    (config.get(user_id, "timezone"), set on Settings -> Preferences) before
+    bucketing, using the exact same ZoneInfo-with-UTC-fallback pattern /upcoming
+    already uses to localize airing_schedule_cache timestamps. Issue #222 says not
+    to introduce a *new* per-user timezone setting for this -- it doesn't need to,
+    since one already exists and /upcoming already establishes how to convert a
+    raw TIMESTAMPTZ with it; that's what "whatever timezone handling the rest of
+    /stats already relies on" means here, not literal UTC. Falls back to UTC on an
+    invalid/unrecognized zone name, same as /upcoming. This means the conversion
+    has to happen in Python against a ZoneInfo, not via a SQL EXTRACT() against
+    the DB session's own timezone -- so day-of-week bucketing below follows
+    Python's datetime.weekday() convention (Monday=0 .. Sunday=6), matching
+    /upcoming's week_grid indexing, not Postgres's EXTRACT(DOW) convention
+    (Sunday=0) that an all-SQL version would have used.
+
+    Returns None when the user has no usable timestamp at all (brand-new account,
+    or every entry excluded by the two filters above) -- the section stays hidden
+    entirely rather than rendering an all-zero chart, same gating pattern as
+    _compute_taste_drift above.
+    """
+    rows = db.fetchall(
+        """
+        SELECT anilist_updated_at
+        FROM library_entries
+        WHERE user_id = %s
+          AND anilist_updated_at IS NOT NULL
+          AND NOT (status = 'PLANNING' AND progress = 0)
+        """,
+        (user_id,),
+    )
+    if not rows:
+        return None
+
+    tz_name = config.get(user_id, "timezone")
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+
+    by_day = [0] * 7    # index 0 = Monday .. 6 = Sunday (datetime.weekday() convention)
+    by_hour = [0] * 24  # index 0..23, local hour
+    for row in rows:
+        local = row["anilist_updated_at"].astimezone(tz)
+        by_day[local.weekday()] += 1
+        by_hour[local.hour] += 1
+
+    return {
+        "total": len(rows),
+        "by_day": by_day,
+        "by_hour": by_hour,
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -5342,6 +5419,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     studio_loyalty = _compute_studio_loyalty(user["id"])  # issue #223, None below the per-studio title threshold
     format_split = _compute_format_watch_time(user["id"])  # issue #224
     seasonal_follow_through = _compute_seasonal_follow_through(user["id"])  # issue #224, None below the sample-size gate
+    watch_activity = _compute_watch_activity_times(user["id"])  # issue #222, None if no usable timestamp yet
 
     # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
     # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
@@ -5367,6 +5445,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "studio_loyalty": studio_loyalty,
         "format_split": format_split,
         "seasonal_follow_through": seasonal_follow_through,
+        "watch_activity": watch_activity,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),
