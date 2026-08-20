@@ -18,11 +18,19 @@ and a recommendation engine scored against your own taste profile.
   fresh instance
 - **Personal notes** — drop reasons, custom tags, freeform notes, queue priority, and
   separate note history per rewatch, none of which AniList has a structured place for
-- **Multi-user** — invite-only accounts on the same instance; an opt-in "also watching"
-  indicator shows who else on the instance has a show in their library, with per-user
-  hidden tags/genres and an anonymize-my-activity option so nothing is surfaced by
-  default. Admins get a tabbed panel for invites, soft user deactivation, an audit log
-  of admin actions, an instance-health readout, and a one-click all-users backup export
+- **Multi-user** — invite-only accounts on the same instance; local email+password login
+  supports optional TOTP-based two-factor authentication, and Settings lets you view and
+  revoke your own active sessions. An opt-in "also watching" indicator shows who else on
+  the instance has a show in their library, with per-user hidden tags/genres and an
+  anonymize-my-activity option so nothing is surfaced by default. Admins get a tabbed
+  panel for invites, soft user deactivation, an audit log of admin actions, an
+  instance-health readout, a data-quality page (sync drift, orphaned rows), and a
+  one-click all-users backup export
+- **Installable** — a Progressive Web App with a mobile-responsive layout, so it can be
+  added to a phone or desktop home screen and opened like a native app
+- **Collections** — save a combination of filters (status, tag, score, format) as a named
+  shortcut on the library view; re-applying it always reflects your library's current
+  state, since it's a saved filter, not a fixed list of shows
 - **Recommendations** — unwatched/planning anime scored against the genres, tags, and
   studios of your highest-rated completed shows; dismiss with a reason, snooze for a
   while, or mark as seen (pushes COMPLETED + rating to AniList). Includes a "new this

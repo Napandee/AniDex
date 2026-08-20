@@ -17,7 +17,16 @@ it all into one self-hosted page.
 - Upcoming-episode view for anything in Watching/Planning status
 - Built-in stats page (watch time, completion rate, score distribution, top genres)
 - Multi-user: local email+password auth by default, Google/Discord OAuth optional
-  per-instance, invite-only signup, admin-managed. See Decisions Made.
+  per-instance, invite-only signup, admin-managed. Optional TOTP-based 2FA for local
+  accounts (issue #83) and a server-side session store with a Settings view/revoke
+  active-sessions list (issue #82, `app/sessions.py`). See Decisions Made.
+- Progressive Web App installability + a mobile-responsive pass (issue #12) — the app
+  can be installed to a device home screen; `app/static/manifest.json` and
+  `service-worker.js`.
+- Collections: named, per-user saved filter combinations over the existing
+  status/tag/score/format filters (issue #200) — a collection stores filter criteria
+  only, never a list of anime ids, so it stays live against the library rather than
+  going stale.
 - Cross-user "also watching" indicator (opt-in per-user hidden tags/genres and
   anonymized-activity controls; nothing surfaced by default) — see `app/privacy.py`.
   Static/on-demand only; shipped as issue #29. Collaborative-filtering
@@ -61,22 +70,30 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `anilist_title_search_cache`) — fully rebuildable by the sync job. Never hand-edit rows
   in these tables.
 - **Personal layer** (`personal_notes`, `rewatch_notes`, `recommendation_scores`,
-  `user_streaming_services`) — the actual reason this app exists. Sync jobs must never
-  write to `personal_notes` or `rewatch_notes`; `recommendation_scores` is rebuilt by
-  the recommender job but must preserve the `dismissed` flag across rebuilds.
-  `user_streaming_services` (issue #182) is a per-user "services I own" set, edited
-  from Settings and scored against Watching/Planning `library_entries` by
+  `user_streaming_services`, `collections`) — the actual reason this app exists. Sync
+  jobs must never write to `personal_notes` or `rewatch_notes`; `recommendation_scores`
+  is rebuilt by the recommender job but must preserve the `dismissed` flag across
+  rebuilds. `user_streaming_services` (issue #182) is a per-user "services I own" set,
+  edited from Settings and scored against Watching/Planning `library_entries` by
   episodes-remaining on the `/streaming` page — `service` is free TEXT validated
   against `app/main.py`'s `STREAMING_SITES` allowlist in application code (same
   allowlist that already filters `anime.external_links`), not a DB-level CHECK/FK.
+  `collections` (issue #200) stores a name plus a JSON filter-criteria blob, never
+  anime ids — applying a collection just re-runs the library filter it saved.
 - **Auth/instance** (`users`, `invites`, `instance_config`, `password_resets`,
-  `notified_episodes`, `admin_audit_log`) — added for multi-user (Aug 2026). Neither
-  AniList-sourced nor personal-layer; sync jobs never touch these either. `library_entries`
-  / `personal_notes` / `recommendation_scores` / `cr_sync_state` / `netflix_sync_state` /
-  `sync_log` / `settings` / `notified_episodes` / `status_sync_outbox` /
-  `user_streaming_services` all carry a `user_id` scoping every row to one account.
+  `notified_episodes`, `admin_audit_log`, `sessions`, `totp_recovery_codes`) — added
+  for multi-user (Aug 2026). Neither AniList-sourced nor personal-layer; sync jobs
+  never touch these either. `library_entries` / `personal_notes` /
+  `recommendation_scores` / `cr_sync_state` / `netflix_sync_state` / `sync_log` /
+  `settings` / `notified_episodes` / `status_sync_outbox` / `user_streaming_services` /
+  `collections` all carry a `user_id` scoping every row to one account.
   `admin_audit_log` is instance-wide, not per-user — it records which admin took an
-  action, not whose data it affected.
+  action, not whose data it affected. `sessions` (issue #82) is the server-side session
+  store layered under Starlette's `SessionMiddleware`: the session cookie only ever
+  carries an opaque `{"sid": ...}`, and this table is the sole place that resolves a
+  sid to a `user_id`, enabling Settings' view/revoke-active-sessions list.
+  `totp_recovery_codes` (issue #83) holds one-time hashed recovery codes per user for
+  optional TOTP 2FA on local accounts; the TOTP secret itself lives on `users.totp_secret`.
 
 ## Architecture
 
@@ -203,16 +220,19 @@ file's own header comment before running it.
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
   all using `SaveMediaListEntry`. Never add further AniList mutations to the app without
   explicit agreement.
-- **MCP server exposure (issue #171):** AniDex exposes an MCP server for external AI
-  clients (Claude Code, self-configured MCP clients) to read a user's own
-  library/notes/stats/recommendation data, authenticated via per-user personal access
-  tokens issued in Settings (GitHub-PAT style — Bearer token, revocable, no OAuth
-  authorization-server role for this app). v1 is read-only; no write-capable MCP tools
-  exist. If write tools are ever added, they must require explicit ID lists — never
-  wildcard or filter-based bulk writes — to bound the blast radius of a single LLM
-  reasoning pass, and that's a deliberate future decision, not assumed here. MCP
-  exposure is a new access surface, not a new AniList write path — it never bypasses
-  the app's own internal endpoints or the guardrail above.
+- **MCP server exposure (issue #171 — decided, not yet built):** no MCP server exists
+  in this repo yet; #171 was closed as a research spike, not an implementation, and
+  this entry pre-commits to the shape it must take *when* it is built, so the decision
+  isn't re-litigated at implementation time. When built, AniDex is to expose an MCP
+  server for external AI clients (Claude Code, self-configured MCP clients) to read a
+  user's own library/notes/stats/recommendation data, authenticated via per-user
+  personal access tokens issued in Settings (GitHub-PAT style — Bearer token,
+  revocable, no OAuth authorization-server role for this app). v1 must be read-only;
+  no write-capable MCP tools until a later, deliberate decision, and if write tools are
+  ever added, they must require explicit ID lists — never wildcard or filter-based bulk
+  writes — to bound the blast radius of a single LLM reasoning pass. MCP exposure is a
+  new access surface, not a new AniList write path — it must never bypass the app's own
+  internal endpoints or the guardrail above.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline (GitHub Actions workflows, image name) — changes
@@ -258,7 +278,15 @@ file's own header comment before running it.
   Audience → Test users, cap 100), so a newly invited user can't complete Google
   login until that's done. Discord has no equivalent gate for the `identify`/`email`
   scopes this app requests — any Discord account can connect immediately. Verified
-  end-to-end for both providers 2026-08-17 (#7 Google, #60 Discord).
+  end-to-end for both providers 2026-08-17 (#7 Google, #60 Discord). TOTP-based 2FA
+  (issue #83) is optional per local account, enrolled from Settings via QR code
+  (`pyotp`), with hashed one-time recovery codes for the lost-device case — it applies
+  only to local email+password login, not to Google/Discord sign-in. A server-side
+  session store (issue #82, `app/sessions.py`) replaced the bare signed-cookie session
+  that previously had no concept of an individual session to list or revoke; Settings
+  now shows active sessions and lets a user revoke any of them. Admins also get a
+  dedicated Data Quality tab (issue #202, distinct from the existing Instance Health
+  readout) surfacing sync drift and orphaned rows across users.
 - **License**: GPL-3.0. Dependency audit (Aug 2026) confirmed no dependency — including
   `crunchyexporter-cli`, vendored via git rather than pip — imposes a stricter license
   that would have constrained this choice.
