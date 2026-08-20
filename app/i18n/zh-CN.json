@@ -492,6 +492,9 @@
   "lib_ep_note_delete_btn": "删除",
   "lib_ep_note_modal_title": "第{ep}集 — {title}",
   "lib_ep_note_prompt_text": "要为第{ep}集添加笔记吗?",
+  "lib_ep_note_label": "笔记",
+  "lib_ep_note_quote_label": "喜欢的台词 / 难忘场景",
+  "lib_ep_note_quote_placeholder": "例如一句台词，或让你印象深刻的场景…",
 
   "title_admin": "管理 — Anime Tracker",
   "admin_page_title": "管理",

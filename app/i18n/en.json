@@ -492,6 +492,9 @@
   "lib_ep_note_delete_btn": "Delete",
   "lib_ep_note_modal_title": "Episode {ep} — {title}",
   "lib_ep_note_prompt_text": "Add a note for episode {ep}?",
+  "lib_ep_note_label": "Note",
+  "lib_ep_note_quote_label": "Favorite quote / memorable scene",
+  "lib_ep_note_quote_placeholder": "e.g. a line of dialogue, a scene that stuck with you…",
 
   "title_admin": "Admin — Anime Tracker",
   "admin_page_title": "Admin",

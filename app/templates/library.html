@@ -301,8 +301,14 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ep-note-modal-title">
     <h3 class="modal-title" id="ep-note-modal-title"></h3>
     <p class="ep-note-hint" id="ep-note-hint" hidden></p>
+    <label class="ep-note-label" for="ep-note-field">{{ t('lib_ep_note_label') }}</label>
     <textarea class="ep-note-field" id="ep-note-field" rows="4"
               placeholder="{{ t('lib_ep_note_placeholder') }}"></textarea>
+    {# Favorite-quote / memorable-scene field (issue #220) — independent of the
+       freeform note above, same shared modal, same on-demand fetch/save. #}
+    <label class="ep-note-label" for="ep-note-quote-field">{{ t('lib_ep_note_quote_label') }}</label>
+    <textarea class="ep-note-field" id="ep-note-quote-field" rows="2"
+              placeholder="{{ t('lib_ep_note_quote_placeholder') }}"></textarea>
     <div class="modal-actions ep-note-modal-actions">
       <button id="ep-note-save" class="ep-note-save">{{ t('settings_save_button') }}</button>
       <button id="ep-note-delete" class="ep-note-delete">{{ t('lib_ep_note_delete_btn') }}</button>

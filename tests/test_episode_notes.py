@@ -1,15 +1,18 @@
 """
 Coverage for issue #210 — attaching a note to a specific episode, surfaced next
-to the progress stepper, with a gentle post-increment auto-suggest prompt.
+to the progress stepper, with a gentle post-increment auto-suggest prompt — and
+issue #220, which added an independent favorite-quote / memorable-scene text
+field to the same row.
 
 No real DB is touched: app.main's `db` module functions (fetchall/execute) are
 monkeypatched against a tiny in-memory fake modeling `library_entries` and
 `episode_notes`, matching the pattern used by test_rewatch_notes.py (this
 table is deliberately the same shape as rewatch_notes, just keyed on
 episode_number/progress instead of repeat_count/repeat_count). Tests call the
-route helpers (_get_episode_note / _save_episode_note) directly rather than
-through FastAPI's TestClient, since the routes themselves are thin wrappers
-around these that just add session-auth + JSON plumbing.
+route helpers (_get_episode_note / _get_episode_note_and_quote /
+_save_episode_note) directly rather than through FastAPI's TestClient, since
+the routes themselves are thin wrappers around these that just add
+session-auth + JSON plumbing.
 
 Also covers, at the unit level, that the client-side auto-suggest logic (see
 app/static/script.js's suggestEpisodeNote / progress-stepper save()) is wired
@@ -30,14 +33,16 @@ import app.main as main
 
 class FakeDB:
     """Models just enough of `library_entries` and `episode_notes` for
-    _get_episode_note / _save_episode_note to run against, without a real
-    Postgres connection."""
+    _get_episode_note / _get_episode_note_and_quote / _save_episode_note to run
+    against, without a real Postgres connection."""
 
-    def __init__(self, progress=None, episode_notes=None):
+    def __init__(self, progress=None, episode_notes=None, episode_quotes=None):
         # {(user_id, anime_id): progress}
         self.progress = dict(progress or {})
         # {(user_id, anime_id, episode_number): note}
         self.episode_notes = dict(episode_notes or {})
+        # {(user_id, anime_id, episode_number): memorable_quote}
+        self.episode_quotes = dict(episode_quotes or {})
         self.execute_calls = []
 
     def fetchone(self, query, params=None):
@@ -47,8 +52,13 @@ class FakeDB:
             return {"progress": p} if p is not None else None
         if "FROM episode_notes" in query:
             user_id, anime_id, episode_number = params
-            note = self.episode_notes.get((user_id, anime_id, episode_number))
-            return {"note": note} if note is not None else None
+            key = (user_id, anime_id, episode_number)
+            if key not in self.episode_notes and key not in self.episode_quotes:
+                return None
+            return {
+                "note": self.episode_notes.get(key),
+                "memorable_quote": self.episode_quotes.get(key),
+            }
         raise AssertionError(f"unexpected query: {query}")
 
     def fetchall(self, query, params=None):
@@ -57,11 +67,18 @@ class FakeDB:
     def execute(self, query, params=None):
         self.execute_calls.append((query, params))
         if "INSERT INTO episode_notes" in query:
-            user_id, anime_id, episode_number, note = params
-            self.episode_notes[(user_id, anime_id, episode_number)] = note
+            user_id, anime_id, episode_number, note, quote = params
+            key = (user_id, anime_id, episode_number)
+            self.episode_notes[key] = note
+            if quote is None:
+                self.episode_quotes.pop(key, None)
+            else:
+                self.episode_quotes[key] = quote
         elif "DELETE FROM episode_notes" in query:
             user_id, anime_id, episode_number = params
-            self.episode_notes.pop((user_id, anime_id, episode_number), None)
+            key = (user_id, anime_id, episode_number)
+            self.episode_notes.pop(key, None)
+            self.episode_quotes.pop(key, None)
         else:
             raise AssertionError(f"unexpected query: {query}")
 
@@ -153,6 +170,100 @@ def test_editing_an_existing_episode_note_overwrites_it(monkeypatch):
 
     assert applied is True
     assert main._get_episode_note(user_id=1, anime_id=100, episode_number=3) == "edited note"
+
+
+def test_save_and_get_quote_only_roundtrip(monkeypatch):
+    """Issue #220 — a favorite-quote / memorable-scene entry with no freeform
+    note must survive on its own, not be treated as blank."""
+    fake = FakeDB(progress={(1, 100): 5})
+    monkeypatch.setattr(main, "db", fake)
+
+    applied = main._save_episode_note(
+        user_id=1, anime_id=100, episode_number=3, note="", quote="\"I am justice.\""
+    )
+
+    assert applied is True
+    assert (1, 100, 3) in fake.episode_notes  # row exists (note stored as '')
+    data = main._get_episode_note_and_quote(user_id=1, anime_id=100, episode_number=3)
+    assert data == {"note": "", "quote": '"I am justice."'}
+
+
+def test_save_note_and_quote_together(monkeypatch):
+    fake = FakeDB(progress={(1, 100): 5})
+    monkeypatch.setattr(main, "db", fake)
+
+    applied = main._save_episode_note(
+        user_id=1, anime_id=100, episode_number=3, note="great fight scene", quote="Plus Ultra!"
+    )
+
+    assert applied is True
+    data = main._get_episode_note_and_quote(user_id=1, anime_id=100, episode_number=3)
+    assert data == {"note": "great fight scene", "quote": "Plus Ultra!"}
+
+
+def test_blank_note_and_quote_deletes_existing_row(monkeypatch):
+    """Only when *both* fields are blank does the row actually get deleted —
+    a note-only edit that leaves quote untouched must not silently wipe it,
+    since the frontend always resends both fields together (see script.js's
+    ep-note-save handler)."""
+    fake = FakeDB(
+        progress={(1, 100): 3},
+        episode_notes={(1, 100, 3): "will be cleared"},
+        episode_quotes={(1, 100, 3): "will also be cleared"},
+    )
+    monkeypatch.setattr(main, "db", fake)
+
+    applied = main._save_episode_note(user_id=1, anime_id=100, episode_number=3, note="   ", quote="   ")
+
+    assert applied is True
+    assert (1, 100, 3) not in fake.episode_notes
+    assert (1, 100, 3) not in fake.episode_quotes
+
+
+def test_blank_quote_alone_clears_quote_but_keeps_note(monkeypatch):
+    """Editing just the quote back to blank while a note still exists must keep
+    the row (and the note) around — the row is only deleted when both fields
+    end up blank."""
+    fake = FakeDB(
+        progress={(1, 100): 3},
+        episode_notes={(1, 100, 3): "keep me"},
+        episode_quotes={(1, 100, 3): "clear me"},
+    )
+    monkeypatch.setattr(main, "db", fake)
+
+    applied = main._save_episode_note(user_id=1, anime_id=100, episode_number=3, note="keep me", quote="   ")
+
+    assert applied is True
+    data = main._get_episode_note_and_quote(user_id=1, anime_id=100, episode_number=3)
+    assert data == {"note": "keep me", "quote": ""}
+
+
+def test_get_episode_note_and_quote_returns_blank_dict_when_none_exists(monkeypatch):
+    fake = FakeDB()
+    monkeypatch.setattr(main, "db", fake)
+
+    assert main._get_episode_note_and_quote(user_id=1, anime_id=100, episode_number=3) == {
+        "note": "",
+        "quote": "",
+    }
+
+
+def test_memorable_quote_column_in_schema_and_migration():
+    """Issue #220's additive column must be declared in both the fresh-install
+    schema and its own numbered migration (migrations/ upgrade-path
+    convention — see schema.sql/migrations/ header comments)."""
+    repo_root = Path(__file__).resolve().parent.parent
+    schema_text = (repo_root / "schema.sql").read_text(encoding="utf-8")
+    migration_text = (
+        repo_root / "migrations" / "024_episode_notes_memorable_quote.sql"
+    ).read_text(encoding="utf-8")
+
+    assert re.search(r"memorable_quote\s+TEXT", schema_text), (
+        "episode_notes.memorable_quote missing from schema.sql"
+    )
+    assert re.search(
+        r"ALTER TABLE episode_notes ADD COLUMN memorable_quote TEXT", migration_text
+    ), "migrations/024_episode_notes_memorable_quote.sql missing the additive column"
 
 
 def test_unique_constraint_per_user_anime_episode_in_schema():

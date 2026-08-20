@@ -689,6 +689,7 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
   const titleEl  = document.getElementById('ep-note-modal-title');
   const hintEl   = document.getElementById('ep-note-hint');
   const fieldEl  = document.getElementById('ep-note-field');
+  const quoteEl  = document.getElementById('ep-note-quote-field');
   const saveBtn  = document.getElementById('ep-note-save');
   const delBtn   = document.getElementById('ep-note-delete');
   const cancelBtn = document.getElementById('ep-note-cancel');
@@ -722,16 +723,20 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
     hintEl.hidden = !suggested;
     if (suggested) hintEl.textContent = t('lib_ep_note_prompt_text', {ep: episode});
     fieldEl.value = '';
+    quoteEl.value = '';
     fieldEl.disabled = true;
+    quoteEl.disabled = true;
     modal.hidden = false;
     try {
       const resp = await fetch(`/api/anime/${animeId}/episode-notes/${episode}`);
       if (resp.ok) {
         const data = await resp.json();
         fieldEl.value = data.note || '';
+        quoteEl.value = data.quote || '';
       }
     } catch { /* leave blank — still editable */ }
     fieldEl.disabled = false;
+    quoteEl.disabled = false;
     if (!suggested) fieldEl.focus();
   }
 
@@ -767,6 +772,7 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
   saveBtn.addEventListener('click', async () => {
     if (!activeAnimeId || !activeEpisode) return;
     const note = fieldEl.value;
+    const quote = quoteEl.value;
     const original = saveBtn.textContent;
     saveBtn.disabled = true;
     saveBtn.textContent = t('js_saving');
@@ -774,10 +780,10 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
       const resp = await fetch(`/api/anime/${activeAnimeId}/episode-notes/${activeEpisode}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({note}),
+        body: JSON.stringify({note, quote}),
       });
       if (!resp.ok) throw new Error('save failed');
-      updateIcon(activeAnimeId, note.trim().length > 0);
+      updateIcon(activeAnimeId, note.trim().length > 0 || quote.trim().length > 0);
       closeModal();
     } catch {
       saveBtn.textContent = t('js_error_retry');
@@ -795,7 +801,7 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
       const resp = await fetch(`/api/anime/${activeAnimeId}/episode-notes/${activeEpisode}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({note: ''}),
+        body: JSON.stringify({note: '', quote: ''}),
       });
       if (!resp.ok) throw new Error('delete failed');
       updateIcon(activeAnimeId, false);

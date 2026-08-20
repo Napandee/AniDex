@@ -357,6 +357,9 @@ CREATE TABLE episode_notes (
     -- for an episode already watched — see _save_episode_note()'s range check.
     episode_number      INTEGER NOT NULL CHECK (episode_number >= 1),
     note                TEXT NOT NULL,
+    -- Optional favorite-quote / memorable-scene text (issue #220) — independent
+    -- of `note` above, so a row can carry either field alone or both.
+    memorable_quote     TEXT,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, anime_id, episode_number)
