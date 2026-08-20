@@ -73,6 +73,52 @@
     {% endif %}
   </div>
 
+  {# ── 12-month subscribe/cancel calendar (issue #228, v2 of #182) ───────────── #}
+  <div class="settings-section" id="calendar">
+    <h2 class="settings-section-title">{{ t('streaming_calendar_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_calendar_sub') }}</p>
+
+    {% if calendar_services %}
+    <div class="streaming-calendar-wrap">
+      <table class="streaming-calendar-table">
+        <thead>
+          <tr>
+            <th class="streaming-calendar-service-col"></th>
+            {% for m in calendar_months %}
+            <th class="streaming-calendar-month-col" data-month="{{ m }}"></th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in calendar_services %}
+          <tr>
+            <td class="streaming-calendar-service-cell">
+              <span class="streaming-calendar-service-name">{{ s.service }}</span>
+              {% if s.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
+              {% if s.tba_titles %}
+              <span class="streaming-calendar-tba" title="{{ s.tba_titles | join(', ') }}">{% if s.tba_titles | length == 1 %}{{ t('streaming_calendar_tba_singular', count=s.tba_titles | length) }}{% else %}{{ t('streaming_calendar_tba_plural', count=s.tba_titles | length) }}{% endif %}</span>
+              {% endif %}
+            </td>
+            {% for cell in s.months %}
+            <td class="streaming-calendar-cell{% if cell.needed %} streaming-calendar-cell--needed{% endif %}"
+                {% if cell.needed %}title="{% if cell.episodes == 1 %}{{ t('streaming_episodes_singular', count=cell.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=cell.episodes) }}{% endif %} · {% if cell.titles == 1 %}{{ t('streaming_titles_singular', count=cell.titles) }}{% else %}{{ t('streaming_titles_plural', count=cell.titles) }}{% endif %}"{% endif %}>
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="streaming-calendar-legend">
+      <span class="streaming-calendar-legend-swatch streaming-calendar-legend-swatch--needed"></span>{{ t('streaming_calendar_legend_needed') }}
+      <span class="streaming-calendar-legend-swatch"></span>{{ t('streaming_calendar_legend_idle') }}
+      <span class="streaming-calendar-owned-badge streaming-calendar-owned-badge--legend">{{ t('streaming_calendar_owned_badge') }}</span>{{ t('streaming_calendar_legend_owned') }}
+    </p>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_calendar_empty') }}</p>
+    {% endif %}
+  </div>
+
   {# ── Historical footprint (Completed/Dropped) — secondary, separate, never
        blended into the ranking above. Included in v1: see the PR description for
        why (cheap once the main query exists — same rows, same STREAMING_SITES
@@ -93,4 +139,15 @@
   </div>
 
 </div>
+
+{# Month headers are labeled client-side (browser locale, matching the taste-drift
+   heatmap's month labels in stats.html) rather than baking English month
+   abbreviations into i18n keys — the server only sends the first-of-month ISO date
+   in data-month, UTC, matching how airing_schedule_cache stores airing_at. #}
+<script>
+document.querySelectorAll('.streaming-calendar-month-col').forEach(function (th) {
+  var d = new Date(th.dataset.month + 'T00:00:00Z');
+  th.textContent = d.toLocaleString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' });
+});
+</script>
 {% endblock %}
