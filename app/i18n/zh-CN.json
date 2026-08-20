@@ -380,6 +380,11 @@
   "stats_rewatch_list_empty": "暂无重刷记录——再次观看的作品会显示在这里。",
   "stats_rewatch_dist_empty": "完成一部作品后即可在此查看重刷统计。",
 
+  "stats_taste_drift_title": "口味变化",
+  "stats_taste_drift_sub": "你已完成番剧的题材构成随时间的变化 — 已完成的{total}部作品中有{usable}部记录了完成日期，按{granularity}分组显示如下。",
+  "stats_taste_drift_quarterly": "按季度",
+  "stats_taste_drift_yearly": "按年度",
+
   "stats_streaming_card_title": "流媒体覆盖",
   "stats_streaming_no_owned": "设置你已拥有的流媒体服务，即可查看哪项服务能解锁你积压剧集中最多的内容。",
   "stats_streaming_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖。",

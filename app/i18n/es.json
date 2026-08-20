@@ -380,6 +380,11 @@
   "stats_rewatch_list_empty": "Aún no hay revisionados: lo que vuelvas a ver aparecerá aquí.",
   "stats_rewatch_dist_empty": "Completa un título para ver aquí las estadísticas de revisionado.",
 
+  "stats_taste_drift_title": "Evolución de tus gustos",
+  "stats_taste_drift_sub": "Mezcla de géneros de tu biblioteca completada a lo largo del tiempo — {usable} de {total} títulos completados tienen una fecha de finalización registrada y se muestran abajo, agrupados {granularity}.",
+  "stats_taste_drift_quarterly": "trimestralmente",
+  "stats_taste_drift_yearly": "anualmente",
+
   "stats_streaming_card_title": "Cobertura de Streaming",
   "stats_streaming_no_owned": "Indica qué servicios de streaming ya tienes para ver cuál desbloquearía más de tu lista pendiente.",
   "stats_streaming_covered": "Tu lista de Viendo/Planeando ya está cubierta por los servicios que tienes.",

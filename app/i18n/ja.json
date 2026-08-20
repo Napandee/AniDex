@@ -380,6 +380,11 @@
   "stats_rewatch_list_empty": "まだ再視聴した作品はありません。再視聴するとここに表示されます。",
   "stats_rewatch_dist_empty": "作品を完走すると、ここに再視聴の統計が表示されます。",
 
+  "stats_taste_drift_title": "好みの変化",
+  "stats_taste_drift_sub": "完走したライブラリのジャンル傾向の推移 — 完了した{total}作品のうち{usable}作品に完了日が記録されており、{granularity}で集計して以下に表示しています。",
+  "stats_taste_drift_quarterly": "四半期ごと",
+  "stats_taste_drift_yearly": "年ごと",
+
   "stats_streaming_card_title": "ストリーミングカバレッジ",
   "stats_streaming_no_owned": "契約中の配信サービスを設定すると、どのサービスがバックログを最も多く解放するかがわかります。",
   "stats_streaming_covered": "視聴中/視聴予定のバックログは、すでに契約中のサービスでカバーされています。",
