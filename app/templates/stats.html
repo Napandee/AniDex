@@ -134,6 +134,27 @@
     </div>
   </div>
 
+  <!-- Hour-of-day / day-of-week watch-activity breakdown (issue #222) — a finer,
+       Trakt-style cut alongside the date-based heatmap above. Built from
+       library_entries.anilist_updated_at via app/main.py's
+       _compute_watch_activity_times, converted to the user's own configured
+       timezone (Settings -> Preferences) server-side before bucketing -- see
+       that function's docstring for the timestamp choice and why bucketing is
+       Monday-first (datetime.weekday() convention, matching /upcoming's
+       week_grid). Hidden entirely when data.watch_activity is null (brand-new
+       account, no usable timestamp yet), same gating pattern as taste-drift/
+       drop-patterns/rec-outcomes below. -->
+  <div class="stats-grid" id="watch-activity-section" hidden>
+    <div class="chart-card">
+      <h2 class="chart-title">{{ t('stats_chart_dow') }}</h2>
+      <canvas id="chart-dow"></canvas>
+    </div>
+    <div class="chart-card">
+      <h2 class="chart-title">{{ t('stats_chart_hour') }}</h2>
+      <canvas id="chart-hour"></canvas>
+    </div>
+  </div>
+
   <!-- Taste-profile drift (issue #176) — genre mix of the COMPLETED library over
        time, derived from library_entries.finish_date + anime.genres per #77's
        validated query (no new schema/snapshot table, see app/main.py's
@@ -589,6 +610,53 @@
     grid.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
     monthsRow.style.gridTemplateColumns = `repeat(${totalCols}, 12px)`;
   })(data.heatmap);
+
+  // Hour-of-day / day-of-week watch-activity breakdown (issue #222) — built from
+  // library_entries.anilist_updated_at, already converted to the user's own
+  // configured timezone and bucketed server-side (see app/main.py's
+  // _compute_watch_activity_times docstring). by_day is Monday-first
+  // (datetime.weekday() convention) to match /upcoming's week_grid. Hidden
+  // entirely when data.watch_activity is null.
+  (function renderWatchActivity(wa) {
+    if (!wa) return;
+    document.getElementById('watch-activity-section').hidden = false;
+
+    const DOW_LABELS = [
+      t('stats_day_mon'), t('stats_day_tue'), t('stats_day_wed'), t('stats_day_thu'),
+      t('stats_day_fri'), t('stats_day_sat'), t('stats_day_sun'),
+    ];
+    new Chart(document.getElementById('chart-dow'), {
+      type: 'bar',
+      data: {
+        labels: DOW_LABELS,
+        datasets: [{ data: wa.by_day, backgroundColor: '#f97316', borderRadius: 4 }],
+      },
+      options: {
+        ...baseOpts,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+          y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+        },
+      },
+    });
+
+    new Chart(document.getElementById('chart-hour'), {
+      type: 'bar',
+      data: {
+        labels: wa.by_hour.map((_, h) => String(h)),
+        datasets: [{ data: wa.by_hour, backgroundColor: '#0891b2', borderRadius: 4 }],
+      },
+      options: {
+        ...baseOpts,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+          y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+        },
+      },
+    });
+  })(data.watch_activity);
 
   // "Year in anime" wrap-up (issue #78) — reuses /api/stats via its year/season query
   // params rather than a new endpoint; every field below already exists in the same
