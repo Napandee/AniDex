@@ -279,6 +279,25 @@ CREATE TABLE notified_episodes (
     PRIMARY KEY (user_id, anime_id, episode)
 );
 
+-- Per-user "did this Planning-list title have any streaming availability the last
+-- time we checked" state (issue #229) — poll+diff over `anime.external_links` (itself
+-- global/rebuilt-in-place on every sync, no history of its own) on each regular
+-- AniList sync. When had_availability flips false -> true, the user gets a one-time
+-- "now streaming" notification via the existing dispatcher (#51); flipping true ->
+-- false (a link disappearing again) is tracked too so a later re-gain still counts as
+-- a fresh transition, matching the "diff on each sync" framing rather than a
+-- fire-once-ever ledger. Per-user like notified_episodes, for the same reason: two
+-- users can have the same anime in different (or no) list status at once, and this is
+-- only meaningful in the context of "is this on THIS user's Planning list."
+CREATE TABLE planning_availability_state (
+    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anime_id          INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    had_availability  BOOLEAN NOT NULL,
+    notified_at       TIMESTAMPTZ,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, anime_id)
+);
+
 -- =========================================================================
 -- PERSONAL LAYER (never touched by sync — this is the reason the site exists)
 -- =========================================================================
