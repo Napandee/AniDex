@@ -139,6 +139,13 @@
           {% if e.episodes %}<span class="prog-total">/{{ e.episodes }}</span>{% endif %}
           <span class="prog-unit">{{ t('lib_ep_unit') }}</span>
         </div>
+        <div class="ep-note-anchor">
+          <button type="button"
+                  class="ep-note-btn{% if e.has_episode_note %} has-note{% endif %}"
+                  data-anime-id="{{ e.id }}"
+                  title="{{ t('lib_ep_note_btn_title') }}"
+                  {% if not e.progress %}disabled{% endif %}>✎</button>
+        </div>
         {% if e.format %}
         <span class="format">{{ e.format }}</span>
         {% endif %}
@@ -272,6 +279,24 @@
 </div>
 
 <script>window.COLLECTIONS = {{ collections_json|safe }};</script>
+
+{# ── Episode note editor (#210) ────────────────────────────────────────────
+   One shared modal reused for every card's note icon and for the post-increment
+   auto-suggest prompt — see the .ep-note-btn comment in style.css for why this
+   is a shared modal rather than a per-card popover (overflow-clipping risk). #}
+<div id="ep-note-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ep-note-modal-title">
+    <h3 class="modal-title" id="ep-note-modal-title"></h3>
+    <p class="ep-note-hint" id="ep-note-hint" hidden></p>
+    <textarea class="ep-note-field" id="ep-note-field" rows="4"
+              placeholder="{{ t('lib_ep_note_placeholder') }}"></textarea>
+    <div class="modal-actions ep-note-modal-actions">
+      <button id="ep-note-save" class="ep-note-save">{{ t('settings_save_button') }}</button>
+      <button id="ep-note-delete" class="ep-note-delete">{{ t('lib_ep_note_delete_btn') }}</button>
+      <button id="ep-note-cancel" class="ep-note-cancel">{{ t('notes_cancel_btn') }}</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── Score filter ──────────────────────────────────────────────────────────────

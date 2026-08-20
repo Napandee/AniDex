@@ -448,6 +448,11 @@
   "lib_notes_notes_placeholder": "Notas libres…",
   "lib_notes_priority_placeholder": "1 = arriba del todo en la cola",
   "lib_ep_unit": "ep",
+  "lib_ep_note_btn_title": "Nota del episodio",
+  "lib_ep_note_placeholder": "Escribe una nota para este episodio…",
+  "lib_ep_note_delete_btn": "Eliminar",
+  "lib_ep_note_modal_title": "Episodio {ep} — {title}",
+  "lib_ep_note_prompt_text": "¿Añadir una nota para el episodio {ep}?",
 
   "title_admin": "Administración — Anime Tracker",
   "admin_page_title": "Administración",

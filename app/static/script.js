@@ -586,6 +586,7 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
   let current = parseInt(valEl.textContent) || 0;
   let committed = current;
   let saveTimer = null;
+  let lastDelta = 0;
 
   function updateBar(val) {
     if (bar && maxEp !== Infinity) {
@@ -595,6 +596,7 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
 
   async function save() {
     const target = current;
+    const wasIncrement = lastDelta > 0;
     try {
       const resp = await fetch(`/api/anime/${animeId}/progress`, {
         method: 'POST',
@@ -604,6 +606,14 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
       if (!resp.ok) throw new Error('request failed');
       committed = target;
       stepper.closest('.card')?.setAttribute('data-progress', target);
+      // Auto-suggest an episode note (issue #210) — only after a confirmed
+      // increment (never a decrement), and only once the save has actually
+      // succeeded, so this can never delay or interfere with the progress
+      // update itself. suggestEpisodeNote is defined further down in this
+      // file; the typeof guard is just defensive against future refactors.
+      if (wasIncrement && typeof suggestEpisodeNote === 'function') {
+        suggestEpisodeNote(animeId, target);
+      }
     } catch {
       current = committed;
       valEl.textContent = current;
@@ -616,6 +626,7 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
       const delta = parseInt(btn.dataset.delta);
       const next = Math.max(0, Math.min(current + delta, maxEp));
       if (next === current) return;
+      lastDelta = delta;
       current = next;
       valEl.textContent = current;
       updateBar(current);
@@ -624,6 +635,162 @@ document.querySelectorAll('.progress-stepper').forEach(stepper => {
     });
   });
 });
+
+// ── Episode notes (#210) ────────────────────────────────────────────────────
+// One shared modal (#ep-note-modal) reused for every card's note icon AND for
+// the auto-suggest prompt fired from the progress-stepper block above on a
+// plain increment — see the .ep-note-btn comment in style.css for why this is
+// a single shared modal rather than a per-card popover (a popover positioned
+// off the icon would live inside .card, which is `overflow: hidden`, and would
+// get silently clipped past the card's edge on the narrow mobile grid).
+(function () {
+  const modal    = document.getElementById('ep-note-modal');
+  if (!modal) return;
+
+  const titleEl  = document.getElementById('ep-note-modal-title');
+  const hintEl   = document.getElementById('ep-note-hint');
+  const fieldEl  = document.getElementById('ep-note-field');
+  const saveBtn  = document.getElementById('ep-note-save');
+  const delBtn   = document.getElementById('ep-note-delete');
+  const cancelBtn = document.getElementById('ep-note-cancel');
+
+  let activeAnimeId  = null;
+  let activeEpisode  = null;
+  let activeSuggested = false;
+
+  function dismissKey(animeId, episode) {
+    return `epNoteDismissed:${animeId}:${episode}`;
+  }
+  function isDismissed(animeId, episode) {
+    try { return localStorage.getItem(dismissKey(animeId, episode)) === '1'; }
+    catch { return false; }
+  }
+  function markDismissed(animeId, episode) {
+    try { localStorage.setItem(dismissKey(animeId, episode), '1'); } catch { /* no-op */ }
+  }
+
+  function updateIcon(animeId, hasNote) {
+    document.querySelectorAll(`.ep-note-btn[data-anime-id="${animeId}"]`).forEach(btn => {
+      btn.classList.toggle('has-note', hasNote);
+    });
+  }
+
+  async function openModal(animeId, episode, { suggested = false, cardTitle = '' } = {}) {
+    activeAnimeId = animeId;
+    activeEpisode = episode;
+    activeSuggested = suggested;
+    titleEl.textContent = t('lib_ep_note_modal_title', {ep: episode, title: cardTitle});
+    hintEl.hidden = !suggested;
+    if (suggested) hintEl.textContent = t('lib_ep_note_prompt_text', {ep: episode});
+    fieldEl.value = '';
+    fieldEl.disabled = true;
+    modal.hidden = false;
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/episode-notes/${episode}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        fieldEl.value = data.note || '';
+      }
+    } catch { /* leave blank — still editable */ }
+    fieldEl.disabled = false;
+    if (!suggested) fieldEl.focus();
+  }
+
+  function closeModal({ dismissed = false } = {}) {
+    if (dismissed && activeSuggested && activeAnimeId && activeEpisode) {
+      markDismissed(activeAnimeId, activeEpisode);
+    }
+    modal.hidden = true;
+    activeAnimeId = null;
+    activeEpisode = null;
+    activeSuggested = false;
+  }
+
+  document.querySelectorAll('.ep-note-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = btn.closest('.card');
+      const valEl = card?.querySelector('.prog-val');
+      const episode = valEl ? (parseInt(valEl.textContent) || 0) : 0;
+      if (!episode) return;
+      openModal(btn.dataset.animeId, episode, { cardTitle: card?.dataset.cardTitle || '' });
+    });
+  });
+
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closeModal({ dismissed: true });
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modal.hidden) closeModal({ dismissed: true });
+  });
+  cancelBtn.addEventListener('click', () => closeModal({ dismissed: true }));
+
+  saveBtn.addEventListener('click', async () => {
+    if (!activeAnimeId || !activeEpisode) return;
+    const note = fieldEl.value;
+    const original = saveBtn.textContent;
+    saveBtn.disabled = true;
+    saveBtn.textContent = t('js_saving');
+    try {
+      const resp = await fetch(`/api/anime/${activeAnimeId}/episode-notes/${activeEpisode}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({note}),
+      });
+      if (!resp.ok) throw new Error('save failed');
+      updateIcon(activeAnimeId, note.trim().length > 0);
+      closeModal();
+    } catch {
+      saveBtn.textContent = t('js_error_retry');
+      saveBtn.disabled = false;
+      return;
+    }
+    saveBtn.disabled = false;
+    saveBtn.textContent = original;
+  });
+
+  delBtn.addEventListener('click', async () => {
+    if (!activeAnimeId || !activeEpisode) return;
+    delBtn.disabled = true;
+    try {
+      const resp = await fetch(`/api/anime/${activeAnimeId}/episode-notes/${activeEpisode}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({note: ''}),
+      });
+      if (!resp.ok) throw new Error('delete failed');
+      updateIcon(activeAnimeId, false);
+      closeModal();
+    } catch {
+      /* leave modal open on failure */
+    } finally {
+      delBtn.disabled = false;
+    }
+  });
+
+  // Called from the progress-stepper block above after a confirmed increment.
+  // Quietly no-ops if the episode already has a note, if this exact episode
+  // was already dismissed before, or if the modal is already open (never
+  // steals focus from something the user is already doing) — none of these
+  // checks run before the progress save itself resolves, so they can't add
+  // any latency to the increment the user actually asked for.
+  window.suggestEpisodeNote = async function suggestEpisodeNote(animeId, episode) {
+    if (!episode || !modal.hidden) return;
+    if (isDismissed(animeId, episode)) return;
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/episode-notes/${episode}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.note) return; // already has one — nothing to suggest
+      }
+    } catch {
+      return; // can't tell — stay quiet rather than risk a wrong/duplicate prompt
+    }
+    const stepperEl = document.querySelector(`.progress-stepper[data-anime-id="${animeId}"]`);
+    const card = stepperEl?.closest('.card');
+    openModal(animeId, episode, { suggested: true, cardTitle: card?.dataset.cardTitle || '' });
+  };
+})();
 
 // ── Status select ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.status-select').forEach(select => {
