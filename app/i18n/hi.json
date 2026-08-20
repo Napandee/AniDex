@@ -416,6 +416,8 @@
   "rec_score_unavailable_badge": "नया सुझाव",
   "rec_score_unavailable_title": "इसे स्कोर करने के लिए अभी पर्याप्त देखने का इतिहास नहीं है — इसके बजाय एक सीज़नल डिस्कवरी पिक के रूप में दिखाया गया है",
   "rec_community_score_title": "AniList समुदाय स्कोर",
+  "rec_match_percent_label": "{pct}% मैच",
+  "rec_match_percent_title": "यह सिफारिश अभी आपको दिखाई जा रही अन्य सिफारिशों की तुलना में कैसी है — अंतर्निहित स्कोर का 0-100 सामान्यीकृत माप, इससे रैंकिंग नहीं बदलती",
   "rec_match_genres": "जॉनर",
   "rec_match_tags": "टैग",
   "rec_match_studio": "स्टूडियो",

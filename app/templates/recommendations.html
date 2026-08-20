@@ -55,6 +55,9 @@
       </div>
 
       <div class="rec-matches">
+        {% if e.match_pct is not none %}
+        <div class="match-percent-chip" title="{{ t('rec_match_percent_title') }}">{{ t('rec_match_percent_label', pct=e.match_pct) }}</div>
+        {% endif %}
         <div class="match-row">
           <span class="match-label">{{ t('rec_match_genres') }}</span>
           <div class="genres">

@@ -2250,6 +2250,43 @@ def _is_uninformative_reason(reason: dict | None) -> bool:
     )
 
 
+def _compute_match_percentages(entries: list[dict]) -> None:
+    """Issue #227 — Netflix-style "% match" display: a read-time min-max
+    normalization of `rec_score` across exactly the recommendations visible on
+    this page load. Mutates each entry in place, setting `match_pct`.
+
+    Deliberately a *second*, independent normalization from the one
+    score_and_store() already does at write time (scripts/run_recommender.py):
+    that one divides every scored candidate by the best *scored* candidate
+    (max-only, no floor) before per-source LIMIT 100 and before dismiss/snooze
+    filtering ever happen — so its denominator can include candidates the
+    user never actually sees on this page. This one is min-max over exactly
+    what's on screen right now, so the weakest visible pick reads as a real
+    0% instead of being flattered by a ceiling set by a candidate that got
+    filtered out. The two percentages are allowed to differ; they're
+    intentionally not the same number shown twice — see issue #227's "next to
+    (not replacing) the existing internal score" framing. Purely a display
+    transform: never writes to recommendation_scores, never touches ranking.
+
+    Uninformative (cold-start, issue #178) entries are excluded from the
+    min/max range and get `match_pct = None` — same "no real signal" treatment
+    the existing score badge already gives them via `uninformative`."""
+    informative_scores = [e["rec_score"] for e in entries if not e["uninformative"]]
+    if not informative_scores:
+        for e in entries:
+            e["match_pct"] = None
+        return
+    lo, hi = min(informative_scores), max(informative_scores)
+    for e in entries:
+        if e["uninformative"]:
+            e["match_pct"] = None
+        elif hi == lo:
+            # Every visible informative pick is tied — each is the best you've got.
+            e["match_pct"] = 100
+        else:
+            e["match_pct"] = round((e["rec_score"] - lo) / (hi - lo) * 100)
+
+
 def _fetch_visible_recommendations(user_id: int) -> list[dict]:
     """Recommendation rows visible to `user_id`: not permanently dismissed, and not
     currently snoozed (issue #75). Broken out of recommendations() so the exclusion
@@ -2338,6 +2375,12 @@ def recommendations(request: Request):
         # the template can swap the "0%" score badge for honest framing instead.
         entry["uninformative"] = _is_uninformative_reason(entry.get("reason"))
         entries.append(entry)
+
+    # Issue #227 — normalized 0-100 "% match" display, alongside (not replacing)
+    # the rec_score badge above. See _compute_match_percentages()'s docstring for
+    # why this is a second, independent normalization rather than a re-render of
+    # the same number.
+    _compute_match_percentages(entries)
 
     return templates.TemplateResponse(
         request,

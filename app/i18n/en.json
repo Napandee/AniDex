@@ -416,6 +416,8 @@
   "rec_score_unavailable_badge": "New pick",
   "rec_score_unavailable_title": "Not enough watch history yet to score this — shown as a seasonal discovery pick instead",
   "rec_community_score_title": "AniList community score",
+  "rec_match_percent_label": "{pct}% Match",
+  "rec_match_percent_title": "How this recommendation compares to the others currently shown to you — a normalized 0-100 read of the underlying score, not a change to how it's ranked",
   "rec_match_genres": "Genres",
   "rec_match_tags": "Tags",
   "rec_match_studio": "Studio",

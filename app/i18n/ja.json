@@ -416,6 +416,8 @@
   "rec_score_unavailable_badge": "新着ピック",
   "rec_score_unavailable_title": "スコアを算出するための視聴履歴がまだ十分ではありません — 代わりにシーズナル発見のおすすめとして表示しています",
   "rec_community_score_title": "AniListコミュニティスコア",
+  "rec_match_percent_label": "マッチ度 {pct}%",
+  "rec_match_percent_title": "現在表示されている他のおすすめと比較したこの作品の一致度 — 内部スコアを0〜100に正規化した表示で、ランキング自体は変わりません",
   "rec_match_genres": "ジャンル",
   "rec_match_tags": "タグ",
   "rec_match_studio": "スタジオ",

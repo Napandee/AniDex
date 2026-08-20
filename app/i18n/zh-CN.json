@@ -416,6 +416,8 @@
   "rec_score_unavailable_badge": "新发现",
   "rec_score_unavailable_title": "观看历史尚不足以计算评分——改为显示为季度发现推荐",
   "rec_community_score_title": "AniList 社区评分",
+  "rec_match_percent_label": "匹配度 {pct}%",
+  "rec_match_percent_title": "此推荐与当前显示给你的其他推荐相比的匹配程度——是对内部评分的 0-100 归一化展示，不会改变排序方式",
   "rec_match_genres": "类型",
   "rec_match_tags": "标签",
   "rec_match_studio": "制作公司",
