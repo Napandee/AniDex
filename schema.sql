@@ -130,6 +130,28 @@ CREATE INDEX idx_sessions_user_active ON sessions (user_id, last_seen_at DESC) W
 -- excludes. Verified with EXPLAIN (see migrations/014_sessions.sql's comment).
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 
+-- Personal access tokens for the MCP server (issue #207) — GitHub-PAT-style: a random
+-- token is generated server-side, shown once at creation, and stored only as a bcrypt
+-- hash (same standard as users.password_hash / totp_recovery_codes.code_hash). Bcrypt
+-- salts each hash differently even for identical input, so there's no way to look a
+-- token up by its hash directly — validation (app/pat.py's resolve_token) scans every
+-- currently-active row and bcrypt.checkpw's each one, the same approach
+-- _consume_recovery_code_if_valid already uses for recovery codes, just instance-wide
+-- instead of per-user since a bearer token arrives with no user_id attached. Fine at
+-- this app's invite-only personal-instance scale. Never deleted on revoke — revoked_at
+-- is set instead, same pattern as sessions.revoked_at above.
+CREATE TABLE personal_access_tokens (
+    id            SERIAL PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,               -- user-supplied label, e.g. "Claude Code"
+    token_hash    TEXT NOT NULL,                -- bcrypt hash of the full token; never the raw token
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_used_at  TIMESTAMPTZ,                  -- bumped on every successful MCP request, best-effort
+    revoked_at    TIMESTAMPTZ                   -- NULL = active; set by the user's own revoke action
+);
+
+CREATE INDEX idx_pat_active ON personal_access_tokens (user_id) WHERE revoked_at IS NULL;
+
 -- =========================================================================
 -- ANILIST-SOURCED (rebuildable — sync job upserts these, never hand-edit)
 -- =========================================================================

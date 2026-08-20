@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ t('title_token_created') }}{% endblock %}
+
+{% block content %}
+<div class="notes-page">
+
+  <div class="page-header">
+    <h1 class="page-title">{{ t('pat_created_heading') }}</h1>
+    <p class="page-sub">{{ t('pat_created_desc', name=name) }}</p>
+  </div>
+
+  <div class="settings-section settings-section--first">
+    <p class="twofa-warning">{{ t('pat_created_warning') }}</p>
+
+    <div class="twofa-recovery-codes">
+      <span>{{ token }}</span>
+    </div>
+
+    <div class="form-actions">
+      <a href="/settings" class="btn-save">{{ t('pat_created_continue_btn') }}</a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
