@@ -140,11 +140,18 @@ CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 -- instead of per-user since a bearer token arrives with no user_id attached. Fine at
 -- this app's invite-only personal-instance scale. Never deleted on revoke — revoked_at
 -- is set instead, same pattern as sessions.revoked_at above.
+--
+-- scope (issue #208, migration 021): 'read' can only call the read-only MCP tools;
+-- 'read_write' can additionally call the write tools (notes/bulk-tag/rating/status/
+-- progress). Defaults to 'read' — the safe choice — so a token has to explicitly opt
+-- into write access at creation time.
 CREATE TABLE personal_access_tokens (
     id            SERIAL PRIMARY KEY,
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name          TEXT NOT NULL,               -- user-supplied label, e.g. "Claude Code"
     token_hash    TEXT NOT NULL,                -- bcrypt hash of the full token; never the raw token
+    scope         TEXT NOT NULL DEFAULT 'read'
+                     CHECK (scope IN ('read', 'read_write')),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_used_at  TIMESTAMPTZ,                  -- bumped on every successful MCP request, best-effort
     revoked_at    TIMESTAMPTZ                   -- NULL = active; set by the user's own revoke action

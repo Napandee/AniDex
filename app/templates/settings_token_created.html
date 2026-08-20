@@ -10,6 +10,10 @@
   </div>
 
   <div class="settings-section settings-section--first">
+    <p class="settings-section-desc">
+      {{ t('pat_scope_label') }}:
+      {{ t('pat_scope_read_write') if scope == 'read_write' else t('pat_scope_read') }}
+    </p>
     <p class="twofa-warning">{{ t('pat_created_warning') }}</p>
 
     <div class="twofa-recovery-codes">

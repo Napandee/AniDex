@@ -2499,20 +2499,7 @@ def save_notes(
     except ValueError:
         al_override = None
 
-    db.execute(
-        """
-        INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (user_id, anime_id) DO UPDATE SET
-            drop_reason = EXCLUDED.drop_reason,
-            personal_tags = EXCLUDED.personal_tags,
-            notes = EXCLUDED.notes,
-            watch_next_priority = EXCLUDED.watch_next_priority,
-            anilist_id_override = EXCLUDED.anilist_id_override,
-            updated_at = now()
-        """,
-        (user["id"], anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
-    )
+    _upsert_personal_notes(user["id"], anime_id, drop_reason_val, notes_val, tags, priority, al_override)
 
     if drop_reason_val:
         error = _apply_status_change(user, anime_id, "DROPPED")
@@ -2545,6 +2532,27 @@ async def save_notes_api(anime_id: int, request: Request):
     except (ValueError, TypeError):
         al_override = None
 
+    _upsert_personal_notes(user["id"], anime_id, drop_reason_val, notes_val, tags, priority, al_override)
+    return JSONResponse({"ok": True})
+
+
+def _upsert_personal_notes(
+    user_id: int,
+    anime_id: int,
+    drop_reason_val: str | None,
+    notes_val: str | None,
+    tags: list,
+    priority,
+    al_override,
+) -> None:
+    """Full-replace upsert into personal_notes — the actual write logic behind both
+    the notes form route (save_notes) and the JSON API route (save_notes_api)
+    above, and reused as-is by the MCP update_personal_notes write tool (issue
+    #208) rather than being reimplemented there. Not a partial patch: every column
+    listed is overwritten with exactly what's passed, mirroring the existing form/
+    API semantics where the caller always submits the complete set of fields —
+    a field left unset by the caller clears that column, it doesn't leave it
+    alone."""
     db.execute(
         """
         INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
@@ -2557,9 +2565,8 @@ async def save_notes_api(anime_id: int, request: Request):
             anilist_id_override = EXCLUDED.anilist_id_override,
             updated_at = now()
         """,
-        (user["id"], anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
+        (user_id, anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
     )
-    return JSONResponse({"ok": True})
 
 
 def _get_rewatch_notes(user_id: int, anime_id: int, current_repeat_count: int) -> list:
@@ -3815,20 +3822,26 @@ def settings_2fa_disable(request: Request, password: str = Form(...)):
 
 
 @app.post("/settings/tokens")
-def settings_create_token(request: Request, name: str = Form(...)):
+def settings_create_token(request: Request, name: str = Form(...), scope: str = Form(pat.SCOPE_READ)):
     """Issues a new PAT for the current user. The raw token is shown exactly once,
     on the very next request only (settings_token_created pops it from the
     in-process display dict on render) — same one-time-display pattern as issue
     #83's TOTP recovery codes (_totp_recovery_display above). Never written to the
     database in plaintext, never round-tripped through the client-visible session
-    cookie."""
+    cookie.
+
+    scope (issue #208): defaults to read-only unless the form explicitly submits
+    read_write — pat.create_token itself also falls back to read-only for any
+    value outside VALID_SCOPES, so a tampered/unexpected form value can't mint a
+    write-capable token either."""
     user, denied = _require_user(request)
     if denied:
         return denied
 
     label = name.strip() or "Unnamed token"
-    _token_id, raw_token = pat.create_token(user["id"], label)
-    _pat_display[user["id"]] = {"name": label, "token": raw_token}
+    scope_val = scope if scope in pat.VALID_SCOPES else pat.SCOPE_READ
+    _token_id, raw_token = pat.create_token(user["id"], label, scope=scope_val)
+    _pat_display[user["id"]] = {"name": label, "token": raw_token, "scope": scope_val}
     return RedirectResponse(url="/settings/tokens/created", status_code=303)
 
 
@@ -5415,6 +5428,22 @@ async def set_rating(anime_id: int, request: Request):
     if stars < 0 or stars > 5:
         return JSONResponse({"error": "score must be 0–5"}, status_code=400)
 
+    error = _apply_rating_change(user, anime_id, stars)
+    if error:
+        status_code = 500 if error == "AniList token not configured" else 502
+        return JSONResponse({"error": error}, status_code=status_code)
+
+    return JSONResponse({"ok": True, "score": stars})
+
+
+def _apply_rating_change(user, anime_id: int, stars: int) -> str | None:
+    """Push a 0–5 star rating to AniList (unless mocked) then mirror it into
+    library_entries.score locally. Returns an error message on failure, None on
+    success — same shape as _apply_status_change/_apply_progress_change below
+    (the literal string "AniList token not configured" is what callers
+    string-match on to pick 500 vs 502, same convention both of those already
+    use). The actual write logic behind /api/anime/{id}/rating above, reused
+    as-is by the MCP set_rating write tool (issue #208)."""
     # AniList account uses POINT_5 format — send 0–5 directly.
     # Reading back via sync uses score(format: POINT_100), which AniList converts correctly.
     anilist_score = float(stars)
@@ -5422,7 +5451,7 @@ async def set_rating(anime_id: int, request: Request):
     if not ANILIST_MOCK:
         token = _get_anilist_token(user["id"])
         if not token:
-            return JSONResponse({"error": "AniList token not configured"}, status_code=500)
+            return "AniList token not configured"
 
         try:
             resp = httpx.post(
@@ -5435,11 +5464,11 @@ async def set_rating(anime_id: int, request: Request):
             data = resp.json()
             if "errors" in data:
                 log.error("AniList rating error for %s: %s", anime_id, data["errors"])
-                return JSONResponse({"error": str(data["errors"])}, status_code=502)
+                return str(data["errors"])
             saved = ((data.get("data") or {}).get("SaveMediaListEntry")) or {}
             if not saved:
                 log.error("AniList rating: SaveMediaListEntry returned null for mediaId=%s", anime_id)
-                return JSONResponse({"error": "AniList returned null — entry may not be in your list"}, status_code=502)
+                return "AniList returned null — entry may not be in your list"
             returned_score = saved.get("score")
             if returned_score != anilist_score:
                 log.warning(
@@ -5448,7 +5477,7 @@ async def set_rating(anime_id: int, request: Request):
                 )
         except Exception as e:
             log.error("AniList rating request failed for %s: %s", anime_id, e)
-            return JSONResponse({"error": str(e)}, status_code=502)
+            return str(e)
 
     local_score = stars if stars > 0 else None
     db.execute(
@@ -5456,7 +5485,7 @@ async def set_rating(anime_id: int, request: Request):
         (local_score, anime_id, user["id"]),
     )
 
-    return JSONResponse({"ok": True, "score": stars})
+    return None
 
 
 def _apply_status_change(user, anime_id: int, status: str) -> str | None:
@@ -5640,6 +5669,16 @@ async def bulk_add_tags(request: Request):
     if not anime_ids or not all(isinstance(i, int) for i in anime_ids):
         return JSONResponse({"error": "anime_ids required"}, status_code=400)
 
+    count = _bulk_apply_tags(user["id"], anime_ids, tags)
+    return JSONResponse({"ok": True, "count": count})
+
+
+def _bulk_apply_tags(user_id: int, anime_ids: list, tags: list) -> int:
+    """Additive, case-insensitive-deduped tag merge across an explicit list of
+    anime_ids — the actual write logic behind /api/anime/bulk-tags above (issue
+    #15), reused as-is by the MCP bulk_apply_tags write tool (issue #208).
+    anime_ids must already be a concrete list of ids by the time this is called;
+    there is no filter/query form of this operation anywhere in this app."""
     tags_json = json.dumps(tags)
     with db.get_conn() as conn:
         with conn.cursor() as cur:
@@ -5664,11 +5703,11 @@ async def bulk_add_tags(request: Request):
                         ),
                         updated_at = now()
                     """,
-                    (user["id"], anime_id, tags_json),
+                    (user_id, anime_id, tags_json),
                 )
         conn.commit()
 
-    return JSONResponse({"ok": True, "count": len(anime_ids)})
+    return len(anime_ids)
 
 
 @app.post("/api/anime/{anime_id}/progress")
@@ -5682,10 +5721,22 @@ async def set_progress(anime_id: int, request: Request):
     if not isinstance(progress, int) or progress < 0:
         return JSONResponse({"error": "progress must be a non-negative integer"}, status_code=400)
 
+    error = _apply_progress_change(user, anime_id, progress)
+    if error:
+        status_code = 500 if error == "AniList token not configured" else 502
+        return JSONResponse({"error": error}, status_code=status_code)
+    return JSONResponse({"ok": True, "progress": progress})
+
+
+def _apply_progress_change(user, anime_id: int, progress: int) -> str | None:
+    """Push episode progress to AniList (unless mocked) then mirror it into
+    library_entries locally. Returns an error message on failure, None on
+    success. The actual write logic behind /api/anime/{id}/progress above,
+    reused as-is by the MCP set_progress write tool (issue #208)."""
     if not ANILIST_MOCK:
         token = _get_anilist_token(user["id"])
         if not token:
-            return JSONResponse({"error": "AniList token not configured"}, status_code=500)
+            return "AniList token not configured"
 
         try:
             resp = httpx.post(
@@ -5697,15 +5748,15 @@ async def set_progress(anime_id: int, request: Request):
             resp.raise_for_status()
             data = resp.json()
             if "errors" in data:
-                return JSONResponse({"error": str(data["errors"])}, status_code=502)
+                return str(data["errors"])
         except Exception as e:
-            return JSONResponse({"error": str(e)}, status_code=502)
+            return str(e)
 
     db.execute(
         "UPDATE library_entries SET progress = %s WHERE anime_id = %s AND user_id = %s",
         (progress, anime_id, user["id"]),
     )
-    return JSONResponse({"ok": True, "progress": progress})
+    return None
 
 
 @app.post("/api/anime/{anime_id}/delete")

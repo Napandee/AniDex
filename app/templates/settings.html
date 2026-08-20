@@ -737,8 +737,13 @@
       <form method="post" action="/settings/tokens" class="password-form">
         <input class="form-input" type="text" name="name" maxlength="200" required
                placeholder="{{ t('pat_name_placeholder') }}">
+        <select class="form-input" name="scope">
+          <option value="read" selected>{{ t('pat_scope_read') }}</option>
+          <option value="read_write">{{ t('pat_scope_read_write') }}</option>
+        </select>
         <button type="submit" class="btn-save">{{ t('pat_create_btn') }}</button>
       </form>
+      <p class="settings-section-desc">{{ t('pat_scope_help') }}</p>
 
       {% if pat_tokens %}
       <div class="table-scroll">
@@ -746,6 +751,7 @@
         <thead>
           <tr>
             <th>{{ t('pat_col_name') }}</th>
+            <th>{{ t('pat_scope_label') }}</th>
             <th>{{ t('pat_col_created') }}</th>
             <th>{{ t('pat_col_last_used') }}</th>
             <th></th>
@@ -755,6 +761,7 @@
           {% for tok in pat_tokens %}
           <tr>
             <td>{{ tok.name }}</td>
+            <td>{{ t('pat_scope_read_write') if tok.scope == 'read_write' else t('pat_scope_read') }}</td>
             <td>{{ tok.created_at.strftime('%Y-%m-%d %H:%M') if tok.created_at else '—' }}</td>
             <td>{{ tok.last_used_at.strftime('%Y-%m-%d %H:%M') if tok.last_used_at else t('pat_never_used') }}</td>
             <td>

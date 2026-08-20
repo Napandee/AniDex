@@ -220,19 +220,28 @@ file's own header comment before running it.
   status (`POST /api/anime/{id}/status`), and progress (`POST /api/anime/{id}/progress`),
   all using `SaveMediaListEntry`. Never add further AniList mutations to the app without
   explicit agreement.
-- **MCP server exposure (issue #171 — decided, not yet built):** no MCP server exists
-  in this repo yet; #171 was closed as a research spike, not an implementation, and
-  this entry pre-commits to the shape it must take *when* it is built, so the decision
-  isn't re-litigated at implementation time. When built, AniDex is to expose an MCP
-  server for external AI clients (Claude Code, self-configured MCP clients) to read a
-  user's own library/notes/stats/recommendation data, authenticated via per-user
-  personal access tokens issued in Settings (GitHub-PAT style — Bearer token,
-  revocable, no OAuth authorization-server role for this app). v1 must be read-only;
-  no write-capable MCP tools until a later, deliberate decision, and if write tools are
-  ever added, they must require explicit ID lists — never wildcard or filter-based bulk
-  writes — to bound the blast radius of a single LLM reasoning pass. MCP exposure is a
-  new access surface, not a new AniList write path — it must never bypass the app's own
-  internal endpoints or the guardrail above.
+- **MCP server exposure (issue #171 decided the shape; #207 and #208 built it):**
+  AniDex exposes an MCP server (`app/mcp_server.py`, mounted at `/mcp` on the existing
+  FastAPI app — no separate process/container) for external AI clients (Claude Code,
+  self-configured MCP clients) to read, and now write, a user's own
+  library/notes/stats/recommendation data, authenticated via per-user personal access
+  tokens issued in Settings (GitHub-PAT style — Bearer token, revocable, no OAuth
+  authorization-server role for this app; `app/pat.py`). #207 shipped the read-only v1
+  foundation (`list_library_entries`/`list_personal_notes`/`list_recommendations`/
+  `get_stats`). #208 added write-capable tools on top of it
+  (`update_personal_notes`/`bulk_apply_tags`/`set_rating`/`set_status`/`set_progress`),
+  each calling straight into the same private write-logic helper its corresponding
+  HTTP route already uses — never a new write path of its own. Every write tool's
+  parameter schema takes explicit anime/entry id(s) — never a filter/query expression
+  that resolves to an unbounded set at execution time — to bound the blast radius of a
+  single LLM reasoning pass; this is enforced structurally (asserted at the JSON-schema
+  level in `tests/test_pat_and_mcp_server.py`), not just by convention, and must stay
+  true for any future tool added here. Every PAT carries a read/read_write `scope`
+  (`personal_access_tokens.scope`, migration 021) — read tools work with either scope,
+  write tools require read_write, and every token issued before #208 shipped defaulted
+  to read-only rather than silently gaining write access. MCP exposure is a new access
+  surface, not a new AniList write path — it must never bypass the app's own internal
+  endpoints or the guardrail above.
 - Ask before any schema migration that could drop or alter existing columns/data —
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline (GitHub Actions workflows, image name) — changes
