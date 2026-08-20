@@ -274,12 +274,23 @@ def get_library_statuses(conn) -> dict[int, str]:
 def fetch_recommendation_candidates(
     top_show_ids: list[int],
     library_ids: set[int],
-) -> set[int]:
+) -> tuple[set[int], dict[int, int]]:
     """
     For each of the user's top completed shows, pull AniList community
     recommendations and collect anime IDs not already in the library.
+
+    Also returns `vote_counts` (issue #226) — anime_id -> AniList's own per-edge
+    community vote count (`Recommendation.rating`, net "yeah" minus "nah" votes),
+    straight from data already in this payload, no extra API call. A candidate can
+    appear as a recommendation off more than one of the user's top shows with a
+    different rating each time; we keep the max, since that's the strongest real
+    evidence available for that pairing and this is a display-only trust signal
+    (no scoring impact — see issue #226's out-of-scope note). Non-positive/absent
+    ratings are dropped rather than stored as 0/negative — "N AniList users agree"
+    doesn't read sensibly for a net-negative or unrated pairing.
     """
     candidates: set[int] = set()
+    vote_counts: dict[int, int] = {}
     for i, media_id in enumerate(top_show_ids, 1):
         print(f"  [{i}/{len(top_show_ids)}] Fetching recs for media id {media_id}...", flush=True)
         for page in range(1, RECS_PER_SHOW_PAGES + 1):
@@ -289,11 +300,14 @@ def fetch_recommendation_candidates(
                 rec = node.get("mediaRecommendation")
                 if rec and rec["type"] == "ANIME" and rec["id"] not in library_ids:
                     candidates.add(rec["id"])
+                    rating = node.get("rating")
+                    if rating and rating > 0:
+                        vote_counts[rec["id"]] = max(vote_counts.get(rec["id"], 0), rating)
             if not recs["pageInfo"]["hasNextPage"]:
                 break
             time.sleep(INTER_REQUEST_SLEEP)
         time.sleep(INTER_REQUEST_SLEEP)
-    return candidates
+    return candidates, vote_counts
 
 
 def current_season_year(now: datetime | None = None) -> tuple[str, int]:
@@ -477,7 +491,12 @@ def fetch_cross_user_signal(conn, candidate_ids: set[int], profile_owner_id: int
 # Scoring
 # ---------------------------------------------------------------------------
 
-def score_candidate(media: dict, profile: dict, cross_user: dict | None = None) -> tuple[float, dict]:
+def score_candidate(
+    media: dict,
+    profile: dict,
+    cross_user: dict | None = None,
+    anilist_vote_count: int | None = None,
+) -> tuple[float, dict]:
     genres = media.get("genres") or []
     tags = media.get("tags") or []
     studios = media.get("studios") or []
@@ -519,6 +538,12 @@ def score_candidate(media: dict, profile: dict, cross_user: dict | None = None) 
         "matched_studio": main_studios[0] if main_studios else None,
         "cross_user_count":    cross_user_count or None,
         "cross_user_min_score": cross_user.get("min_score") if cross_user_count else None,
+        # Issue #226 — AniList's own per-edge recommendation vote count, display-only
+        # trust signal. Only ever set for candidates that actually appeared in
+        # AniList's `recommendations` edge response (see fetch_recommendation_candidates);
+        # never fabricated for PLANNING-list or cross-user-sourced candidates, which
+        # have no equivalent AniList vote count.
+        "anilist_vote_count": anilist_vote_count,
     }
     return raw, reason
 
@@ -550,11 +575,18 @@ def score_and_store(
     all_candidate_ids: set[int],
     profile: dict,
     sources: dict[int, str] | None = None,
+    vote_counts: dict[int, int] | None = None,
 ) -> int:
     """`sources` maps anime_id -> 'similarity' | 'seasonal' (issue #13); any
     candidate not present in the map defaults to 'similarity', which keeps this
-    backward-compatible with the original single-source call shape."""
+    backward-compatible with the original single-source call shape.
+
+    `vote_counts` (issue #226) maps anime_id -> AniList's real per-edge
+    recommendation vote count, for candidates that came from
+    fetch_recommendation_candidates(); anything not present just gets None in the
+    stored reason, deliberately — see score_candidate()'s docstring note."""
     sources = sources or {}
+    vote_counts = vote_counts or {}
     cross_user_signal = fetch_cross_user_signal(conn, all_candidate_ids, USER_ID)
     library_statuses = get_library_statuses(conn)
 
@@ -573,7 +605,9 @@ def score_and_store(
         # still be scored normally.
         if _has_unwatched_prequel(media, library_statuses):
             continue
-        raw, reason = score_candidate(media, profile, cross_user_signal.get(anime_id))
+        raw, reason = score_candidate(
+            media, profile, cross_user_signal.get(anime_id), vote_counts.get(anime_id)
+        )
         scored.append((anime_id, raw, reason))
 
     # Normalise so the best candidate always hits 100
@@ -669,7 +703,7 @@ def main() -> None:
         )
 
         print(f"\nStep 2/5 — Fetching AniList recommendations for top {len(top_ids)} shows...")
-        rec_candidate_ids = fetch_recommendation_candidates(top_ids, library_ids)
+        rec_candidate_ids, rec_vote_counts = fetch_recommendation_candidates(top_ids, library_ids)
         print(f"  {len(rec_candidate_ids)} unique external candidates discovered")
 
         print("\nStep 3/5 — Fetching seasonal discovery digest candidates (issue #13)...")
@@ -699,7 +733,7 @@ def main() -> None:
             print("\nStep 4/5 — All candidate details already cached, skipping fetch.")
 
         print(f"\nStep 5/5 — Scoring and storing {len(all_candidate_ids)} candidates...")
-        n = score_and_store(conn, all_candidate_ids, profile, sources)
+        n = score_and_store(conn, all_candidate_ids, profile, sources, rec_vote_counts)
         print(f"\nDone — {n} recommendations scored and stored.")
         _finish_log(log_id, "ok", n, None)
 

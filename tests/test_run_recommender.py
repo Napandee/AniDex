@@ -258,6 +258,116 @@ def test_mixed_batch_only_suppresses_the_sequel_candidate(monkeypatch):
     assert stored_ids == {501}
 
 
+# ── AniList vote count plumbing (issue #226) ──────────────────────────────────
+
+def test_fetch_recommendation_candidates_captures_vote_counts(monkeypatch):
+    def fake_gql(query, variables, retries=5):
+        return {
+            "Media": {
+                "recommendations": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "rating": 1204,
+                            "mediaRecommendation": {"id": 700, "type": "ANIME", "title": {"romaji": "X"}},
+                        },
+                        {
+                            # No votes yet — must not show up in vote_counts at all.
+                            "rating": 0,
+                            "mediaRecommendation": {"id": 701, "type": "ANIME", "title": {"romaji": "Y"}},
+                        },
+                        {
+                            # Net-negative — dropped, "N users agree" doesn't read sensibly.
+                            "rating": -3,
+                            "mediaRecommendation": {"id": 702, "type": "ANIME", "title": {"romaji": "Z"}},
+                        },
+                        {
+                            # Already in the library — excluded from candidates entirely.
+                            "rating": 500,
+                            "mediaRecommendation": {"id": 703, "type": "ANIME", "title": {"romaji": "W"}},
+                        },
+                        {
+                            # A MANGA recommendation — excluded, same as before this issue.
+                            "rating": 999,
+                            "mediaRecommendation": {"id": 704, "type": "MANGA", "title": {"romaji": "M"}},
+                        },
+                    ],
+                }
+            }
+        }
+
+    import run_recommender as rr
+
+    monkeypatch.setattr(rr, "gql", fake_gql)
+    monkeypatch.setattr(rr.time, "sleep", lambda *_: None)
+
+    candidates, vote_counts = rr.fetch_recommendation_candidates([1], library_ids={703})
+
+    assert candidates == {700, 701, 702}
+    assert vote_counts == {700: 1204}
+
+
+def test_fetch_recommendation_candidates_keeps_max_rating_across_shows(monkeypatch):
+    import run_recommender as rr
+
+    calls = {"n": 0}
+
+    def fake_gql(query, variables, retries=5):
+        calls["n"] += 1
+        rating = 50 if variables["mediaId"] == 1 else 900
+        return {
+            "Media": {
+                "recommendations": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "rating": rating,
+                            "mediaRecommendation": {"id": 800, "type": "ANIME", "title": {"romaji": "Shared"}},
+                        }
+                    ],
+                }
+            }
+        }
+
+    monkeypatch.setattr(rr, "gql", fake_gql)
+    monkeypatch.setattr(rr.time, "sleep", lambda *_: None)
+
+    candidates, vote_counts = rr.fetch_recommendation_candidates([1, 2], library_ids=set())
+
+    assert candidates == {800}
+    assert vote_counts == {800: 900}  # strongest of the two edges, not the first or last seen
+
+
+def test_score_candidate_carries_anilist_vote_count_only_when_given():
+    import run_recommender as rr
+
+    media = {"genres": [], "tags": [], "studios": []}
+    profile = {"genres": {}, "tags": {}, "studios": {}}
+
+    _, reason_with = rr.score_candidate(media, profile, anilist_vote_count=1204)
+    assert reason_with["anilist_vote_count"] == 1204
+
+    _, reason_without = rr.score_candidate(media, profile)
+    assert reason_without["anilist_vote_count"] is None
+
+
+def test_score_and_store_writes_anilist_vote_count_into_reason(monkeypatch):
+    anime_rows = [_anime_row(500), _anime_row(501)]
+    monkeypatch.setattr(rr, "fetch_cross_user_signal", lambda conn, ids, uid: {})
+    monkeypatch.setattr(rr, "get_library_statuses", lambda conn: {})
+    conn = _FakeScoreConn(anime_rows)
+    profile = {"genres": {}, "tags": {}, "studios": {}}
+    ids = {500, 501}
+
+    n = rr.score_and_store(conn, ids, profile, vote_counts={500: 1204})
+
+    assert n == 2
+    reasons = {row["params"][1]: json.loads(row["params"][3]) for row in conn.inserted}
+    assert reasons[500]["anilist_vote_count"] == 1204
+    # 501 was never seen in the recommendations edge — no fabricated count.
+    assert reasons[501]["anilist_vote_count"] is None
+
+
 def test_dismissed_and_snoozed_excluded_from_update_set(monkeypatch):
     # Standing invariant (CLAUDE.md): recommender reruns must never clobber a
     # user's dismissed/snoozed decision on an existing recommendation_scores row.
