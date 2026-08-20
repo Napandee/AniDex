@@ -15,6 +15,7 @@
     <button type="button" class="tab" data-tab="sync" role="tab">{{ t('tab_sync') }}</button>
     <button type="button" class="tab" data-tab="notifications" role="tab">{{ t('tab_notifications') }}</button>
     <button type="button" class="tab" data-tab="privacy" role="tab">{{ t('tab_privacy') }}</button>
+    <button type="button" class="tab" data-tab="api" role="tab">{{ t('tab_api') }}</button>
   </div>
 
   {# ══════════════════════════════════════════════════════════════════════
@@ -723,6 +724,55 @@
     </div>
   </div>
 
+  {# ══════════════════════════════════════════════════════════════════════
+     API Access tab — MCP server personal access tokens (issue #207)
+     ══════════════════════════════════════════════════════════════════════ #}
+  <div class="settings-tab-panel" data-tab-panel="api" hidden>
+
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">{{ t('pat_title') }}</h2>
+      <p class="settings-section-desc">{{ t('pat_desc') }}</p>
+      {% if saved == 'token_revoked' %}<p class="settings-success">{{ t('pat_revoked_msg') }}</p>{% endif %}
+
+      <form method="post" action="/settings/tokens" class="password-form">
+        <input class="form-input" type="text" name="name" maxlength="200" required
+               placeholder="{{ t('pat_name_placeholder') }}">
+        <button type="submit" class="btn-save">{{ t('pat_create_btn') }}</button>
+      </form>
+
+      {% if pat_tokens %}
+      <div class="table-scroll">
+      <table class="sync-log-table">
+        <thead>
+          <tr>
+            <th>{{ t('pat_col_name') }}</th>
+            <th>{{ t('pat_col_created') }}</th>
+            <th>{{ t('pat_col_last_used') }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tok in pat_tokens %}
+          <tr>
+            <td>{{ tok.name }}</td>
+            <td>{{ tok.created_at.strftime('%Y-%m-%d %H:%M') if tok.created_at else '—' }}</td>
+            <td>{{ tok.last_used_at.strftime('%Y-%m-%d %H:%M') if tok.last_used_at else t('pat_never_used') }}</td>
+            <td>
+              <form method="post" action="/settings/tokens/{{ tok.id }}/revoke">
+                <button type="submit" class="btn-unlink">{{ t('pat_revoke_btn') }}</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="settings-section-desc">{{ t('pat_empty') }}</p>
+      {% endif %}
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -740,6 +790,7 @@ document.addEventListener('DOMContentLoaded', function () {
       cr_override: 'sync', cr_override_deleted: 'sync', streaming_services: 'sync',
       notifications: 'notifications', privacy: 'privacy',
       twofa_disabled: 'account', session_revoked: 'account',
+      token_revoked: 'api',
     };
     const saved = params.get('saved');
     if (saved && savedTabMap[saved]) return savedTabMap[saved];

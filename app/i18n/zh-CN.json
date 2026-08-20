@@ -577,5 +577,22 @@
 
   "streaming_footprint_title": "历史足迹（已完成 / 已弃坑）",
   "streaming_footprint_desc": "仅供参考 — 不影响上方的排名。",
-  "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。"
+  "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。",
+  "tab_api": "API 访问",
+  "pat_title": "个人访问令牌",
+  "pat_desc": "签发一个令牌,让外部 MCP 客户端(例如 Claude Code)读取你自己的 AniDex 库、笔记、统计和推荐。令牌为只读,且仅限于你自己的账户。",
+  "pat_name_placeholder": "令牌名称(例如 Claude Code)",
+  "pat_create_btn": "创建令牌",
+  "pat_col_name": "名称",
+  "pat_col_created": "创建时间",
+  "pat_col_last_used": "上次使用",
+  "pat_never_used": "从未使用",
+  "pat_revoke_btn": "撤销",
+  "pat_revoked_msg": "令牌已撤销。",
+  "pat_empty": "没有有效令牌。",
+  "title_token_created": "令牌已创建",
+  "pat_created_heading": "保存你的令牌",
+  "pat_created_desc": "个人访问令牌“{name}”已创建。",
+  "pat_created_warning": "此令牌仅显示一次。请立即复制并妥善保存 — 之后将无法再次查看。如果遗失,请撤销该令牌并创建一个新的。",
+  "pat_created_continue_btn": "我已保存此令牌 — 继续"
 }

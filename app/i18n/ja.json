@@ -577,5 +577,22 @@
 
   "streaming_footprint_title": "過去の実績（完了 / 中断）",
   "streaming_footprint_desc": "参考情報のみ — 上記のランキングには影響しません。",
-  "streaming_footprint_empty": "配信リンクのある完了済み・中断した作品はまだありません。"
+  "streaming_footprint_empty": "配信リンクのある完了済み・中断した作品はまだありません。",
+  "tab_api": "API アクセス",
+  "pat_title": "個人用アクセストークン",
+  "pat_desc": "外部の MCP クライアント(Claude Code など)があなた自身の AniDex のライブラリ・メモ・統計・おすすめを読み取れるように、トークンを発行します。トークンは読み取り専用で、あなたのアカウントのみに限定されます。",
+  "pat_name_placeholder": "トークン名(例: Claude Code)",
+  "pat_create_btn": "トークンを作成",
+  "pat_col_name": "名前",
+  "pat_col_created": "作成日",
+  "pat_col_last_used": "最終使用",
+  "pat_never_used": "未使用",
+  "pat_revoke_btn": "失効",
+  "pat_revoked_msg": "トークンを失効しました。",
+  "pat_empty": "有効なトークンはありません。",
+  "title_token_created": "トークンを作成しました",
+  "pat_created_heading": "トークンを保存してください",
+  "pat_created_desc": "個人用アクセストークン「{name}」を作成しました。",
+  "pat_created_warning": "このトークンは一度だけ表示されます。今すぐコピーして安全な場所に保管してください — 再度表示することはできません。紛失した場合は、失効させてから新しく作成してください。",
+  "pat_created_continue_btn": "このトークンを保存しました — 続ける"
 }

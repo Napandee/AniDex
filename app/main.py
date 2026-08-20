@@ -34,7 +34,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n, sessions, credential_check
+from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -661,6 +661,15 @@ def _upsert_anime_row(media: dict) -> None:
     )
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# Issue #207 — MCP server, mounted as a route prefix of this same app rather than a
+# separate process/container. See app/mcp_server.py's module docstring for the full
+# reasoning; short version: it's read-only, has no background work of its own, and
+# serves the same tables/DB connection this app already has, so it doesn't clear the
+# bar this repo otherwise holds new containers to (see CLAUDE.md's "One sync path,
+# not two" decision). Bearer-token auth is handled entirely inside mcp_server.asgi_app
+# (app/pat.py's PATs) — nothing about /mcp goes through the cookie-session auth the
+# rest of this app uses.
+app.mount("/mcp", mcp_server.asgi_app)
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -775,6 +784,12 @@ _TOTP_LOGIN_LOCKOUT_MINUTES = 15
 _totp_setup_state: dict[int, dict] = {}   # user_id -> {"secret", "started_at", "attempts"}
 _totp_recovery_display: dict[int, list[str]] = {}  # user_id -> plaintext codes, popped on render
 
+# Same one-time-display convention as _totp_recovery_display above, for issue #207's
+# personal access tokens: user_id -> {"name", "token"}, popped on render by
+# settings_token_created. The raw token is never written to the database or the
+# session cookie — see app/pat.py's module docstring for the storage approach.
+_pat_display: dict[int, dict] = {}
+
 
 def _generate_totp_recovery_codes() -> list[str]:
     """8 one-time backup codes (issue #83's lost-authenticator recovery mechanism),
@@ -875,11 +890,27 @@ def startup() -> None:
     log.info("APScheduler started")
 
 
+@app.on_event("startup")
+async def startup_mcp() -> None:
+    # Issue #207 — must run before any request can reach mcp_server.asgi_app:
+    # StreamableHTTPSessionManager.handle_request asserts its background task group
+    # is already active. A separate on_event handler (rather than folding into
+    # startup() above) since this one needs to be async and the other doesn't.
+    await mcp_server.start()
+    log.info("MCP server started")
+
+
 @app.on_event("shutdown")
 def shutdown() -> None:
     outbox.stop_worker()
     _scheduler.shutdown(wait=False)
     log.info("APScheduler stopped")
+
+
+@app.on_event("shutdown")
+async def shutdown_mcp() -> None:
+    await mcp_server.stop()
+    log.info("MCP server stopped")
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -2738,6 +2769,9 @@ def settings_page(
     # session token into the rendered page.
     active_sessions = sessions.list_active_sessions(user["id"], request.session.get("sid"))
 
+    # Issue #207 — MCP server personal access tokens, "API Access" tab.
+    pat_tokens = pat.list_tokens(user["id"])
+
     # Issue #182 — "services I own", edited from this tab, scored against the
     # library on the separate /streaming page.
     owned_streaming_services = {
@@ -2792,6 +2826,7 @@ def settings_page(
             "twofa_error": twofa_error,
             "cr_overrides": cr_overrides,
             "active_sessions": active_sessions,
+            "pat_tokens": pat_tokens,
             "all_streaming_services": sorted(STREAMING_SITES),
             "owned_streaming_services": owned_streaming_services,
             "privacy": {
@@ -3423,6 +3458,54 @@ def settings_2fa_disable(request: Request, password: str = Form(...)):
         conn.commit()
 
     return RedirectResponse(url="/settings?saved=twofa_disabled", status_code=303)
+
+
+# ── Personal access tokens for the MCP server (issue #207) ──────────────────────
+# Issue/revoke UI lives in Settings' "API Access" tab. Token generation/hashing/
+# lookup itself is in app/pat.py, not here — main.py only owns the route/one-time-
+# display plumbing, same split as sessions.py for the "active sessions" feature.
+
+
+@app.post("/settings/tokens")
+def settings_create_token(request: Request, name: str = Form(...)):
+    """Issues a new PAT for the current user. The raw token is shown exactly once,
+    on the very next request only (settings_token_created pops it from the
+    in-process display dict on render) — same one-time-display pattern as issue
+    #83's TOTP recovery codes (_totp_recovery_display above). Never written to the
+    database in plaintext, never round-tripped through the client-visible session
+    cookie."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    label = name.strip() or "Unnamed token"
+    _token_id, raw_token = pat.create_token(user["id"], label)
+    _pat_display[user["id"]] = {"name": label, "token": raw_token}
+    return RedirectResponse(url="/settings/tokens/created", status_code=303)
+
+
+@app.get("/settings/tokens/created", response_class=HTMLResponse)
+def settings_token_created(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    display = _pat_display.pop(user["id"], None)
+    if not display:
+        return RedirectResponse(url="/settings", status_code=303)
+    return templates.TemplateResponse(request, "settings_token_created.html", display)
+
+
+@app.post("/settings/tokens/{token_id}/revoke")
+def settings_revoke_token(request: Request, token_id: int):
+    """Revoke one of the current user's own tokens (issue #207). pat.revoke_token
+    scopes the UPDATE to (id, user_id), so passing another user's token_id here
+    just finds no matching row and no-ops — same defense-in-depth shape as
+    settings_revoke_session above."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+    pat.revoke_token(user["id"], token_id)
+    return RedirectResponse(url="/settings?saved=token_revoked", status_code=303)
 
 
 @app.post("/api/sync")
