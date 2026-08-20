@@ -288,6 +288,61 @@ def _weekly_airing_digest() -> None:
         notify(user_id, "Anime this week", "\n".join(lines))
 
 
+# Issue #196 — periodic nudge pointing users at the living "year so far" page
+# (/stats/wrapped), via #51's existing notify() fan-out. Timing choice, documented
+# here since the issue explicitly asked for the reasoning to be written down:
+#
+# A single once-a-year "reveal" notification (the natural choice for a static
+# year-END recap) doesn't fit a page whose whole point is that it's ALWAYS
+# current — there's no one moment where it "unlocks". Two occasions instead:
+#   - Mid-year check-in (Jul 1): the most natural "how's my year going" moment —
+#     half the year's data is in, genre/pace/binge-week are all meaningfully
+#     populated by then, not just a handful of January completions.
+#   - Pre-year-end reminder (Dec 20): while there's still real runway (~11 days)
+#     to finish something before the year closes and #wrapup-card's comparison
+#     view takes over as the more useful lens — a Dec 31 ping would arrive too
+#     late to act on.
+# Both skip a user with zero completions so far this year (has_data is False) —
+# nudging someone toward an empty page reads as noise, not a check-in.
+_WRAPPED_CHECKIN_OCCASIONS = ("midyear", "year_end")
+
+
+def _notify_wrapped_checkin(occasion: str) -> None:
+    # Fail loudly on an unexpected occasion rather than a bare `else` silently
+    # treating anything-not-"midyear" as "year_end" — a future scheduler-wiring
+    # typo (e.g. "mid_year") should surface as an error, not send the wrong
+    # message to every user without a trace of the mistake.
+    if occasion not in _WRAPPED_CHECKIN_OCCASIONS:
+        raise ValueError(f"Unknown wrapped check-in occasion: {occasion!r}")
+
+    for user in db.fetchall("SELECT id FROM users"):
+        user_id = user["id"]
+        try:
+            wrapped = _compute_wrapped_page(user_id)
+            if not wrapped["has_data"]:
+                continue
+            if occasion == "midyear":
+                body = (
+                    f"You're {wrapped['total_episodes']} episodes into {wrapped['year']} so far — "
+                    "see your top genre, biggest binge week, and pace vs. last year at /stats/wrapped."
+                )
+            else:  # "year_end"
+                body = (
+                    f"{wrapped['year']} is almost over — see how your year stacked up at /stats/wrapped."
+                )
+            notify(user_id, "📊 Your year so far", body)
+        except Exception as e:
+            log.error("Wrapped %s check-in notification failed for user %s: %s", occasion, user_id, e)
+
+
+def _scheduled_wrapped_midyear_checkin() -> None:
+    _notify_wrapped_checkin("midyear")
+
+
+def _scheduled_wrapped_year_end_reminder() -> None:
+    _notify_wrapped_checkin("year_end")
+
+
 def _scheduled_full_sync() -> None:
     """Loop every user with sync credentials configured. One user's failure is caught
     and logged to that user's own sync_log, not allowed to stop anyone else's sync."""
@@ -406,6 +461,20 @@ def _apply_schedule() -> None:
         _weekly_airing_digest,
         CronTrigger(day_of_week="mon", hour=7, minute=0, timezone="UTC"),
         id="weekly_digest", replace_existing=True,
+    )
+    # Issue #196 — "your year so far" (/stats/wrapped) check-in nudges. Fixed
+    # calendar dates, instance-wide like every other cron trigger here — see
+    # _notify_wrapped_checkin's docstring for why two dates (mid-year + pre-year-end)
+    # rather than the single annual "reveal" a static recap would use.
+    _scheduler.add_job(
+        _scheduled_wrapped_midyear_checkin,
+        CronTrigger(month=7, day=1, hour=9, minute=0, timezone="UTC"),
+        id="wrapped_midyear_checkin", replace_existing=True,
+    )
+    _scheduler.add_job(
+        _scheduled_wrapped_year_end_reminder,
+        CronTrigger(month=12, day=20, hour=9, minute=0, timezone="UTC"),
+        id="wrapped_year_end_reminder", replace_existing=True,
     )
 
 
@@ -4153,6 +4222,148 @@ def _year_comparison_extras(user_id: int, year: int) -> dict:
     }
 
 
+# ── "Your year so far" living page (issue #196, held on #193 above) ─────────────
+#
+# A dedicated, always-current-calendar-year destination — no year picker, unlike
+# #wrapup-card's selector. Every one of the three metrics #193 built as reusable
+# functions (_biggest_binge_week, _status_distribution_snapshot,
+# _score_distribution_shift) is called directly here rather than through
+# _year_comparison_extras, so this page doesn't pay for a second
+# _yearly_completion_rows() query on top of the one it needs anyway for the
+# top-genre/highest-rated/pace metrics that are new to this issue. That still
+# means every shared metric goes through the exact same aggregation code #193
+# shipped — nothing here reimplements binge-week/status-snapshot/score-shift logic.
+
+
+def _pace_stat(
+    this_year_rows: list[dict], prior_year_rows: list[dict], cutoff_month_day: tuple[int, int]
+) -> dict:
+    """Issue #164's pace stat, folded into #196: "on pace to match last year",
+    framed as ahead/behind/on-pace rather than a numeric target (see #164's own
+    gut-check against a nagging pace nudge — this is passive/visual only, no
+    notification tied to it specifically).
+
+    Compares this year's cumulative episodes as of `cutoff_month_day` against the
+    prior year's cumulative total at that SAME (month, day) cutoff — not the prior
+    year's full-year total, which would always read as "behind" until Dec 31.
+    Pure function over two _yearly_completion_rows() row sets plus a cutoff
+    (rather than reaching for date.today() itself), so it's directly
+    unit-testable with known rows/cutoffs for two different years without
+    needing a real "today" or a DB.
+
+    Deliberately a (month, day) tuple rather than an ordinal day-of-year: two
+    calendar dates that are "the same point in the year" don't share an ordinal
+    day-of-year across a leap-year boundary (e.g. 2028-03-05 is day 65 of a leap
+    year, but the equivalent 2027-03-05 is day 64) — comparing ordinals directly
+    would let up to a day of the wrong year's data leak into the cumulative
+    total. (month, day) tuples compare correctly regardless of either year's
+    leap-ness.
+
+    Anything within 5 percentage points either side of the prior year counts as
+    "on_pace" rather than a coinflip ahead/behind on essentially a tie.
+    """
+    def _cumulative(rows: list[dict], cutoff: tuple[int, int]) -> int:
+        episodes = 0
+        for r in rows:
+            fd = r["finish_date"]
+            if (fd.month, fd.day) > cutoff:
+                continue  # defensive: a finish_date beyond the cutoff shouldn't
+                          # normally occur (both row sets are already scoped to
+                          # their own calendar year), but never let one count
+                          # towards a cumulative total it's not part of.
+            episodes += r["progress"] or 0
+        return episodes
+
+    this_year_episodes = _cumulative(this_year_rows, cutoff_month_day)
+    prior_year_episodes = _cumulative(prior_year_rows, cutoff_month_day)
+
+    if prior_year_episodes == 0:
+        status = "no_prior_data"
+        diff_pct = None
+    else:
+        diff_pct = round((this_year_episodes - prior_year_episodes) / prior_year_episodes * 100)
+        if abs(diff_pct) <= 5:
+            status = "on_pace"
+        elif diff_pct > 0:
+            status = "ahead"
+        else:
+            status = "behind"
+
+    return {
+        "this_year_episodes": this_year_episodes,
+        "prior_year_episodes": prior_year_episodes,
+        "status": status,
+        "diff_pct": diff_pct,
+    }
+
+
+def _compute_wrapped_page(user_id: int, today: date | None = None) -> dict:
+    """Full data set for GET /stats/wrapped. `today` is injectable for tests
+    (defaults to date.today()) — everything else is a pure function of it plus
+    _yearly_completion_rows()' output for the current year and year-1.
+
+    top_genre/highest_rated/total_episodes/total_minutes are new to this issue —
+    computed directly off the same row set _yearly_completion_rows() already
+    returns rather than a second query. binge_week/status_snapshot/score_shift
+    are #193's three functions, called unmodified.
+    """
+    today = today or date.today()
+    year = today.year
+
+    rows = _yearly_completion_rows(user_id, year)
+    prior_rows = _yearly_completion_rows(user_id, year - 1)
+
+    total_episodes = sum(r["progress"] or 0 for r in rows)
+    total_minutes = sum((r["progress"] or 0) * (r["duration"] or 24) for r in rows)
+    total_hours = total_minutes // 60
+    total_days = round(total_minutes / 1440, 1)
+    # Single source for the >=24h "show days instead of hours" display convention,
+    # rather than re-deriving the same threshold a third time in the template
+    # (stats.html's JS already has it twice, for #wrapup-card and the headlines).
+    total_watch_display = f"{total_days}d" if total_hours >= 24 else f"{total_hours}h"
+
+    # Deterministic tie-breaks below: _yearly_completion_rows() has no ORDER BY,
+    # so Postgres row order for a tied count/score is unspecified — pick*'s dict
+    # iteration would otherwise let the displayed "top genre"/"highest rated"
+    # flip between page loads for identical underlying data.
+    genre_counts: Counter = Counter()
+    for r in rows:
+        for g in (r["genres"] or []):
+            genre_counts[g] += 1
+    top_genre = min(genre_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0] if genre_counts else None
+
+    def _title(r: dict) -> str:
+        return r["title_english"] or r["title_romaji"] or ""
+
+    scored_rows = [r for r in rows if r["score"] is not None and r["score"] > 0]
+    highest_rated = None
+    if scored_rows:
+        best = min(scored_rows, key=lambda r: (-r["score"], _title(r)))
+        highest_rated = {"title": _title(best), "score": best["score"]}
+
+    return {
+        "year": year,
+        "prior_year": year - 1,
+        # total_episodes > 0, not just bool(rows): a COMPLETED row with a
+        # finish_date but progress 0/NULL (a data-quality edge case — a sync
+        # glitch, or a row synced before progress was backfilled) would
+        # otherwise render a populated-looking page with all-zero headline
+        # stats instead of the intended empty state.
+        "has_data": total_episodes > 0,
+        "total_episodes": total_episodes,
+        "total_minutes": total_minutes,
+        "total_hours": total_hours,
+        "total_days": total_days,
+        "total_watch_display": total_watch_display,
+        "top_genre": top_genre,
+        "highest_rated": highest_rated,
+        "binge_week": _biggest_binge_week(rows),
+        "status_snapshot": _status_distribution_snapshot(rows),
+        "score_shift": _score_distribution_shift(rows, prior_rows),
+        "pace": _pace_stat(rows, prior_rows, (today.month, today.day)),
+    }
+
+
 # ── Recommend -> outcome hit-rate + dismiss-reason distribution (issue #185) ────
 #
 # The recommender (scripts/run_recommender.py) has never had a feedback loop:
@@ -4488,6 +4699,22 @@ def stats(request: Request):
             "streaming_owned_count": len(coverage["owned"]),
         },
     )
+
+
+@app.get("/stats/wrapped", response_class=HTMLResponse)
+def stats_wrapped(request: Request):
+    """Issue #196 — "Your year so far": the living, always-current-calendar-year
+    counterpart to #wrapup-card's year-picker on /stats. Fully server-rendered
+    (unlike /stats' charts, which fetch /api/stats) since there's no client-side
+    filtering here — every visit just reflects wherever the current year is today.
+    """
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    wrapped = _compute_wrapped_page(user["id"])
+
+    return templates.TemplateResponse(request, "wrapped.html", {"wrapped": wrapped})
 
 
 def _export_user_library(user_id: int) -> list:

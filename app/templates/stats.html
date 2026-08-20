@@ -42,6 +42,10 @@
         </select>
       </div>
     </div>
+    {# Issue #196 — link to the living "your year so far" page (always the current
+       calendar year, no picker), a separate destination from this card's own
+       year-comparison browsing. #}
+    <p class="wrapup-living-link"><a href="/stats/wrapped">{{ t('stats_wrapped_link') }}</a></p>
     <div class="wrapup-body" id="wrapup-body">
       <div class="wrapup-stat"><span class="stat-num" id="wrapup-completed">—</span><span class="stat-label">Completed</span></div>
       <div class="wrapup-stat"><span class="stat-num" id="wrapup-watchtime">—</span><span class="stat-label">Watch time</span></div>

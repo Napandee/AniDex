@@ -1924,6 +1924,31 @@ body.auth-page main {
 .wrapped-detail p { margin: 0; font-size: 0.9rem; color: var(--t2); }
 .wrapped-detail--wide { grid-column: 1 / -1; }
 
+/* ── Stats: link from #wrapup-card to the living /stats/wrapped page (#196) ── */
+.wrapup-living-link { margin: 0.75rem 0 0; }
+.wrapup-living-link a { font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+.wrapup-living-link a:hover { text-decoration: underline; }
+
+/* ── "Your year so far" living page (issue #196) ─────────────────────────── */
+.wrapped-page .page-header { margin-bottom: 1rem; }
+.wrapped-pace-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.wrapped-pace-card.pace-ahead { border-color: #16a34a; }
+.wrapped-pace-card.pace-behind { border-color: #dc2626; }
+.wrapped-pace-card.pace-on_pace { border-color: var(--accent); }
+.wrapped-pace-card.pace-no_prior_data { border-color: var(--t6); }
+.wrapped-pace-icon { font-size: 1.3rem; line-height: 1; }
+.wrapped-score-list { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.4rem; }
+
 /* ── Stats: watch-activity heatmap (issue #10) ───────────────────────────── */
 .heatmap-wrap {
   display: flex;
