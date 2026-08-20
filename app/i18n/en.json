@@ -417,6 +417,7 @@
   "admin_tab_invites": "Invites",
   "admin_tab_instance_config": "Instance Config",
   "admin_tab_operability": "Operability",
+  "admin_tab_data_quality": "Data Quality",
 
   "admin_users_title": "Users",
   "admin_users_desc": "Login activity and each user's most recent sync run.",
@@ -486,6 +487,39 @@
   "admin_backup_title": "Backup",
   "admin_backup_desc": "Export every user's library data (same query as each user's own Settings → Data export) as one zip, one JSON file per user. Manual trigger only — not scheduled.",
   "admin_export_all_btn": "Export all users",
+
+  "admin_col_updated": "Updated",
+
+  "admin_dq_provider_sync_title": "Last successful sync per provider",
+  "admin_dq_provider_sync_desc": "Most recent full-sync run at which each provider's step succeeded, derived from sync_log — no separate per-provider tracking.",
+  "admin_dq_not_configured": "not configured",
+  "admin_dq_last_attempt_failed": "last attempt failed — {when}",
+
+  "admin_dq_failure_history_title": "Sync failure rate & history",
+  "admin_dq_failure_history_desc": "Full-sync runs in the last {days} days, per user.",
+  "admin_dq_col_total_runs": "Total runs",
+  "admin_dq_col_failed_runs": "Failed runs",
+  "admin_dq_col_failure_rate": "Failure rate",
+  "admin_dq_recent_failures_label": "Recent failures",
+  "admin_dq_no_failures": "none",
+  "admin_dq_no_runs": "No sync runs in the last {days} days.",
+
+  "admin_dq_orphaned_notes_title": "Orphaned personal notes",
+  "admin_dq_orphaned_notes_desc": "personal_notes rows with no matching library_entries row — should be impossible in steady state; usually means the library entry was removed without the note being cleaned up alongside it.",
+  "admin_dq_col_user": "User",
+  "admin_dq_col_anime": "Anime",
+  "admin_dq_no_orphaned_notes": "No orphaned personal notes found.",
+
+  "admin_dq_stale_recs_title": "Stale recommendations",
+  "admin_dq_stale_recs_desc": "recommendation_scores candidates that have since been added to the user's library but weren't cleared out — the inverse of a literal \"no matching library entry\" check, since every recommendation candidate is generated for an anime NOT yet in the library by design (see run_recommender.py). These are the ones that should have been.",
+  "admin_dq_col_library_status": "Library status",
+  "admin_dq_col_computed": "Computed",
+  "admin_dq_no_stale_recs": "No stale recommendations found.",
+
+  "admin_dq_drift_title": "Drift candidates",
+  "admin_dq_drift_desc": "Watching/Repeating library entries whose AniList-side last-updated timestamp hasn't moved in over {days} days — a possible sign a provider sync has silently stopped picking up that show.",
+  "admin_dq_col_last_updated": "AniList last updated",
+  "admin_dq_no_drift": "No drift candidates found.",
 
   "js_bulk_selected": "{n} selected",
   "js_select": "Select",

@@ -417,6 +417,7 @@
   "admin_tab_invites": "आमंत्रण",
   "admin_tab_instance_config": "इंस्टेंस कॉन्फ़िग",
   "admin_tab_operability": "संचालन क्षमता",
+  "admin_tab_data_quality": "डेटा गुणवत्ता",
 
   "admin_users_title": "उपयोगकर्ता",
   "admin_users_desc": "लॉगिन गतिविधि और प्रत्येक उपयोगकर्ता का नवीनतम सिंक रन।",
@@ -486,6 +487,39 @@
   "admin_backup_title": "बैकअप",
   "admin_backup_desc": "हर उपयोगकर्ता का लाइब्रेरी डेटा (हर उपयोगकर्ता की अपनी सेटिंग्स → डेटा निर्यात जैसी ही क्वेरी) एक zip के रूप में निर्यात करें, प्रति उपयोगकर्ता एक JSON फ़ाइल। केवल मैनुअल ट्रिगर — शेड्यूल नहीं है।",
   "admin_export_all_btn": "सभी उपयोगकर्ता निर्यात करें",
+
+  "admin_col_updated": "अपडेट किया गया",
+
+  "admin_dq_provider_sync_title": "प्रत्येक प्रदाता का अंतिम सफल सिंक",
+  "admin_dq_provider_sync_desc": "sync_log से प्राप्त, वह सबसे हालिया फुल-सिंक रन जिसमें हर प्रदाता का चरण सफल रहा — कोई अलग प्रति-प्रदाता ट्रैकिंग नहीं।",
+  "admin_dq_not_configured": "कॉन्फ़िगर नहीं किया गया",
+  "admin_dq_last_attempt_failed": "अंतिम प्रयास विफल — {when}",
+
+  "admin_dq_failure_history_title": "सिंक विफलता दर और इतिहास",
+  "admin_dq_failure_history_desc": "पिछले {days} दिनों में हर उपयोगकर्ता के फुल-सिंक रन।",
+  "admin_dq_col_total_runs": "कुल रन",
+  "admin_dq_col_failed_runs": "विफल रन",
+  "admin_dq_col_failure_rate": "विफलता दर",
+  "admin_dq_recent_failures_label": "हाल की विफलताएं",
+  "admin_dq_no_failures": "कोई नहीं",
+  "admin_dq_no_runs": "पिछले {days} दिनों में कोई सिंक रन नहीं।",
+
+  "admin_dq_orphaned_notes_title": "अनाथ व्यक्तिगत नोट्स",
+  "admin_dq_orphaned_notes_desc": "personal_notes की वे पंक्तियां जिनके लिए कोई मेल खाती library_entries पंक्ति नहीं है — सामान्य स्थिति में यह असंभव होना चाहिए; आमतौर पर इसका मतलब है कि लाइब्रेरी एंट्री हटा दी गई पर नोट को साथ में साफ़ नहीं किया गया।",
+  "admin_dq_col_user": "उपयोगकर्ता",
+  "admin_dq_col_anime": "एनीमे",
+  "admin_dq_no_orphaned_notes": "कोई अनाथ व्यक्तिगत नोट नहीं मिला।",
+
+  "admin_dq_stale_recs_title": "पुरानी सिफारिशें",
+  "admin_dq_stale_recs_desc": "recommendation_scores के वे उम्मीदवार जिन्हें उपयोगकर्ता की लाइब्रेरी में जोड़ा जा चुका है लेकिन हटाया नहीं गया — यह शाब्दिक \"कोई मेल खाती लाइब्रेरी एंट्री नहीं\" जांच के विपरीत है, क्योंकि डिज़ाइन के अनुसार हर सिफारिश उम्मीदवार उस एनीमे के लिए बनाया जाता है जो अभी तक लाइब्रेरी में नहीं है (देखें run_recommender.py)। ये वे हैं जिन्हें होना चाहिए था।",
+  "admin_dq_col_library_status": "लाइब्रेरी स्थिति",
+  "admin_dq_col_computed": "गणना की गई",
+  "admin_dq_no_stale_recs": "कोई पुरानी सिफारिश नहीं मिली।",
+
+  "admin_dq_drift_title": "ड्रिफ्ट उम्मीदवार",
+  "admin_dq_drift_desc": "देख रहे/दोहरा रहे स्टेटस की लाइब्रेरी एंट्रीज़ जिनका AniList-साइड लास्ट-अपडेटेड टाइमस्टैंप {days} दिनों से अधिक समय से नहीं बदला — यह संकेत हो सकता है कि किसी प्रदाता का सिंक उस शो को पकड़ना चुपचाप बंद कर चुका है।",
+  "admin_dq_col_last_updated": "AniList पर अंतिम अपडेट",
+  "admin_dq_no_drift": "कोई ड्रिफ्ट उम्मीदवार नहीं मिला।",
 
   "js_bulk_selected": "{n} चयनित",
   "js_select": "चुनें",

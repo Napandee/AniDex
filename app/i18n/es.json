@@ -417,6 +417,7 @@
   "admin_tab_invites": "Invitaciones",
   "admin_tab_instance_config": "Configuración de la instancia",
   "admin_tab_operability": "Operabilidad",
+  "admin_tab_data_quality": "Calidad de datos",
 
   "admin_users_title": "Usuarios",
   "admin_users_desc": "Actividad de inicio de sesión y la última ejecución de sincronización de cada usuario.",
@@ -486,6 +487,39 @@
   "admin_backup_title": "Copia de seguridad",
   "admin_backup_desc": "Exporta los datos de biblioteca de todos los usuarios (misma consulta que la propia Exportación de datos de cada usuario en Ajustes) como un único zip, con un archivo JSON por usuario. Solo activación manual — no programado.",
   "admin_export_all_btn": "Exportar todos los usuarios",
+
+  "admin_col_updated": "Actualizado",
+
+  "admin_dq_provider_sync_title": "Última sincronización correcta por proveedor",
+  "admin_dq_provider_sync_desc": "Ejecución de sincronización completa más reciente en la que el paso de cada proveedor tuvo éxito, obtenida de sync_log — sin seguimiento independiente por proveedor.",
+  "admin_dq_not_configured": "no configurado",
+  "admin_dq_last_attempt_failed": "el último intento falló — {when}",
+
+  "admin_dq_failure_history_title": "Tasa e historial de fallos de sincronización",
+  "admin_dq_failure_history_desc": "Ejecuciones de sincronización completa en los últimos {days} días, por usuario.",
+  "admin_dq_col_total_runs": "Ejecuciones totales",
+  "admin_dq_col_failed_runs": "Ejecuciones fallidas",
+  "admin_dq_col_failure_rate": "Tasa de fallos",
+  "admin_dq_recent_failures_label": "Fallos recientes",
+  "admin_dq_no_failures": "ninguno",
+  "admin_dq_no_runs": "No hay ejecuciones de sincronización en los últimos {days} días.",
+
+  "admin_dq_orphaned_notes_title": "Notas personales huérfanas",
+  "admin_dq_orphaned_notes_desc": "Filas de personal_notes sin una fila de library_entries correspondiente — no debería ocurrir en condiciones normales; normalmente significa que se eliminó la entrada de la biblioteca sin limpiar la nota asociada.",
+  "admin_dq_col_user": "Usuario",
+  "admin_dq_col_anime": "Anime",
+  "admin_dq_no_orphaned_notes": "No se encontraron notas personales huérfanas.",
+
+  "admin_dq_stale_recs_title": "Recomendaciones obsoletas",
+  "admin_dq_stale_recs_desc": "Candidatos de recommendation_scores que ya se añadieron a la biblioteca del usuario pero no se eliminaron — lo contrario de una comprobación literal de \"sin entrada de biblioteca coincidente\", ya que cada candidato de recomendación se genera para un anime que AÚN NO está en la biblioteca por diseño (ver run_recommender.py). Estos son los que deberían haberlo estado.",
+  "admin_dq_col_library_status": "Estado en la biblioteca",
+  "admin_dq_col_computed": "Calculado",
+  "admin_dq_no_stale_recs": "No se encontraron recomendaciones obsoletas.",
+
+  "admin_dq_drift_title": "Candidatos de desviación",
+  "admin_dq_drift_desc": "Entradas de biblioteca en estado Viendo/Repitiendo cuya última actualización en AniList no ha cambiado en más de {days} días — una posible señal de que la sincronización de un proveedor dejó de detectar ese título.",
+  "admin_dq_col_last_updated": "Última actualización en AniList",
+  "admin_dq_no_drift": "No se encontraron candidatos de desviación.",
 
   "js_bulk_selected": "{n} seleccionados",
   "js_select": "Seleccionar",

@@ -1638,6 +1638,184 @@ def _instance_health() -> dict:
     }
 
 
+# Issue #202 — drift-detection threshold: how many days a WATCHING/REPEATING
+# library_entries row's anilist_updated_at can go without moving before it's flagged
+# as a drift candidate. The default full sync runs daily (see the Sync schedule
+# section of the Instance Config tab), so 30 days is roughly 30x that cadence —
+# comfortably longer than "hasn't watched anything for a couple of weeks" (which is
+# completely normal and shouldn't page anyone), but still tight enough to surface a
+# genuine multi-week sync gap well before a user notices and files a bug (the #159
+# CR season-mismatch bug — progress silently written to the wrong AniList entry
+# while the real one sat stalled — is exactly the shape of problem this is meant to
+# catch). Deliberately a single fixed threshold, not a per-user adaptive one — see
+# #202's scope note against over-engineering v1.
+DATA_QUALITY_DRIFT_DAYS = 30
+
+# Only actively-progressing statuses are checked for drift. COMPLETED/DROPPED/PAUSED/
+# PLANNING rows aren't expected to see anilist_updated_at move regardless of sync
+# health, so including them would just be noise.
+_DRIFT_STATUSES = ("WATCHING", "REPEATING")
+
+# sync_log.steps (full_sync/force_full_resync only — see schema.sql's column comment)
+# records one entry per provider; these are the provider names that appear there.
+_SYNC_PROVIDERS = ("crunchyroll", "netflix", "anilist_postgres")
+
+# Lookback window for the failure-rate/history section — long enough to show a real
+# pattern, short enough that a since-fixed problem ages out of view on its own.
+DATA_QUALITY_FAILURE_WINDOW_DAYS = 30
+
+
+def _data_quality_signals() -> dict:
+    """Read-only aggregation for issue #202's admin Data Quality tab. Every section
+    here is computed from tables/columns that already exist — sync_log,
+    library_entries, recommendation_scores, personal_notes — nothing here is new
+    tracking infrastructure, and nothing here writes anything back (display only,
+    same contract as _instance_health() above).
+
+    Four sections, matching #202's acceptance criteria:
+
+    1. last_sync_by_provider: per (user_id, provider), the most recent full_sync/
+       force_full_resync run at which that provider's step succeeded
+       (`last_ok_at`), plus the status/timestamp of the single most recent attempt
+       regardless of outcome (`last_attempt_at`/`last_attempt_status`). Providers
+       are read out of sync_log.steps rather than tracked in any new column — a
+       provider a user has never configured (no CR/Netflix credentials) only ever
+       shows up with a 'skipped' status, never 'ok'/'error', and the template
+       renders that as "not configured".
+
+    2. failure_history: for each user, sync_log rows of type full_sync/
+       force_full_resync from the last DATA_QUALITY_FAILURE_WINDOW_DAYS days,
+       aggregated into a total/failed run count and failure rate, plus the
+       individual failed runs (most recent 10) for drill-down.
+
+    3. orphaned_personal_notes: personal_notes rows with no matching
+       library_entries row for the same (user_id, anime_id). This should be
+       impossible in steady state — personal_notes is meant to always describe an
+       anime that's actually in the user's library, see every join against it
+       elsewhere in this file (e.g. the /notes and /library routes) — but nothing
+       at the DB level enforces it, so a library_entries row deleted out from
+       under it (an AniList-side removal synced locally) would leave exactly this
+       kind of orphan behind.
+
+    4. stale_recommendations: recommendation_scores rows (dismissed = false) for
+       an anime_id that NOW has a matching library_entries row. This is
+       deliberately the inverse of "no matching library_entries row" — unlike
+       personal_notes, recommendation_scores candidates are only ever generated
+       for anime NOT already in the user's library (see
+       scripts/run_recommender.py's fetch_recommendation_candidates/
+       get_library_ids, which explicitly excludes every anime_id already in
+       library_entries, any status, before scoring). So "no matching
+       library_entries row" is true of essentially every recommendation_scores
+       row by design and would be pure noise here — the actually-orphaned case is
+       the opposite: a candidate the user has since acted on (added to their
+       library) that score_and_store() never removes, since it only upserts on
+       each weekly re-run rather than reacting to library changes in between.
+       See the PR for #202 for this explicit interpretation note.
+    """
+    # ── 1. Last successful sync per provider ────────────────────────────────────
+    sync_step_rows = db.fetchall(
+        """
+        SELECT user_id, run_at, steps
+        FROM sync_log
+        WHERE type IN ('full_sync', 'force_full_resync') AND steps IS NOT NULL
+        ORDER BY user_id, run_at DESC
+        """
+    )
+    last_sync_by_provider: dict[int, dict[str, dict]] = {}
+    for row in sync_step_rows:
+        per_provider = last_sync_by_provider.setdefault(row["user_id"], {})
+        for step in row["steps"] or []:
+            provider = step.get("service")
+            if provider not in _SYNC_PROVIDERS:
+                continue
+            entry = per_provider.setdefault(provider, {})
+            # Rows arrive newest-first per user, so the first one seen for a given
+            # provider is that provider's most recent attempt.
+            if "last_attempt_at" not in entry:
+                entry["last_attempt_at"] = row["run_at"]
+                entry["last_attempt_status"] = step.get("status")
+            if step.get("status") == "ok" and "last_ok_at" not in entry:
+                entry["last_ok_at"] = row["run_at"]
+
+    # ── 2. Recent sync failure rate/history ─────────────────────────────────────
+    window_start = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_FAILURE_WINDOW_DAYS)
+    recent_runs = db.fetchall(
+        """
+        SELECT user_id, run_at, status, error_msg, type
+        FROM sync_log
+        WHERE type IN ('full_sync', 'force_full_resync') AND run_at >= %s
+        ORDER BY user_id, run_at DESC
+        """,
+        (window_start,),
+    )
+    failure_history: dict[int, dict] = {}
+    for row in recent_runs:
+        agg = failure_history.setdefault(row["user_id"], {"total": 0, "failed": 0, "failures": []})
+        agg["total"] += 1
+        if row["status"] == "error":
+            agg["failed"] += 1
+            agg["failures"].append(row)
+    for agg in failure_history.values():
+        agg["failure_rate"] = (agg["failed"] / agg["total"]) if agg["total"] else 0.0
+        agg["failures"] = agg["failures"][:10]
+
+    # ── 3. Orphaned personal_notes ───────────────────────────────────────────────
+    orphaned_personal_notes = db.fetchall(
+        """
+        SELECT pn.id, pn.user_id, u.email AS user_email, pn.anime_id,
+               a.title_romaji, pn.updated_at
+        FROM personal_notes pn
+        LEFT JOIN library_entries le ON le.user_id = pn.user_id AND le.anime_id = pn.anime_id
+        LEFT JOIN users u ON u.id = pn.user_id
+        LEFT JOIN anime a ON a.id = pn.anime_id
+        WHERE le.id IS NULL
+        ORDER BY pn.updated_at DESC
+        """
+    )
+
+    # ── 4. Stale recommendation_scores (see docstring for why this is inverted) ─
+    stale_recommendations = db.fetchall(
+        """
+        SELECT rs.id, rs.user_id, u.email AS user_email, rs.anime_id,
+               a.title_romaji, rs.computed_at, le.status AS library_status
+        FROM recommendation_scores rs
+        JOIN library_entries le ON le.user_id = rs.user_id AND le.anime_id = rs.anime_id
+        LEFT JOIN users u ON u.id = rs.user_id
+        LEFT JOIN anime a ON a.id = rs.anime_id
+        WHERE rs.dismissed = false
+        ORDER BY rs.computed_at DESC
+        """
+    )
+
+    # ── Drift candidates ─────────────────────────────────────────────────────────
+    drift_threshold = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_DRIFT_DAYS)
+    drift_candidates = db.fetchall(
+        """
+        SELECT le.id, le.user_id, u.email AS user_email, le.anime_id,
+               a.title_romaji, le.status, le.anilist_updated_at, le.synced_at
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN users u ON u.id = le.user_id
+        WHERE le.status = ANY(%s)
+          AND le.anilist_updated_at IS NOT NULL
+          AND le.anilist_updated_at < %s
+        ORDER BY le.anilist_updated_at ASC
+        """,
+        (list(_DRIFT_STATUSES), drift_threshold),
+    )
+
+    return {
+        "providers": _SYNC_PROVIDERS,
+        "last_sync_by_provider": last_sync_by_provider,
+        "failure_history": failure_history,
+        "failure_window_days": DATA_QUALITY_FAILURE_WINDOW_DAYS,
+        "orphaned_personal_notes": orphaned_personal_notes,
+        "stale_recommendations": stale_recommendations,
+        "drift_candidates": drift_candidates,
+        "drift_threshold_days": DATA_QUALITY_DRIFT_DAYS,
+    }
+
+
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page(request: Request, saved: str = ""):
     denied = _require_admin(request)
@@ -1645,6 +1823,7 @@ def admin_page(request: Request, saved: str = ""):
         return denied
 
     instance_health = _instance_health()
+    data_quality = _data_quality_signals()
 
     # Sync schedule (issue #96) — moved here from Settings since it's instance-wide,
     # not per-user. Same instance_config fields _apply_schedule() reads.
@@ -1722,6 +1901,7 @@ def admin_page(request: Request, saved: str = ""):
         "admin.html",
         {
             "instance_health": instance_health,
+            "data_quality": data_quality,
             "invites": invites,
             "users": users_view,
             "google_status": _provider_status("google"),
