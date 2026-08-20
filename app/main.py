@@ -6085,8 +6085,18 @@ def library(request: Request, response: Response, status: str = None):
     statuses = ["WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"]
     active_status = status.upper() if status else "WATCHING"
 
+    # "ALL" (issue #225) — not one of the six tabs rendered below, so it's only ever
+    # reached via a URL a stat-card drill-down link builds directly: some /stats
+    # numbers (e.g. total episodes watched, total watch time) sum across every
+    # status, not just one, so no single existing status tab can show "the list that
+    # sums to it". Same "ALL" pseudo-status pattern /queue already uses for its
+    # PLANNING+PAUSED tab (see queue() above) — just unscoped here, skipping the
+    # status filter entirely rather than swapping it for an IN (...) list.
+    status_filter_sql = "" if active_status == "ALL" else "le.status = %s AND "
+    where_params = (user["id"],) if active_status == "ALL" else (active_status, user["id"])
+
     rows = db.fetchall(
-        """
+        f"""
         SELECT
             a.id,
             a.title_english,
@@ -6125,10 +6135,10 @@ def library(request: Request, response: Response, status: str = None):
         ) next_ep ON true
         LEFT JOIN episode_notes en
             ON en.anime_id = a.id AND en.user_id = le.user_id AND en.episode_number = le.progress
-        WHERE le.status = %s AND le.user_id = %s
+        WHERE {status_filter_sql}le.user_id = %s
         ORDER BY le.score DESC NULLS LAST, a.title_romaji
         """,
-        (active_status, user["id"]),
+        where_params,
     )
 
     stale_threshold = datetime.now(timezone.utc) - timedelta(days=60)

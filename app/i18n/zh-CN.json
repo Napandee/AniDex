@@ -349,6 +349,7 @@
 
   "title_stats": "统计 — Anime Tracker",
   "stats_page_title": "统计",
+  "stats_drilldown_hint": "点击数字、柱状图或扇区即可查看背后对应的动画列表。",
   "stats_hl_episodes": "已观看集数",
   "stats_hl_watchtime": "观看时长",
   "stats_hl_completion": "完成率",

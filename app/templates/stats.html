@@ -8,11 +8,41 @@
     <h1 class="page-title">{{ t('stats_page_title') }}</h1>
   </div>
 
+  <p class="stats-drilldown-hint">{{ t('stats_drilldown_hint') }}</p>
+
+  {# Click-through drill-down (issue #225) — Trakt-style: a stat card links to the
+     already-existing filtered library view (/) that "sums to it", reusing the
+     library page's own filter controls (status tab, search box, tag filter, score
+     filter — see script.js's applyFromUrl) rather than inventing any new filtering
+     capability, per the issue's explicit out-of-scope note.
+
+     Four of the six headlines below link straight to a plain `/?status=X` URL —
+     no JS needed, exactly how the status tabs above the library grid already
+     work. The other two (completion rate, mean score) are intentionally left
+     non-interactive: both are *ratios*, not the size of a list ("74%" or "3.8★"
+     isn't the count of anything a filtered view could show as "the list behind
+     this number") — same category of card the issue's own example (a
+     scatter/trend chart) calls out as not mapping cleanly to a drill-down.
+
+     "Episodes watched" and "Watch time" sum across every status (an entry
+     contributes its progress/duration regardless of WATCHING vs COMPLETED vs
+     DROPPED etc.), so no single status tab is "the list that sums to it" — they
+     link to the new `/?status=ALL` value (see app/main.py's library() route),
+     the same "ALL" pseudo-status /queue already supports for its own tabs, just
+     unscoped here instead of an IN (...) list. #}
   <div class="stats-headlines" id="stats-headlines">
-    <div class="stat-headline"><span class="stat-num" id="hl-completed">—</span><span class="stat-label">{{ t('status_completed') }}</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-watching">—</span><span class="stat-label">{{ t('status_watching') }}</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-episodes">—</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
-    <div class="stat-headline"><span class="stat-num" id="hl-watchtime">—</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
+    <a class="stat-headline stat-headline-link" href="/?status=COMPLETED">
+      <span class="stat-num" id="hl-completed">—</span><span class="stat-label">{{ t('status_completed') }}</span>
+    </a>
+    <a class="stat-headline stat-headline-link" href="/?status=WATCHING">
+      <span class="stat-num" id="hl-watching">—</span><span class="stat-label">{{ t('status_watching') }}</span>
+    </a>
+    <a class="stat-headline stat-headline-link" href="/?status=ALL">
+      <span class="stat-num" id="hl-episodes">—</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span>
+    </a>
+    <a class="stat-headline stat-headline-link" href="/?status=ALL">
+      <span class="stat-num" id="hl-watchtime">—</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span>
+    </a>
     <div class="stat-headline"><span class="stat-num" id="hl-completion">—</span><span class="stat-label">{{ t('stats_hl_completion') }}</span></div>
     <div class="stat-headline"><span class="stat-num" id="hl-meanscore">—</span><span class="stat-label">{{ t('stats_hl_meanscore') }}</span></div>
   </div>
@@ -79,7 +109,9 @@
   {# Issue #182 — small summary card only, linking out to the dedicated /streaming
      page for the full ranked breakdown (not a duplicate of it here). Rendered
      server-side directly (unlike the charts below, which fetch /api/stats) since
-     it's a single top-of-list lookup already computed in the /stats route. #}
+     it's a single top-of-list lookup already computed in the /stats route.
+     Out of scope for #225's drill-down: it's a sentence + an existing CTA link,
+     not a "stat number" summing over a list the way the cards below are. #}
   <div class="chart-card chart-card--wide" id="streaming-coverage-card">
     <h2 class="chart-title">{{ t('stats_streaming_card_title') }}</h2>
     {% if streaming_owned_count == 0 %}
@@ -322,7 +354,33 @@
     plugins: { legend: { labels: { color: LABEL_COLOR, boxWidth: 12 } } },
   };
 
-  // Status donut
+  // ── Drill-down navigation (issue #225) ────────────────────────────────────
+  // Builds the same `/?status=...&q=...` etc. shape a saved Collection link
+  // already builds (see library.html's collections-select handling), and
+  // navigates there. `status` is applied server-side by the library route
+  // itself; any extra key (q/tag/score) gets replayed client-side by that
+  // same pre-existing applyFromUrl mechanism in script.js — nothing new on
+  // either end, this just constructs the URL. Shared by every clickable chart
+  // and list row below.
+  function goToLibrary(status, extra) {
+    const params = new URLSearchParams({ status });
+    if (extra) {
+      Object.entries(extra).forEach(([k, v]) => { if (v != null && v !== '') params.set(k, v); });
+    }
+    window.location.href = '/?' + params.toString();
+  }
+  // Chart.js hover cursor, shared by every clickable chart — a bar/wedge has no
+  // other visual cue that it's a link beyond this and the page's top-of-page
+  // {{ t('stats_drilldown_hint') }} line.
+  function pointerOnHover(event, elements) {
+    event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+  }
+
+  // Status donut — status totals are exactly what the library page's own status
+  // tabs already show, so a wedge click is a 1:1 link, no client-side filter
+  // replay needed. `label` is Python's `.title()` of the raw AniList status enum
+  // (e.g. "Completed" from "COMPLETED"); every status value is a single word, so
+  // .toUpperCase() round-trips it exactly.
   const statusColors = {
     'Completed': '#4ade80', 'Watching': '#60a5fa', 'Dropped': '#f87171',
     'Planning': '#a78bfa', 'Paused': '#facc15', 'Repeating': '#fb923c',
@@ -337,10 +395,24 @@
         borderWidth: 0,
       }],
     },
-    options: { ...baseOpts, cutout: '60%' },
+    options: {
+      ...baseOpts,
+      cutout: '60%',
+      onHover: pointerOnHover,
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        goToLibrary(data.status[elements[0].index].label.toUpperCase());
+      },
+    },
   });
 
-  // Score bar
+  // Score bar — le.score is set independent of status (any entry can be rated,
+  // not just COMPLETED ones — see the .star-rating widget on every library
+  // card), so this chart's counts are NOT scoped to one status the way the
+  // genre chart below is. No single existing status tab is "the list behind
+  // this bar", so this links to `/?status=ALL` (see app/main.py's library()
+  // route) rather than guessing a status — same reasoning as the
+  // episodes/watch-time headlines above.
   const STAR_LABELS = { 1: '★', 2: '★★', 3: '★★★', 4: '★★★★', 5: '★★★★★' };
   const scoreMap = Object.fromEntries(data.scores.map(d => [d.score, d.count]));
   new Chart(document.getElementById('chart-scores'), {
@@ -356,6 +428,13 @@
     options: {
       ...baseOpts,
       plugins: { legend: { display: false } },
+      onHover: pointerOnHover,
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        const score = elements[0].index + 1;
+        if (!scoreMap[score]) return; // empty bar, nothing to drill into
+        goToLibrary('ALL', { score: String(score) });
+      },
       scales: {
         x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
         y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
@@ -363,7 +442,14 @@
     },
   });
 
-  // Genres horizontal bar
+  // Genres horizontal bar — /api/stats scopes this to COMPLETED (see
+  // app/main.py's genre_rows query), so the drill-down target is `?status=
+  // COMPLETED`. The library view has no dedicated genre filter (adding one
+  // would be new filter logic, out of scope per the issue) — it reuses the
+  // free-text search box instead, which already substring-matches genre chip
+  // text (see script.js's applyLibraryFilters). library.html now renders every
+  // genre (not just the first 4 shown) so this always matches the chart's true
+  // per-genre count, not just what's visually displayed on a card.
   new Chart(document.getElementById('chart-genres'), {
     type: 'bar',
     data: {
@@ -378,6 +464,11 @@
       ...baseOpts,
       indexAxis: 'y',
       plugins: { legend: { display: false } },
+      onHover: pointerOnHover,
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        goToLibrary('COMPLETED', { q: data.genres[elements[0].index].genre });
+      },
       scales: {
         x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
         y: { grid: { color: 'transparent' }, ticks: { color: LABEL_COLOR } },
@@ -385,7 +476,14 @@
     },
   });
 
-  // By year bar
+  // By year bar — deliberately left without a drill-down (issue #225). Each bar
+  // is COMPLETED entries grouped by a.season_year (release year), but the only
+  // existing filter that can pin down a year is the season-filter dropdown,
+  // which only matches an exact `year|SEASON` combo, never "every season of
+  // year Y" — there's no existing single-click filter for "released in 2023
+  // regardless of season", and building one would be new filter logic (out of
+  // scope per the issue). Would need 4 separate clicks (one per season) to
+  // reconstruct one bar's count, which isn't a clean 1:1 drill-down.
   new Chart(document.getElementById('chart-year'), {
     type: 'bar',
     data: {
@@ -411,6 +509,13 @@
   // library size — see app/main.py's TASTE_DRIFT_MIN_COMPLETED_FOR_QUARTERLY).
   // Hidden entirely when data.taste_drift is null (no COMPLETED entry with a
   // usable finish_date yet).
+  //
+  // No drill-down (issue #225): each stacked segment is scoped by *completion*
+  // date (finish_date, bucketed into a quarter/year), but the library's only
+  // date-shaped filter (season-filter) is keyed on *release* season_year — a
+  // different axis entirely (a show finished in Q1 2024 could've released any
+  // year). No existing filter maps to "completed in this bucket", so left
+  // non-interactive rather than building one.
   (function renderTasteDrift(td) {
     const section = document.getElementById('taste-drift-section');
     if (!td || !td.buckets.length) return;
@@ -557,6 +662,11 @@
 
   // Watch-activity heatmap (issue #10) — one cell per day, shaded by episodes
   // watched that day (approximated via completions' finish_date, see /api/stats).
+  //
+  // No drill-down (issue #225): a day's count is a SUM(progress) across whatever
+  // completed that day, not the size of a distinct "anime list" the way a status/
+  // score/genre count is — and there's no existing "finished on date X" filter
+  // to link to regardless. Left non-interactive.
   (function renderHeatmap(days) {
     const grid = document.getElementById('heatmap-grid');
     const monthsRow = document.getElementById('heatmap-months');
@@ -661,6 +771,20 @@
   // "Year in anime" wrap-up (issue #78) — reuses /api/stats via its year/season query
   // params rather than a new endpoint; every field below already exists in the same
   // JSON shape the charts above consume.
+  //
+  // No drill-down (issue #225), deliberately, for the whole card: the "Completed"/
+  // "Watch time" numbers here are release-year/season scoped like chart-genres
+  // above, so they *could* link to `/?status=COMPLETED&season=Y|SEASON` when a
+  // specific season is picked (an exact match on the library's existing
+  // season-filter) — but when the season picker is left on "All seasons" (the
+  // default), there's the same "no year-only filter" gap chart-year above has,
+  // so the same click would only sometimes work depending on the season
+  // dropdown's state. The #193 additions below it (binge week, Planning→
+  // Completed snapshot, score-distribution shift) are finish_date-scoped, not
+  // release season_year-scoped, so they inherit the taste-drift chart's gap
+  // above too. Rather than a card that's sometimes clickable and sometimes not
+  // depending on an unrelated dropdown, the whole card is left non-interactive —
+  // a consistent, predictable choice over a partially-working one.
   (function initWrapup(years) {
     const yearSelect = document.getElementById('wrapup-year');
     const seasonSelect = document.getElementById('wrapup-season');
@@ -767,6 +891,14 @@
   // distribution bar chart, both built from library_entries.repeat_count via
   // /api/stats's `rewatch` field. Always renders (no minimum-sample gate like
   // drop-patterns below); each half falls back to its own empty-state message.
+  //
+  // No drill-down (issue #225): unlike the genre/tag rows below, each
+  // "most rewatched" row already names one specific anime, not a count that
+  // aggregates many — there's no "underlying list" for a single item to drill
+  // into. The distribution chart's buckets (e.g. "2×–3×") also don't map onto
+  // the library's rewatch filter, which only supports a boolean "has any
+  // rewatch" toggle, not count ranges — a genuinely new filter capability this
+  // issue is explicitly not meant to add.
   (function renderRewatchStats(rw) {
     const list = document.getElementById('rewatch-list');
     const listEmpty = document.getElementById('rewatch-list-empty');
@@ -824,11 +956,18 @@
       `Based on ${dp.sample_size} dropped ${dp.sample_size === 1 ? 'entry' : 'entries'} with a drop reason noted` +
       (dp.avg_progress_pct != null ? ` — on average you drop around ${dp.avg_progress_pct}% through.` : '.');
 
+    // Genre rows link to /?status=DROPPED&q=<genre> (issue #225) — same
+    // text-search-based approach as the "Top genres" chart above: each row's
+    // count is dropped entries with that genre, and DROPPED is a real status
+    // tab, so this is an exact status + existing-search-box combination, not a
+    // new filter. Uses goToLibrary (defined above, before the drill-down charts)
+    // rather than a raw href string so the genre name is safely URL-encoded.
     const genreList = document.getElementById('drop-genre-list');
     if (dp.genre_drop_rate.length) {
       dp.genre_drop_rate.forEach(g => {
-        const row = document.createElement('div');
-        row.className = 'drop-rate-row';
+        const row = document.createElement('a');
+        row.className = 'drop-rate-row drop-rate-row-link';
+        row.href = '/?' + new URLSearchParams({ status: 'DROPPED', q: g.genre });
         row.innerHTML = `
           <span class="drop-rate-label">${g.genre}</span>
           <span class="drop-rate-bar-track"><span class="drop-rate-bar-fill" style="width:${g.rate}%"></span></span>
@@ -840,6 +979,11 @@
       genreList.innerHTML = '<p class="drop-patterns-empty">Not enough per-genre data yet.</p>';
     }
 
+    // No drill-down for word-frequency chips (issue #225): these come from
+    // drop_reason free text, and the library search box doesn't match against
+    // drop_reason (only title/sub/genre/personal-tag text — see script.js's
+    // applyLibraryFilters) — matching drop_reason text would be new filter
+    // logic, out of scope.
     const wordList = document.getElementById('drop-word-list');
     if (dp.top_words.length) {
       dp.top_words.forEach(w => {
@@ -852,11 +996,18 @@
       wordList.innerHTML = '<p class="drop-patterns-empty">No recurring words yet.</p>';
     }
 
+    // Personal-tag chips link to /?status=DROPPED&tag=<tag> (issue #225) — the
+    // library page's existing tag-filter is an *exact* match (unlike the
+    // genre search-box approximation above), so this is the most precise
+    // drill-down on the page.
     const tagList = document.getElementById('drop-tag-list');
     if (dp.top_tags.length) {
       dp.top_tags.forEach(t => {
-        const chip = document.createElement('span');
-        chip.className = 'personal-tag';
+        const chip = document.createElement('a');
+        chip.className = 'personal-tag drop-tag-chip-link';
+        // The library tag-filter's <option> values are lower-cased (see
+        // script.js's refreshTagFilterOptions), so match that here.
+        chip.href = '/?' + new URLSearchParams({ status: 'DROPPED', tag: t.tag.toLowerCase() });
         chip.textContent = `${t.tag} (${t.count})`;
         tagList.appendChild(chip);
       });
@@ -875,6 +1026,15 @@
   // dismiss_reason DB value — 'no_reason' (dismissed via the no-JSON-body
   // fallback in POST /recommendations/{id}/dismiss, or a blank string) is the
   // one bucket that isn't a chip value, so it gets its own stats-only key.
+  //
+  // No drill-down anywhere in this panel (issue #225): every number here
+  // (hit rate, hits, dismissed, dismiss reasons) describes recommendation_scores
+  // rows — the recommender subsystem's own bookkeeping — not a set of
+  // library_entries. A "hit" anime may already be in the library under
+  // whatever status the user gave it, but there's no single status a whole
+  // panel's numbers correctly map onto the way genre/status/score do, so this
+  // panel is left non-interactive rather than drilling into a partially-correct
+  // target.
   (function renderRecommendationOutcomes(ro) {
     const section = document.getElementById('rec-outcomes-section');
     if (!ro) return; // no recommendation_scores rows for this user yet

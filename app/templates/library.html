@@ -172,6 +172,21 @@
         {% for g in e.genres[:4] %}
         <span class="genre">{{ g }}</span>
         {% endfor %}
+        {# Genres beyond the first 4 stay off-screen but keep the .genre class, so
+           applyLibraryFilters' free-text search (script.js) — which already reads
+           `.genre` chip text as part of what a search query matches against — sees
+           an anime's full genre list, not just what's visually shown. Needed so
+           /stats' genre-breakdown drill-down (issue #225) links to a *correctly*
+           filtered list: a genre bar's count comes from the full a.genres array,
+           and without this an anime whose only match was its 5th+ genre would
+           silently be missing from the drilled-into results. Not a new filter
+           control — the search box already matched genre text before this, this
+           just completes the data it was reading. #genre[hidden] in style.css
+           guards the native `hidden` attribute against any future .genre display
+           override. #}
+        {% for g in e.genres[4:] %}
+        <span class="genre" hidden>{{ g }}</span>
+        {% endfor %}
       </div>
       {% endif %}
 

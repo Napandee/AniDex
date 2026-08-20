@@ -349,6 +349,7 @@
 
   "title_stats": "統計 — Anime Tracker",
   "stats_page_title": "統計",
+  "stats_drilldown_hint": "数字・バー・区分をクリックすると、その内訳のアニメ一覧が表示されます。",
   "stats_hl_episodes": "視聴済みエピソード数",
   "stats_hl_watchtime": "視聴時間",
   "stats_hl_completion": "完走率",
