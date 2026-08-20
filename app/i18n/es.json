@@ -73,6 +73,18 @@
   "account_btn_connect": "Conectar",
   "account_status_not_configured": "no configurado en esta instancia",
 
+  "account_sessions_title": "Sesiones activas",
+  "account_sessions_desc": "Dispositivos actualmente conectados a tu cuenta. Revoca cualquiera que no reconozcas.",
+  "account_sessions_revoked_msg": "Sesión revocada.",
+  "account_sessions_col_device": "Dispositivo",
+  "account_sessions_col_ip": "Dirección IP",
+  "account_sessions_col_last_active": "Última actividad",
+  "account_sessions_col_started": "Inicio de sesión",
+  "account_sessions_current_badge": "este dispositivo",
+  "account_sessions_revoke_btn": "Revocar",
+  "account_sessions_revoke_current_btn": "Cerrar sesión en este dispositivo",
+  "account_sessions_empty": "No hay sesiones activas.",
+
   "sync_credentials_title": "Credenciales",
   "sync_credentials_help": "Usadas por el proceso de sincronización. Deja un campo de token en blanco para conservar el valor existente. Se guardan en Postgres, no en el archivo de entorno del contenedor.",
   "sync_credentials_saved": "Credenciales guardadas.",

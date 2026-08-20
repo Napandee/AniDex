@@ -73,6 +73,18 @@
   "account_btn_connect": "Connect",
   "account_status_not_configured": "not configured on this instance",
 
+  "account_sessions_title": "Active sessions",
+  "account_sessions_desc": "Devices currently logged in to your account. Revoke any you don't recognize.",
+  "account_sessions_revoked_msg": "Session revoked.",
+  "account_sessions_col_device": "Device",
+  "account_sessions_col_ip": "IP address",
+  "account_sessions_col_last_active": "Last active",
+  "account_sessions_col_started": "Signed in",
+  "account_sessions_current_badge": "this device",
+  "account_sessions_revoke_btn": "Revoke",
+  "account_sessions_revoke_current_btn": "Log out this device",
+  "account_sessions_empty": "No active sessions.",
+
   "sync_credentials_title": "Credentials",
   "sync_credentials_help": "Used by the sync pipeline. Leave a token field blank to keep the existing value. Stored in Postgres — not in the container env file.",
   "sync_credentials_saved": "Credentials saved.",

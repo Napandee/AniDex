@@ -29,7 +29,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n
+from app import db, config, privacy, outbox, i18n, sessions
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -639,7 +639,14 @@ if not _SESSION_SECRET_KEY:
         "SESSION_SECRET_KEY not set — generated a random one for this process. "
         "Sessions will NOT survive a restart. Set SESSION_SECRET_KEY for production."
     )
-app.add_middleware(SessionMiddleware, secret_key=_SESSION_SECRET_KEY)
+# Cookie max_age matches sessions.SESSION_TTL_DAYS (issue #82) — the signed cookie
+# and the server-side sessions row it points at expire on the same schedule, so
+# neither one outlives the other in either direction.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_SESSION_SECRET_KEY,
+    max_age=sessions.SESSION_TTL_DAYS * 24 * 60 * 60,
+)
 
 oauth = OAuth()  # clients registered dynamically per-request — see _ensure_oauth_registered
 
@@ -665,6 +672,44 @@ def shutdown() -> None:
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
+#
+# Issue #82 — session storage. The signed cookie (SessionMiddleware) now carries
+# only an opaque `sid` token; app/sessions.py is the only place that resolves that
+# token back to a user_id, against the server-side `sessions` table. Three helpers
+# below wrap that for the rest of this file: _client_ip (best-effort, cosmetic
+# only), _start_session (call on every successful login/register/OAuth callback),
+# _end_session (call on logout).
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort client IP for the Settings "active sessions" display only — never
+    used for any access-control decision. Prefers X-Forwarded-For's first hop (set
+    by the Cloudflare tunnel this instance normally sits behind) over the raw socket
+    peer, which would otherwise just be the tunnel/proxy itself."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def _start_session(request: Request, user_id: int) -> None:
+    """Create a server-side session row for user_id and point this request's signed
+    cookie at it via an opaque token. Call this instead of writing to
+    request.session directly from any login/register/OAuth-callback route."""
+    token = sessions.create_session(user_id, request.headers.get("user-agent"), _client_ip(request))
+    request.session["sid"] = token
+
+
+def _end_session(request: Request) -> None:
+    """Revoke this request's server-side session row (if any) and clear its cookie.
+    Call this instead of request.session.clear() directly from logout — a bare
+    cookie clear alone would leave the sessions row itself still active until it
+    naturally expires."""
+    token = request.session.get("sid")
+    if token:
+        sessions.revoke_session_by_token(token)
+    request.session.clear()
+
 
 def get_current_user(request: Request) -> dict | None:
     """Return the logged-in user's row, or None if no valid session.
@@ -673,14 +718,37 @@ def get_current_user(request: Request) -> dict | None:
     single choke point _require_user/_require_user_api/_require_admin and the nav
     context processor all go through, so clearing the session here rejects an
     already-established session on its very next request, not just at login.
+
+    Issue #82: resolves request.session["sid"] against the server-side sessions
+    table rather than trusting a user_id straight out of the cookie. Cached on
+    request.state for the duration of one request — _nav_context and whichever
+    route handler is running both call this, and without the cache that's two
+    identical DB round trips (users + sessions) per page load instead of one.
+
+    Rollout note: every pre-#82 cookie has no "sid" key at all (old shape was just
+    `{"user_id": N}`), so `request.session.get("sid")` on one of those is always
+    None — those requests fall straight through to the "not authenticated" branch
+    below and the stale cookie gets cleared. That's a deliberate one-time re-login
+    for every session that existed before this shipped, not a bug — see this
+    feature's PR description for the full rollout writeup.
     """
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return None
-    user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
-    if user and not user["is_active"]:
+    if hasattr(request.state, "_cached_user"):
+        return request.state._cached_user
+
+    user = None
+    token = request.session.get("sid")
+    if token:
+        user_id = sessions.resolve_session(token)
+        if user_id:
+            user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+            if user and not user["is_active"]:
+                sessions.revoke_session_by_token(token)
+                user = None
+
+    if user is None:
         request.session.clear()
-        return None
+
+    request.state._cached_user = user
     return user
 
 
@@ -939,7 +1007,7 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
         "UPDATE users SET last_login_at = now(), failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
         (user["id"],),
     )
-    request.session["user_id"] = user["id"]
+    _start_session(request, user["id"])
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -971,7 +1039,7 @@ def auth_register_submit(request: Request, email: str = Form(...), password: str
         return denied
     db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user["id"]))
 
-    request.session["user_id"] = user["id"]
+    _start_session(request, user["id"])
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -1078,7 +1146,7 @@ async def auth_callback(request: Request, provider: str):
     if denied:
         return denied
 
-    request.session["user_id"] = user["id"]
+    _start_session(request, user["id"])
     return RedirectResponse(url="/")
 
 
@@ -1169,7 +1237,7 @@ def settings_unlink(request: Request, provider: str):
 
 @app.post("/auth/logout")
 async def auth_logout(request: Request):
-    request.session.clear()
+    _end_session(request)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -1427,6 +1495,9 @@ def admin_deactivate_user(request: Request, user_id: int):
         return HTMLResponse("<h1>User not found</h1>", status_code=404)
 
     db.execute("UPDATE users SET is_active = false WHERE id = %s", (user_id,))
+    # Issue #82 — now that sessions are server-side, cut off any already-open tab
+    # immediately instead of only rejecting it lazily on its next request.
+    sessions.revoke_all_sessions(user_id)
     _log_admin_action(
         admin_user["id"],
         "user_deactivated",
@@ -2051,6 +2122,12 @@ def settings_page(
         (user["id"],),
     )
 
+    # Issue #82 — active sessions list. current_token identifies which row is
+    # "this device" purely server-side (list_active_sessions never hands the raw
+    # token back), so the current row can be flagged without ever putting a live
+    # session token into the rendered page.
+    active_sessions = sessions.list_active_sessions(user["id"], request.session.get("sid"))
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2074,12 +2151,43 @@ def settings_page(
             "csv_import_error": csv_import_error,
             "cr_override_error": cr_override_error,
             "cr_overrides": cr_overrides,
+            "active_sessions": active_sessions,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
             },
         },
     )
+
+
+@app.post("/settings/sessions/{session_id}/revoke")
+def settings_revoke_session(request: Request, session_id: int):
+    """Revoke one of the current user's own sessions (issue #82). sessions.revoke_session
+    scopes the UPDATE to (id, user_id), so passing another user's session_id here just
+    finds no matching row and no-ops — there's no separate ownership check needed above
+    that. Revoking the session the caller is CURRENTLY using logs them out immediately,
+    same as clicking Logout; revoking any other one just removes it from the list.
+
+    Only redirects with the success message (saved=session_revoked) when a row was
+    actually revoked — revoke_session() returns None on a no-op (already revoked, or
+    a stale/tampered id), e.g. a double-click or the same session revoked from two
+    open tabs, and that must NOT show a false "revoked" confirmation.
+
+    No explicit ?tab= on either redirect, matching every other saved=/no-op redirect
+    in this file — script.js's savedTabMap (session_revoked -> account) resolves the
+    tab client-side, and account is also just the default first tab either way.
+    """
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    revoked_token = sessions.revoke_session(session_id, user["id"])
+    if revoked_token and revoked_token == request.session.get("sid"):
+        request.session.clear()
+        return RedirectResponse(url="/auth/login", status_code=303)
+    if revoked_token:
+        return RedirectResponse(url="/settings?saved=session_revoked", status_code=303)
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
