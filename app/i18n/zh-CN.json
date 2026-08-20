@@ -107,6 +107,18 @@
   "login_2fa_submit_btn": "验证",
   "login_2fa_recovery_hint": "丢失了身份验证器？请改为输入你的一个恢复代码。",
 
+  "account_sessions_title": "活跃会话",
+  "account_sessions_desc": "当前已登录你账户的设备。撤销任何你不认识的设备。",
+  "account_sessions_revoked_msg": "会话已撤销。",
+  "account_sessions_col_device": "设备",
+  "account_sessions_col_ip": "IP 地址",
+  "account_sessions_col_last_active": "最后活跃",
+  "account_sessions_col_started": "登录时间",
+  "account_sessions_current_badge": "当前设备",
+  "account_sessions_revoke_btn": "撤销",
+  "account_sessions_revoke_current_btn": "在此设备上登出",
+  "account_sessions_empty": "没有活跃会话。",
+
   "sync_credentials_title": "凭据",
   "sync_credentials_help": "供同步流程使用。留空令牌字段以保留现有值。存储在 Postgres 中，而非容器的环境文件中。",
   "sync_credentials_saved": "凭据已保存。",

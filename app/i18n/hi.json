@@ -107,6 +107,18 @@
   "login_2fa_submit_btn": "सत्यापित करें",
   "login_2fa_recovery_hint": "अपना प्रामाणिकरण ऐप खो दिया? इसके बजाय अपना एक रिकवरी कोड दर्ज करें।",
 
+  "account_sessions_title": "सक्रिय सत्र",
+  "account_sessions_desc": "वे डिवाइस जो अभी आपके खाते में लॉग इन हैं। जिन्हें आप नहीं पहचानते उन्हें रद्द करें।",
+  "account_sessions_revoked_msg": "सत्र रद्द कर दिया गया।",
+  "account_sessions_col_device": "डिवाइस",
+  "account_sessions_col_ip": "आईपी पता",
+  "account_sessions_col_last_active": "अंतिम सक्रिय",
+  "account_sessions_col_started": "लॉगिन समय",
+  "account_sessions_current_badge": "यह डिवाइस",
+  "account_sessions_revoke_btn": "रद्द करें",
+  "account_sessions_revoke_current_btn": "इस डिवाइस से लॉग आउट करें",
+  "account_sessions_empty": "कोई सक्रिय सत्र नहीं है।",
+
   "sync_credentials_title": "क्रेडेंशियल",
   "sync_credentials_help": "सिंक पाइपलाइन द्वारा उपयोग किया जाता है। मौजूदा मान बनाए रखने के लिए टोकन फ़ील्ड खाली छोड़ें। Postgres में संग्रहीत — कंटेनर की env फ़ाइल में नहीं।",
   "sync_credentials_saved": "क्रेडेंशियल सहेजे गए।",

@@ -34,7 +34,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n
+from app import db, config, privacy, outbox, i18n, sessions
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -644,7 +644,14 @@ if not _SESSION_SECRET_KEY:
         "SESSION_SECRET_KEY not set — generated a random one for this process. "
         "Sessions will NOT survive a restart. Set SESSION_SECRET_KEY for production."
     )
-app.add_middleware(SessionMiddleware, secret_key=_SESSION_SECRET_KEY)
+# Cookie max_age matches sessions.SESSION_TTL_DAYS (issue #82) — the signed cookie
+# and the server-side sessions row it points at expire on the same schedule, so
+# neither one outlives the other in either direction.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_SESSION_SECRET_KEY,
+    max_age=sessions.SESSION_TTL_DAYS * 24 * 60 * 60,
+)
 
 oauth = OAuth()  # clients registered dynamically per-request — see _ensure_oauth_registered
 
@@ -799,27 +806,6 @@ def _clear_totp_setup_state(user_id: int) -> None:
     _totp_setup_state.pop(user_id, None)
 
 
-def _set_authenticated_session(request: Request, user_id: int) -> None:
-    """Grants a real logged-in session for user_id — the single place every login
-    path (direct local login, the 2FA second-factor step, registration, and the
-    OAuth callback) sets request.session["user_id"].
-
-    Security-review finding (post-#83): auth_login_submit sets
-    session[pending_2fa_user_id] = X after a correct password on a 2FA-enabled
-    account X, before the user has completed the second factor. Nothing previously
-    cleared that key on any OTHER path that could go on to establish a session —
-    so a user could enter X's correct password, abandon the /auth/login/2fa prompt,
-    and then separately log into (or register, or OAuth-log into) a different
-    account Y in the same browser session. session["user_id"] would correctly be Y
-    at that point, but the stale pending_2fa_user_id=X would still be sitting there;
-    revisiting /auth/login/2fa later with a valid code for X would silently switch
-    the authenticated identity back to X with no re-auth of Y involved. Routing
-    every session grant through here closes that off unconditionally, including the
-    direct (non-2FA) login path where it's merely defensive today."""
-    request.session.pop(_PENDING_2FA_SESSION_KEY, None)
-    request.session["user_id"] = user_id
-
-
 @app.on_event("startup")
 def startup() -> None:
     _apply_schedule()
@@ -836,6 +822,78 @@ def shutdown() -> None:
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
+#
+# Issue #82 — session storage. The signed cookie (SessionMiddleware) now carries
+# only an opaque `sid` token; app/sessions.py is the only place that resolves that
+# token back to a user_id, against the server-side `sessions` table. Helpers below
+# wrap that for the rest of this file: _client_ip (best-effort, cosmetic only),
+# _start_session (the low-level "create a session row + point the cookie at it"
+# primitive), _end_session (call on logout), and _set_authenticated_session (issue
+# #83 — the actual call site every login/register/OAuth-callback route uses; a thin
+# wrapper around _start_session that also clears any leftover 2FA-pending state,
+# see its own docstring).
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort client IP for the Settings "active sessions" display only — never
+    used for any access-control decision. Prefers X-Forwarded-For's first hop (set
+    by the Cloudflare tunnel this instance normally sits behind) over the raw socket
+    peer, which would otherwise just be the tunnel/proxy itself."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def _start_session(request: Request, user_id: int) -> None:
+    """Create a server-side session row for user_id and point this request's signed
+    cookie at it via an opaque token. Low-level primitive — every route should call
+    _set_authenticated_session (below) instead, so a 2FA-pending flow can never leak
+    into a session established some other way."""
+    token = sessions.create_session(user_id, request.headers.get("user-agent"), _client_ip(request))
+    request.session["sid"] = token
+
+
+def _end_session(request: Request) -> None:
+    """Revoke this request's server-side session row (if any) and clear its cookie.
+    Call this instead of request.session.clear() directly from logout — a bare
+    cookie clear alone would leave the sessions row itself still active until it
+    naturally expires."""
+    token = request.session.get("sid")
+    if token:
+        sessions.revoke_session_by_token(token)
+    request.session.clear()
+
+
+def _set_authenticated_session(request: Request, user_id: int) -> None:
+    """Grants a real logged-in session for user_id — the single place every login
+    path (direct local login, the 2FA second-factor step, registration, and the
+    OAuth callback) should call, instead of _start_session directly.
+
+    Security-review finding (post-#83, re-verified after reconciling with #82's
+    session-store rewrite): auth_login_submit sets session[pending_2fa_user_id] = X
+    after a correct password on a 2FA-enabled account X, before the user has
+    completed the second factor. Nothing previously cleared that key on any OTHER
+    path that could go on to establish a session — so a user could enter X's correct
+    password, abandon the /auth/login/2fa prompt, and then separately log into (or
+    register, or OAuth-log into) a different account Y in the same browser session.
+    The session would correctly end up pointed at Y's new server-side session row at
+    that point, but the stale pending_2fa_user_id=X would still be sitting in the
+    cookie alongside it; revisiting /auth/login/2fa later with a valid code for X
+    would silently switch the authenticated identity back to X with no re-auth of Y
+    involved. Routing every session grant through here — and through _start_session,
+    the only thing that actually writes a new "sid" — closes that off
+    unconditionally, including the direct (non-2FA) login path where it's merely
+    defensive today.
+
+    Under #82's session-token model this delegates to _start_session for the actual
+    session-row creation/cookie write, rather than writing request.session["user_id"]
+    directly the way it did before #82 — see get_current_user's own #83-era note
+    about why request.session.clear() also needs to preserve pending_2fa_user_id,
+    the other half of this same reconciliation."""
+    request.session.pop(_PENDING_2FA_SESSION_KEY, None)
+    _start_session(request, user_id)
+
 
 def get_current_user(request: Request) -> dict | None:
     """Return the logged-in user's row, or None if no valid session.
@@ -844,14 +902,53 @@ def get_current_user(request: Request) -> dict | None:
     single choke point _require_user/_require_user_api/_require_admin and the nav
     context processor all go through, so clearing the session here rejects an
     already-established session on its very next request, not just at login.
+
+    Issue #82: resolves request.session["sid"] against the server-side sessions
+    table rather than trusting a user_id straight out of the cookie. Cached on
+    request.state for the duration of one request — _nav_context and whichever
+    route handler is running both call this, and without the cache that's two
+    identical DB round trips (users + sessions) per page load instead of one.
+
+    Rollout note: every pre-#82 cookie has no "sid" key at all (old shape was just
+    `{"user_id": N}`), so `request.session.get("sid")` on one of those is always
+    None — those requests fall straight through to the "not authenticated" branch
+    below and the stale cookie gets cleared. That's a deliberate one-time re-login
+    for every session that existed before this shipped, not a bug — see this
+    feature's PR description for the full rollout writeup.
+
+    Issue #83 reconciliation note: a request mid-way through the TOTP second-factor
+    flow ALSO has no "sid" key yet (that's the whole point — it isn't authenticated
+    until the code is verified), so it hits this same "not authenticated" branch on
+    every single page render in between (every templates.TemplateResponse call runs
+    the _nav_context processor, which calls this function). Without special-casing
+    it, the unconditional request.session.clear() below would wipe out
+    pending_2fa_user_id the moment auth_login_2fa_page renders its own response —
+    before the user ever gets to submit a code — since SessionMiddleware writes
+    whatever's left in request.session back to the cookie at the end of the request
+    regardless of which code path touched it. pending_2fa_user_id is deliberately
+    preserved across the clear; everything else about a stale/invalid session still
+    gets scrubbed exactly as before.
     """
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return None
-    user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
-    if user and not user["is_active"]:
+    if hasattr(request.state, "_cached_user"):
+        return request.state._cached_user
+
+    user = None
+    token = request.session.get("sid")
+    if token:
+        user_id = sessions.resolve_session(token)
+        if user_id:
+            user = db.fetchone("SELECT * FROM users WHERE id = %s", (user_id,))
+            if user and not user["is_active"]:
+                sessions.revoke_session_by_token(token)
+                user = None
+
+    if user is None:
+        pending_2fa = request.session.get(_PENDING_2FA_SESSION_KEY)
         request.session.clear()
-        return None
+        if pending_2fa is not None:
+            request.session[_PENDING_2FA_SESSION_KEY] = pending_2fa
+
+    request.state._cached_user = user
     return user
 
 
@@ -1140,8 +1237,9 @@ def auth_login_submit(request: Request, email: str = Form(...), password: str = 
 def auth_login_2fa_page(request: Request, error: str = ""):
     """Second-factor prompt (issue #83) — only reachable via the pending_2fa_user_id
     session key auth_login_submit sets after a correct password on an account with
-    TOTP enabled. Never sets request.session["user_id"] itself; that only happens on
-    a verified code/recovery code below (via _set_authenticated_session)."""
+    TOTP enabled. Never starts a real session itself; that only happens on a
+    verified code/recovery code below, via _set_authenticated_session (issue #82's
+    session-token model under the hood, see that helper's docstring)."""
     if not request.session.get(_PENDING_2FA_SESSION_KEY):
         return RedirectResponse(url="/auth/login", status_code=303)
     return templates.TemplateResponse(request, "auth_login_2fa.html", {"error": error})
@@ -1434,7 +1532,7 @@ def settings_unlink(request: Request, provider: str):
 
 @app.post("/auth/logout")
 async def auth_logout(request: Request):
-    request.session.clear()
+    _end_session(request)
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -1692,6 +1790,9 @@ def admin_deactivate_user(request: Request, user_id: int):
         return HTMLResponse("<h1>User not found</h1>", status_code=404)
 
     db.execute("UPDATE users SET is_active = false WHERE id = %s", (user_id,))
+    # Issue #82 — now that sessions are server-side, cut off any already-open tab
+    # immediately instead of only rejecting it lazily on its next request.
+    sessions.revoke_all_sessions(user_id)
     _log_admin_action(
         admin_user["id"],
         "user_deactivated",
@@ -2355,6 +2456,12 @@ def settings_page(
         (user["id"],),
     )
 
+    # Issue #82 — active sessions list. current_token identifies which row is
+    # "this device" purely server-side (list_active_sessions never hands the raw
+    # token back), so the current row can be flagged without ever putting a live
+    # session token into the rendered page.
+    active_sessions = sessions.list_active_sessions(user["id"], request.session.get("sid"))
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -2380,12 +2487,43 @@ def settings_page(
             "cr_override_error": cr_override_error,
             "twofa_error": twofa_error,
             "cr_overrides": cr_overrides,
+            "active_sessions": active_sessions,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
             },
         },
     )
+
+
+@app.post("/settings/sessions/{session_id}/revoke")
+def settings_revoke_session(request: Request, session_id: int):
+    """Revoke one of the current user's own sessions (issue #82). sessions.revoke_session
+    scopes the UPDATE to (id, user_id), so passing another user's session_id here just
+    finds no matching row and no-ops — there's no separate ownership check needed above
+    that. Revoking the session the caller is CURRENTLY using logs them out immediately,
+    same as clicking Logout; revoking any other one just removes it from the list.
+
+    Only redirects with the success message (saved=session_revoked) when a row was
+    actually revoked — revoke_session() returns None on a no-op (already revoked, or
+    a stale/tampered id), e.g. a double-click or the same session revoked from two
+    open tabs, and that must NOT show a false "revoked" confirmation.
+
+    No explicit ?tab= on either redirect, matching every other saved=/no-op redirect
+    in this file — script.js's savedTabMap (session_revoked -> account) resolves the
+    tab client-side, and account is also just the default first tab either way.
+    """
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    revoked_token = sessions.revoke_session(session_id, user["id"])
+    if revoked_token and revoked_token == request.session.get("sid"):
+        request.session.clear()
+        return RedirectResponse(url="/auth/login", status_code=303)
+    if revoked_token:
+        return RedirectResponse(url="/settings?saved=session_revoked", status_code=303)
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 DAYS_OF_WEEK = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]

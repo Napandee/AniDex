@@ -630,3 +630,68 @@ def test_setup_page_regenerates_secret_once_pending_state_expires(client, pg_con
     )
     assert confirm.status_code == 303
     assert confirm.headers["location"] == "/settings/2fa/recovery-codes"
+
+
+# ── Post-#82/#83 reconciliation: get_current_user's session-clear must preserve ────
+# ── pending_2fa_user_id ─────────────────────────────────────────────────────────────
+#
+# Issue #82 (server-side session store, merged to main after this branch) rewrote
+# get_current_user to unconditionally request.session.clear() whenever it can't
+# resolve a valid "sid" — deliberate, meant to scrub stale pre-#82 `{"user_id": N}`
+# cookies. But a request mid-way through the TOTP second-factor flow ALSO has no
+# "sid" yet (that's the whole point — it isn't authenticated until the code is
+# verified), and get_current_user runs on every single page render via the
+# _nav_context context processor. Without preserving pending_2fa_user_id across that
+# clear, simply loading the /auth/login/2fa PAGE (a GET, before the user has typed
+# anything) would silently wipe the pending flow out of the cookie that gets sent
+# back — the user would see the code-entry form, but submitting a code afterward
+# would already be too late.
+
+
+def test_viewing_the_2fa_prompt_page_does_not_wipe_the_pending_flow(client, pg_conn, local_user):
+    user_id, email = local_user
+    _login(client, email)
+    secret, _codes = _enable_2fa(client, pg_conn, user_id)
+    client.post("/auth/logout", follow_redirects=False)
+
+    login_resp = _login(client, email)
+    assert login_resp.status_code == 303
+    assert login_resp.headers["location"] == "/auth/login/2fa"
+
+    # This is the step that would trigger the bug: rendering the page runs
+    # _nav_context -> get_current_user, which (pre-fix) unconditionally cleared the
+    # whole session because there's no "sid" yet at this point in the flow.
+    prompt_page = client.get("/auth/login/2fa", follow_redirects=False)
+    assert prompt_page.status_code == 200
+
+    # The pending flow must still be intact — submitting a real code now must
+    # succeed, not bounce to /auth/login for "no pending flow."
+    submit = client.post(
+        "/auth/login/2fa", data={"code": pyotp.TOTP(secret).now()}, follow_redirects=False
+    )
+    assert submit.status_code == 303
+    assert submit.headers["location"] == "/"
+
+    home = client.get("/", follow_redirects=False)
+    assert home.status_code == 200
+
+
+def test_viewing_the_2fa_prompt_page_multiple_times_still_preserves_it(client, pg_conn, local_user):
+    """Guards against a narrower fix that only preserves the key once (e.g. a
+    one-shot flag) rather than on every clear — a user might reload the prompt page,
+    check their phone, reload again, etc. before ever submitting a code."""
+    user_id, email = local_user
+    _login(client, email)
+    secret, _codes = _enable_2fa(client, pg_conn, user_id)
+    client.post("/auth/logout", follow_redirects=False)
+
+    _login(client, email)
+    for _ in range(3):
+        page = client.get("/auth/login/2fa", follow_redirects=False)
+        assert page.status_code == 200
+
+    submit = client.post(
+        "/auth/login/2fa", data={"code": pyotp.TOTP(secret).now()}, follow_redirects=False
+    )
+    assert submit.status_code == 303
+    assert submit.headers["location"] == "/"

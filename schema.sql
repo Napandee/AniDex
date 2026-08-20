@@ -103,6 +103,33 @@ CREATE TABLE admin_audit_log (
     detail          TEXT
 );
 
+-- Server-side session store (issue #82, migration 014). The signed session cookie
+-- (Starlette's SessionMiddleware) carries only an opaque `sid` token pointing at a
+-- row here — see app/sessions.py for the read/write API and app/main.py's
+-- get_current_user/_start_session/_end_session for how the token is resolved on
+-- every request. expires_at is a fixed TTL set at creation (SESSION_TTL_DAYS in
+-- app/sessions.py), not a sliding window; there's no scheduled cleanup job, dead
+-- rows for a user are opportunistically swept the next time that user starts a new
+-- session (same lazy-cleanup precedent as password_resets above).
+CREATE TABLE sessions (
+    id             SERIAL PRIMARY KEY,
+    session_token  TEXT NOT NULL UNIQUE,
+    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_agent     TEXT,                      -- best-effort, Settings "device" display only, truncated to 255 chars
+    ip_address     TEXT,                      -- best-effort, cosmetic — never used for any access decision, truncated to 255 chars
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),  -- touched roughly every 5 min of activity, not every request — see resolve_session()
+    expires_at     TIMESTAMPTZ NOT NULL,
+    revoked_at     TIMESTAMPTZ                 -- NULL = still active
+);
+
+-- Partial: serves list_active_sessions()'s read (only ever looks at live rows).
+CREATE INDEX idx_sessions_user_active ON sessions (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
+-- Plain: serves create_session()'s per-user cleanup DELETE, which specifically
+-- targets revoked_at IS NOT NULL rows — exactly what the partial index above
+-- excludes. Verified with EXPLAIN (see migrations/014_sessions.sql's comment).
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+
 -- =========================================================================
 -- ANILIST-SOURCED (rebuildable — sync job upserts these, never hand-edit)
 -- =========================================================================

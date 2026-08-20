@@ -107,6 +107,18 @@
   "login_2fa_submit_btn": "確認",
   "login_2fa_recovery_hint": "認証アプリを利用できませんか? 代わりにリカバリーコードを入力してください。",
 
+  "account_sessions_title": "アクティブなセッション",
+  "account_sessions_desc": "現在アカウントにログインしているデバイスです。心当たりのないものは取り消してください。",
+  "account_sessions_revoked_msg": "セッションを取り消しました。",
+  "account_sessions_col_device": "デバイス",
+  "account_sessions_col_ip": "IPアドレス",
+  "account_sessions_col_last_active": "最終アクティブ",
+  "account_sessions_col_started": "ログイン日時",
+  "account_sessions_current_badge": "このデバイス",
+  "account_sessions_revoke_btn": "取り消す",
+  "account_sessions_revoke_current_btn": "このデバイスをログアウト",
+  "account_sessions_empty": "アクティブなセッションはありません。",
+
   "sync_credentials_title": "認証情報",
   "sync_credentials_help": "同期パイプラインで使用されます。既存の値を保持するにはトークン欄を空欄のままにしてください。コンテナのenvファイルではなくPostgresに保存されます。",
   "sync_credentials_saved": "認証情報を保存しました。",
