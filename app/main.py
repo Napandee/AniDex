@@ -4959,7 +4959,8 @@ def _export_user_library(user_id: int) -> list:
             pn.notes,
             pn.personal_tags,
             pn.watch_next_priority,
-            pn.anilist_id_override
+            pn.anilist_id_override,
+            pn.favorite
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
@@ -5456,6 +5457,7 @@ def library(request: Request, response: Response, status: str = None):
             pn.personal_tags,
             pn.notes,
             pn.watch_next_priority,
+            pn.favorite,
             next_ep.episode AS next_episode,
             next_ep.airing_at AS next_airing_at,
             (en.note IS NOT NULL) AS has_episode_note
@@ -5604,6 +5606,45 @@ def _apply_rating_change(user, anime_id: int, stars: int) -> str | None:
     )
 
     return None
+
+
+@app.post("/api/anime/{anime_id}/favorite")
+async def set_favorite(anime_id: int, request: Request):
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    favorite = bool(body.get("favorite"))
+
+    _set_favorite(user["id"], anime_id, favorite)
+    return JSONResponse({"ok": True, "favorite": favorite})
+
+
+def _set_favorite(user_id: int, anime_id: int, favorite: bool) -> None:
+    """Mark/unmark an anime as a personal favorite (issue #219) — Letterboxd's
+    heart-vs-star pattern, a nullable boolean signal on personal_notes,
+    independent of library_entries.score. Purely local: never pushed to AniList
+    (the app's only AniList mutations are rating/status/progress, see CLAUDE.md's
+    guardrail — this is deliberately not a fourth one).
+
+    Dedicated upsert touching only the favorite column, not routed through
+    _upsert_personal_notes' full-replace semantics (which overwrites drop_reason/
+    personal_tags/notes/watch_next_priority/anilist_id_override with exactly what
+    the caller passes) — same reasoning as _apply_rating_change owning its own
+    single-column UPDATE rather than going through that full-replace path.
+    Toggling the heart from a library card or the notes page must never clobber
+    those other fields, and vice versa."""
+    db.execute(
+        """
+        INSERT INTO personal_notes (user_id, anime_id, favorite)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (user_id, anime_id) DO UPDATE SET
+            favorite = EXCLUDED.favorite,
+            updated_at = now()
+        """,
+        (user_id, anime_id, favorite),
+    )
 
 
 def _apply_status_change(user, anime_id: int, status: str) -> str | None:

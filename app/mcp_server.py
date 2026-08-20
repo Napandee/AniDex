@@ -317,9 +317,10 @@ async def list_library_entries(status: str | None = None, limit: int = 500) -> l
 
 async def list_personal_notes(anime_id: int | None = None) -> list[dict]:
     """List the authenticated user's personal-layer notes: drop reasons, custom
-    tags, freeform notes, and manual watch-next priority — the layer AniList's own
-    UI has no place for. One row per anime that has any personal_notes data.
-    Optionally filter to a single anime_id (AniList media id)."""
+    tags, freeform notes, manual watch-next priority, and the favorite ("liked")
+    flag — the layer AniList's own UI has no place for. One row per anime that
+    has any personal_notes data. Optionally filter to a single anime_id (AniList
+    media id)."""
     user = _require_user()
 
     def _query():
@@ -332,7 +333,7 @@ async def list_personal_notes(anime_id: int | None = None) -> list[dict]:
             f"""
             SELECT a.id AS anime_id, a.title_romaji, a.title_english,
                    pn.drop_reason, pn.personal_tags, pn.notes,
-                   pn.watch_next_priority, pn.updated_at
+                   pn.watch_next_priority, pn.favorite, pn.updated_at
             FROM personal_notes pn
             JOIN anime a ON a.id = pn.anime_id
             WHERE {where}

@@ -63,6 +63,11 @@
       <button class="filter-btn" data-rewatch-filter="1">{{ t('lib_rewatched_filter') }}</button>
     </div>
 
+    <div class="filter-group favorite-filter-group">
+      <button class="filter-btn active" data-favorite-filter="">{{ t('lib_all_favorites') }}</button>
+      <button class="filter-btn" data-favorite-filter="1">{{ t('lib_favorited_filter') }}</button>
+    </div>
+
     <button id="bulk-toggle" class="filter-btn">{{ t('js_select') }}</button>
   </div>
 </div>
@@ -100,6 +105,7 @@
        data-anime-id="{{ e.id }}"
        data-format="{{ e.format or '' }}"
        data-score="{{ e.score or 0 }}"
+       data-favorite="{{ 'true' if e.favorite else 'false' }}"
        data-title="{{ (e.title_english or e.title_romaji) | lower }}"
        data-progress="{{ e.progress or 0 }}"
        data-updated="{{ e.anilist_updated_at.isoformat() if e.anilist_updated_at else '' }}"
@@ -132,6 +138,13 @@
           <span class="star{% if e.score and i <= e.score %} filled{% endif %}" data-value="{{ i }}">★</span>
           {% endfor %}
         </div>
+        <button type="button"
+                class="favorite-toggle{% if e.favorite %} active{% endif %}"
+                data-anime-id="{{ e.id }}"
+                data-favorite="{{ 'true' if e.favorite else 'false' }}"
+                title="{{ t('lib_favorite_toggle_title') }}"
+                aria-label="{{ t('lib_favorite_toggle_title') }}"
+                aria-pressed="{{ 'true' if e.favorite else 'false' }}">♥</button>
         <div class="progress-stepper" data-anime-id="{{ e.id }}" data-episodes="{{ e.episodes or '' }}">
           <button class="prog-btn" data-delta="-1">−</button>
           <span class="prog-val">{{ e.progress or 0 }}</span>
@@ -342,6 +355,32 @@
       if (!activeRewatch) { card.dataset.rewatchHidden = ''; return; }
       const count = parseInt(card.dataset.repeatCount) || 0;
       card.dataset.rewatchHidden = String(count < 1);
+    });
+    if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
+  }
+}());
+
+// ── Favorite filter ───────────────────────────────────────────────────────────
+// "liked" vs. "all" (#219) — same one-flag-per-card pattern as the rewatch filter
+// just above: a data-favorite-hidden flag applyLibraryFilters (script.js) folds
+// into its combined show/hide check. card.dataset.favorite itself is kept live
+// by the favorite-toggle heart click handler in script.js, so this stays correct
+// without a page reload after toggling a card's heart.
+(function () {
+  let activeFavorite = '';
+  document.querySelectorAll('[data-favorite-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-favorite-filter]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFavorite = btn.dataset.favoriteFilter;
+      applyFavoriteFilter();
+    });
+  });
+
+  function applyFavoriteFilter() {
+    document.querySelectorAll('#library-grid .card').forEach(card => {
+      if (!activeFavorite) { card.dataset.favoriteHidden = ''; return; }
+      card.dataset.favoriteHidden = String(card.dataset.favorite !== 'true');
     });
     if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
   }
