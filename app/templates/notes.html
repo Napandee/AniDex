@@ -131,6 +131,22 @@
     </div>
 
     <div class="form-field">
+      <span class="form-label">
+        {{ t('notes_mood_label') }}
+        <span class="form-label-hint">{{ t('notes_mood_hint') }}</span>
+      </span>
+      <div class="mood-checkbox-group">
+        {% for m in mood_tags %}
+        <label class="mood-checkbox">
+          <input type="checkbox" name="mood" value="{{ m }}"
+                 {% if notes and notes.mood_tags and m in notes.mood_tags %}checked{% endif %}>
+          {{ t('mood_' + m) }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="form-field">
       <label class="form-label" for="watch_next_priority">
         {{ t('notes_queue_priority_label') }}
         <span class="form-label-hint">{{ t('notes_queue_priority_hint') }}</span>

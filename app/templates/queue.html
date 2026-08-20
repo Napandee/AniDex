@@ -96,9 +96,12 @@
       </div>
       {% endif %}
 
-      {% if e.personal_tags %}
+      {% if e.mood_tags or e.personal_tags %}
       <div class="genres" style="padding-top:0.2rem">
-        {% for t in e.personal_tags %}
+        {% for m in e.mood_tags or [] %}
+        <span class="mood-tag">{{ t('mood_' + m) }}</span>
+        {% endfor %}
+        {% for t in e.personal_tags or [] %}
         <span class="personal-tag">{{ t }}</span>
         {% endfor %}
       </div>
@@ -173,9 +176,12 @@
         </div>
         {% endif %}
 
-        {% if e.personal_tags %}
+        {% if e.mood_tags or e.personal_tags %}
         <div class="genres" style="padding-top:0.2rem">
-          {% for tag in e.personal_tags %}
+          {% for m in e.mood_tags or [] %}
+          <span class="mood-tag">{{ t('mood_' + m) }}</span>
+          {% endfor %}
+          {% for tag in e.personal_tags or [] %}
           <span class="personal-tag">{{ tag }}</span>
           {% endfor %}
         </div>

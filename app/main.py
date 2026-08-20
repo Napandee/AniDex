@@ -675,7 +675,6 @@ STREAMING_SITES = {
     "Niconico Video", "Funimation", "VRV",
 }
 
-
 # Issue #231 — invite expiry window. A fresh invite (POST /admin/invites) and a
 # resend (POST /admin/invites/{id}/resend) both push expires_at this far out from
 # now(); the DB column carries the same default (schema.sql / migration 022) as a
@@ -683,6 +682,34 @@ STREAMING_SITES = {
 # configurable per-instance — a flat 7 days is the implementation-time call #231's
 # "Open questions" section left to whoever built it.
 INVITE_EXPIRY_DAYS = 7
+
+# Issue #218 — mood-at-log-time on personal notes, StoryGraph-inspired. A fixed
+# picklist (not freeform, unlike personal_tags) so it stays useful for a future
+# mood chart/filter (explicitly out of scope for #218 itself) without having to
+# guess later which personal_tags entries were "really" moods. Ordered — this
+# order drives both the notes-form checkbox order and every mood_* i18n key
+# name below (t('mood_' + slug), mirroring the t('status_' + ...) convention).
+# Validated in application code only, same as STREAMING_SITES above — see
+# migrations/026_mood_tags.sql for why there's no DB-level CHECK.
+MOOD_TAGS = [
+    "comfort", "hype", "intense", "sad", "wholesome",
+    "dark", "funny", "relaxing", "thought_provoking", "bittersweet",
+]
+_MOOD_TAGS_SET = set(MOOD_TAGS)
+
+
+def _filter_mood_tags(raw) -> list:
+    """Keep only recognized MOOD_TAGS values, in MOOD_TAGS order (not submission
+    order) — dedupes for free and gives a stable display order regardless of how
+    the caller (form checkboxes, JSON API, MCP tool) sent them. Unrecognized
+    values are silently dropped rather than rejected: the UI only ever offers
+    checkboxes for the fixed set, so a stray value only reaches here via the
+    JSON API or MCP tool, most likely a stale client after MOOD_TAGS changes —
+    not worth hard-failing the whole notes save over."""
+    if not raw:
+        return []
+    submitted = {str(v).strip() for v in raw if str(v).strip()}
+    return [m for m in MOOD_TAGS if m in submitted]
 
 ANILIST_SEARCH_QUERY = """
 query ($search: String) {
@@ -2676,7 +2703,7 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
         "notes.html",
         {"anime": anime, "notes": notes, "back": back,
          "trailer": trailer, "related": related, "also_watching": also_watching,
-         "rewatch_notes": rewatch_notes},
+         "rewatch_notes": rewatch_notes, "mood_tags": MOOD_TAGS},
     )
 
 
@@ -2687,6 +2714,7 @@ def save_notes(
     drop_reason: str = Form(""),
     notes: str = Form(""),
     personal_tags: str = Form(""),
+    mood: list[str] = Form([]),
     watch_next_priority: str = Form(""),
     anilist_id_override: str = Form(""),
     back: str = Form("WATCHING"),
@@ -2698,6 +2726,7 @@ def save_notes(
     drop_reason_val = drop_reason.strip() or None
     notes_val = notes.strip() or None
     tags = [t.strip() for t in personal_tags.split(",") if t.strip()]
+    mood_val = _filter_mood_tags(mood)
     try:
         priority = int(watch_next_priority.strip()) if watch_next_priority.strip() else None
     except ValueError:
@@ -2707,7 +2736,7 @@ def save_notes(
     except ValueError:
         al_override = None
 
-    _upsert_personal_notes(user["id"], anime_id, drop_reason_val, notes_val, tags, priority, al_override)
+    _upsert_personal_notes(user["id"], anime_id, drop_reason_val, notes_val, tags, priority, al_override, mood_val)
 
     if drop_reason_val:
         error = _apply_status_change(user, anime_id, "DROPPED")
@@ -2728,6 +2757,7 @@ async def save_notes_api(anime_id: int, request: Request):
     notes_val = (body.get("notes") or "").strip() or None
     tags_raw = body.get("personal_tags") or ""
     tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
+    mood_val = _filter_mood_tags(body.get("mood") or [])
     priority_raw = body.get("watch_next_priority")
     try:
         priority = int(priority_raw) if priority_raw not in (None, "") else None
@@ -2740,7 +2770,7 @@ async def save_notes_api(anime_id: int, request: Request):
     except (ValueError, TypeError):
         al_override = None
 
-    _upsert_personal_notes(user["id"], anime_id, drop_reason_val, notes_val, tags, priority, al_override)
+    _upsert_personal_notes(user["id"], anime_id, drop_reason_val, notes_val, tags, priority, al_override, mood_val)
     return JSONResponse({"ok": True})
 
 
@@ -2752,6 +2782,7 @@ def _upsert_personal_notes(
     tags: list,
     priority,
     al_override,
+    mood: list | None = None,
 ) -> None:
     """Full-replace upsert into personal_notes — the actual write logic behind both
     the notes form route (save_notes) and the JSON API route (save_notes_api)
@@ -2760,20 +2791,23 @@ def _upsert_personal_notes(
     listed is overwritten with exactly what's passed, mirroring the existing form/
     API semantics where the caller always submits the complete set of fields —
     a field left unset by the caller clears that column, it doesn't leave it
-    alone."""
+    alone. `mood` (issue #218) follows the same full-replace rule as `tags` —
+    callers should already have run it through _filter_mood_tags, this doesn't
+    re-validate."""
     db.execute(
         """
-        INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, mood_tags, notes, watch_next_priority, anilist_id_override)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (user_id, anime_id) DO UPDATE SET
             drop_reason = EXCLUDED.drop_reason,
             personal_tags = EXCLUDED.personal_tags,
+            mood_tags = EXCLUDED.mood_tags,
             notes = EXCLUDED.notes,
             watch_next_priority = EXCLUDED.watch_next_priority,
             anilist_id_override = EXCLUDED.anilist_id_override,
             updated_at = now()
         """,
-        (user_id, anime_id, drop_reason_val, json.dumps(tags), notes_val, priority, al_override),
+        (user_id, anime_id, drop_reason_val, json.dumps(tags), json.dumps(mood or []), notes_val, priority, al_override),
     )
 
 
@@ -3075,6 +3109,7 @@ def queue(request: Request, status: str = None):
             le.repeat_count,
             pn.watch_next_priority,
             pn.personal_tags,
+            pn.mood_tags,
             pn.notes,
             rs.score   AS rec_score,
             rs.reason  AS rec_reason
@@ -3124,7 +3159,8 @@ def queue(request: Request, status: str = None):
             a.average_score,
             le.repeat_count,
             le.finish_date,
-            pn.personal_tags
+            pn.personal_tags,
+            pn.mood_tags
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
@@ -5610,6 +5646,7 @@ def _export_user_library(user_id: int) -> list:
             pn.drop_reason,
             pn.notes,
             pn.personal_tags,
+            pn.mood_tags,
             pn.watch_next_priority,
             pn.anilist_id_override,
             pn.favorite
@@ -5705,13 +5742,14 @@ def _analyze_personal_notes_import(user_id: int, entries: list) -> dict:
         if not isinstance(tags, list):
             tags = []
         tags = [str(t).strip() for t in tags if str(t).strip()]
+        mood = _filter_mood_tags(e.get("mood_tags") or [])
         priority = e.get("watch_next_priority")
         priority = priority if isinstance(priority, int) else None
         al_override = e.get("anilist_id_override")
         al_override = al_override if isinstance(al_override, int) else None
 
         has_personal_data = bool(
-            drop_reason or notes or tags or priority is not None or al_override is not None
+            drop_reason or notes or tags or mood or priority is not None or al_override is not None
         )
         if not has_personal_data:
             continue
@@ -5723,7 +5761,7 @@ def _analyze_personal_notes_import(user_id: int, entries: list) -> dict:
         if anilist_id in existing_notes:
             overwrite_count += 1
 
-        importable.append((anilist_id, drop_reason, tags, notes, priority, al_override))
+        importable.append((anilist_id, drop_reason, tags, notes, priority, al_override, mood))
 
     return {
         "importable": importable,
@@ -5744,20 +5782,21 @@ def _apply_personal_notes_import(user_id: int, importable: list) -> None:
     elsewhere in this file, just looped. Never touches a row that wasn't in
     `importable`, i.e. never touches a row the import JSON didn't actually carry
     personal-layer data for."""
-    for anime_id, drop_reason, tags, notes, priority, al_override in importable:
+    for anime_id, drop_reason, tags, notes, priority, al_override, mood in importable:
         db.execute(
             """
-            INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, notes, watch_next_priority, anilist_id_override)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO personal_notes (user_id, anime_id, drop_reason, personal_tags, mood_tags, notes, watch_next_priority, anilist_id_override)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, anime_id) DO UPDATE SET
                 drop_reason = EXCLUDED.drop_reason,
                 personal_tags = EXCLUDED.personal_tags,
+                mood_tags = EXCLUDED.mood_tags,
                 notes = EXCLUDED.notes,
                 watch_next_priority = EXCLUDED.watch_next_priority,
                 anilist_id_override = EXCLUDED.anilist_id_override,
                 updated_at = now()
             """,
-            (user_id, anime_id, drop_reason, json.dumps(tags), notes, priority, al_override),
+            (user_id, anime_id, drop_reason, json.dumps(tags), json.dumps(mood), notes, priority, al_override),
         )
 
 
@@ -6117,6 +6156,7 @@ def library(request: Request, response: Response, status: str = None):
             le.anilist_updated_at,
             pn.drop_reason,
             pn.personal_tags,
+            pn.mood_tags,
             pn.notes,
             pn.watch_next_priority,
             pn.favorite,

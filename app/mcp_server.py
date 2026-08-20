@@ -300,7 +300,8 @@ async def list_library_entries(status: str | None = None, limit: int = 500) -> l
                    a.episodes, a.season, a.season_year, a.average_score,
                    le.status, le.score AS my_score, le.progress, le.repeat_count,
                    le.start_date, le.finish_date,
-                   COALESCE(pn.personal_tags, '[]'::jsonb) AS personal_tags
+                   COALESCE(pn.personal_tags, '[]'::jsonb) AS personal_tags,
+                   COALESCE(pn.mood_tags, '[]'::jsonb) AS mood_tags
             FROM library_entries le
             JOIN anime a ON a.id = le.anime_id
             LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
@@ -317,10 +318,10 @@ async def list_library_entries(status: str | None = None, limit: int = 500) -> l
 
 async def list_personal_notes(anime_id: int | None = None) -> list[dict]:
     """List the authenticated user's personal-layer notes: drop reasons, custom
-    tags, freeform notes, manual watch-next priority, and the favorite ("liked")
-    flag — the layer AniList's own UI has no place for. One row per anime that
-    has any personal_notes data. Optionally filter to a single anime_id (AniList
-    media id)."""
+    tags, mood tags (issue #218), freeform notes, manual watch-next priority,
+    and the favorite ("liked") flag — the layer AniList's own UI has no place
+    for. One row per anime that has any personal_notes data. Optionally filter
+    to a single anime_id (AniList media id)."""
     user = _require_user()
 
     def _query():
@@ -332,7 +333,7 @@ async def list_personal_notes(anime_id: int | None = None) -> list[dict]:
         return db.fetchall(
             f"""
             SELECT a.id AS anime_id, a.title_romaji, a.title_english,
-                   pn.drop_reason, pn.personal_tags, pn.notes,
+                   pn.drop_reason, pn.personal_tags, pn.mood_tags, pn.notes,
                    pn.watch_next_priority, pn.favorite, pn.updated_at
             FROM personal_notes pn
             JOIN anime a ON a.id = pn.anime_id
@@ -468,20 +469,25 @@ async def update_personal_notes(
     drop_reason: str | None = None,
     notes: str | None = None,
     personal_tags: str | None = None,
+    mood: str | None = None,
     watch_next_priority: int | None = None,
     anilist_id_override: int | None = None,
 ) -> dict:
     """Replace the authenticated user's personal-layer notes for one anime: drop
-    reason, freeform notes, comma-separated personal tags, manual watch-next
-    priority, and the manual AniList-id override (issue #159 — used to fix
-    CR-sync season-mismatch cases, e.g. Kingdom/Tanya-style progress landing on
-    the wrong season's AniList entry). This mirrors POST /api/anime/{id}/notes
-    exactly, including its full-replace semantics — any field left unset here is
-    CLEARED on the stored row, not left alone, same as submitting that
-    endpoint's JSON body with that field omitted. This includes
-    anilist_id_override: if the anime you're updating has one set and you don't
-    pass it here, it will be cleared. Call list_personal_notes first if you need
-    to preserve an existing field's value while changing another one.
+    reason, freeform notes, comma-separated personal tags, comma-separated mood
+    tags (issue #218 — a fixed picklist: comfort, hype, intense, sad,
+    wholesome, dark, funny, relaxing, thought_provoking, bittersweet; anything
+    else is silently dropped, same as submitting an unrecognized value through
+    the notes form's JSON API), manual watch-next priority, and the manual
+    AniList-id override (issue #159 — used to fix CR-sync season-mismatch
+    cases, e.g. Kingdom/Tanya-style progress landing on the wrong season's
+    AniList entry). This mirrors POST /api/anime/{id}/notes exactly, including
+    its full-replace semantics — any field left unset here is CLEARED on the
+    stored row, not left alone, same as submitting that endpoint's JSON body
+    with that field omitted. This includes anilist_id_override: if the anime
+    you're updating has one set and you don't pass it here, it will be
+    cleared. Call list_personal_notes first if you need to preserve an
+    existing field's value while changing another one.
 
     Requires the anime's numeric AniList id (anime_id) — there is no
     filter/search form of this tool, and none will be added. Scoped to the
@@ -490,13 +496,14 @@ async def update_personal_notes(
     from app import main as app_main
 
     tags = [t.strip() for t in (personal_tags or "").split(",") if t.strip()]
+    mood_val = app_main._filter_mood_tags([m.strip() for m in (mood or "").split(",") if m.strip()])
     drop_reason_val = (drop_reason or "").strip() or None
     notes_val = (notes or "").strip() or None
 
     def _write():
         app_main._upsert_personal_notes(
             user["id"], anime_id, drop_reason_val, notes_val, tags,
-            watch_next_priority, anilist_id_override,
+            watch_next_priority, anilist_id_override, mood_val,
         )
 
     await run_in_threadpool(_write)

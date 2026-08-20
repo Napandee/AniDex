@@ -190,7 +190,7 @@
       </div>
       {% endif %}
 
-      {% if e.personal_tags or e.is_stale or e.repeat_count or e.next_airing_label %}
+      {% if e.personal_tags or e.mood_tags or e.is_stale or e.repeat_count or e.next_airing_label %}
       <div class="genres">
         {% if e.next_airing_label %}
         <span class="airing-badge" title="{{ t('lib_airing_badge_title', ep=e.next_episode, label=e.next_airing_label) }}">{{ t('lib_airing_badge_text', ep=e.next_episode, label=e.next_airing_label) }}</span>
@@ -201,6 +201,9 @@
         {% if e.repeat_count %}
         <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
         {% endif %}
+        {% for m in e.mood_tags or [] %}
+        <span class="mood-tag">{{ t('mood_' + m) }}</span>
+        {% endfor %}
         {% for t in e.personal_tags or [] %}
         <span class="personal-tag">{{ t }}</span>
         {% endfor %}

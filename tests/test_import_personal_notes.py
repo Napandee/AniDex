@@ -47,10 +47,11 @@ class FakeDB:
     def execute(self, query, params=None):
         self.execute_calls.append((query, params))
         assert "INSERT INTO personal_notes" in query
-        (user_id, anime_id, drop_reason, tags_json, notes, priority, al_override) = params
+        (user_id, anime_id, drop_reason, tags_json, mood_json, notes, priority, al_override) = params
         self.personal_notes[(user_id, anime_id)] = {
             "drop_reason": drop_reason,
             "personal_tags": json.loads(tags_json),
+            "mood_tags": json.loads(mood_json),
             "notes": notes,
             "watch_next_priority": priority,
             "anilist_id_override": al_override,
@@ -65,6 +66,7 @@ def _entry(anilist_id, **overrides):
         "drop_reason": None,
         "notes": None,
         "personal_tags": [],
+        "mood_tags": [],
         "watch_next_priority": None,
         "anilist_id_override": None,
     }
@@ -166,3 +168,29 @@ def test_entries_with_no_personal_data_are_never_touched(monkeypatch):
 
     main._apply_personal_notes_import(user_id=1, importable=analysis["importable"])
     assert fake.execute_calls == []
+
+
+def test_mood_tags_round_trip_and_unrecognized_values_are_dropped(monkeypatch):
+    """Issue #218 — mood_tags import mirrors personal_tags's round trip, but
+    unlike personal_tags (arbitrary freeform text), mood is a closed picklist:
+    an export produced by a future/older app version with a mood value not in
+    the current MOOD_TAGS allowlist should be silently dropped, not crash the
+    import or get written verbatim."""
+    fake = FakeDB(anime_ids={100, 200})
+    monkeypatch.setattr(main, "db", fake)
+
+    entries = [
+        _entry(100, mood_tags=["intense", "comfort"]),
+        _entry(200, mood_tags=["comfort", "not_a_real_mood"]),
+    ]
+
+    analysis = main._analyze_personal_notes_import(user_id=1, entries=entries)
+    assert analysis["overwrite_count"] == 0
+    assert len(analysis["importable"]) == 2
+
+    main._apply_personal_notes_import(user_id=1, importable=analysis["importable"])
+
+    # MOOD_TAGS order, not submission order.
+    assert fake.personal_notes[(1, 100)]["mood_tags"] == ["comfort", "intense"]
+    # The unrecognized value never reaches the write.
+    assert fake.personal_notes[(1, 200)]["mood_tags"] == ["comfort"]

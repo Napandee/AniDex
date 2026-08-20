@@ -79,6 +79,20 @@ def test_dynamic_season_keys_exist_for_every_anilist_season():
         assert f"season_{season}" in default_keys
 
 
+def test_dynamic_mood_keys_exist_for_every_mood_tag():
+    # Mirrors the `t('mood_' + m)` pattern in notes.html/library.html/queue.html
+    # for issue #218's fixed mood picklist (app/main.py's MOOD_TAGS) — kept as a
+    # literal list here rather than importing app.main, same reasoning as the
+    # status/season checks above (this file stays import-free / DB-free).
+    default_keys = set(_load(DEFAULT_LOCALE).keys())
+    mood_tags = [
+        "comfort", "hype", "intense", "sad", "wholesome",
+        "dark", "funny", "relaxing", "thought_provoking", "bittersweet",
+    ]
+    for mood in mood_tags:
+        assert f"mood_{mood}" in default_keys
+
+
 def test_every_js_t_call_resolves_to_a_real_key():
     """Covers window.I18N-based t('key', ...) calls added for #147: script.js plus
     any inline <script> blocks left in the templates (library.html, recommendations.html).
