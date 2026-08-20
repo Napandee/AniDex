@@ -28,6 +28,7 @@
       <button class="sort-btn" data-sort="title">{{ t('lib_sort_title') }}</button>
       <button class="sort-btn" data-sort="progress">{{ t('lib_sort_progress') }}</button>
       <button class="sort-btn" data-sort="updated">{{ t('lib_sort_updated') }}</button>
+      <button class="sort-btn" data-sort="rewatches">{{ t('lib_sort_rewatches') }}</button>
     </div>
 
     <div class="season-filter-group">
@@ -47,6 +48,11 @@
       {% for s in [1,2,3,4,5] %}
       <button class="filter-btn" data-score-filter="{{ s }}">{{ '★' * s }}</button>
       {% endfor %}
+    </div>
+
+    <div class="filter-group rewatch-filter-group">
+      <button class="filter-btn active" data-rewatch-filter="">{{ t('lib_all_rewatches') }}</button>
+      <button class="filter-btn" data-rewatch-filter="1">{{ t('lib_rewatched_filter') }}</button>
     </div>
 
     <button id="bulk-toggle" class="filter-btn">{{ t('js_select') }}</button>
@@ -89,6 +95,7 @@
        data-title="{{ (e.title_english or e.title_romaji) | lower }}"
        data-progress="{{ e.progress or 0 }}"
        data-updated="{{ e.anilist_updated_at.isoformat() if e.anilist_updated_at else '' }}"
+       data-repeat-count="{{ e.repeat_count or 0 }}"
        data-drop="{{ e.drop_reason or '' }}"
        data-tags="{{ (e.personal_tags or []) | join(', ') }}"
        data-notes="{{ e.notes or '' }}"
@@ -250,6 +257,32 @@
       if (!activeScore) { card.dataset.scoreHidden = ''; return; }
       const score = parseInt(card.dataset.score) || 0;
       card.dataset.scoreHidden = String(score !== parseInt(activeScore));
+    });
+    if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
+  }
+}());
+
+// ── Rewatch filter ────────────────────────────────────────────────────────────
+// "has been rewatched" vs "all" — the minimum bar from #190. Mirrors the score
+// filter above exactly: a per-card data-rewatch-hidden flag that applyLibraryFilters
+// (script.js) folds into its combined show/hide check, rather than a second
+// filtering pass of its own.
+(function () {
+  let activeRewatch = '';
+  document.querySelectorAll('[data-rewatch-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-rewatch-filter]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeRewatch = btn.dataset.rewatchFilter;
+      applyRewatchFilter();
+    });
+  });
+
+  function applyRewatchFilter() {
+    document.querySelectorAll('#library-grid .card').forEach(card => {
+      if (!activeRewatch) { card.dataset.rewatchHidden = ''; return; }
+      const count = parseInt(card.dataset.repeatCount) || 0;
+      card.dataset.rewatchHidden = String(count < 1);
     });
     if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
   }
