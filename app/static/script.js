@@ -230,9 +230,10 @@ function applyLibraryFilters() {
       ? `${card.dataset.seasonYear}|${card.dataset.season}` : '';
     const seasonOk  = !activeSeason || seasonKey === activeSeason;
     const scoreOk   = card.dataset.scoreHidden !== 'true';
+    const rewatchOk = card.dataset.rewatchHidden !== 'true';
     const cardTags  = (card.dataset.tags || '').toLowerCase().split(',').map(t => t.trim());
     const tagOk     = !activeTag || cardTags.includes(activeTag);
-    const show    = textOk && fmtOk && seasonOk && scoreOk && tagOk;
+    const show    = textOk && fmtOk && seasonOk && scoreOk && rewatchOk && tagOk;
     card.style.display = show ? '' : 'none';
     if (show) visible++;
   });
@@ -256,6 +257,9 @@ function sortLibrary() {
     }
     if (activeSort === 'updated') {
       return (b.dataset.updated || '').localeCompare(a.dataset.updated || '');
+    }
+    if (activeSort === 'rewatches') {
+      return parseFloat(b.dataset.repeatCount || 0) - parseFloat(a.dataset.repeatCount || 0);
     }
     return 0;
   });
