@@ -318,6 +318,17 @@ CREATE TABLE recommendation_scores (
                                                             -- it's the more specific label. Added migration 012.
                              CHECK (source IN ('similarity', 'seasonal')),
     computed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    first_shown_at       TIMESTAMPTZ NOT NULL DEFAULT now(),  -- set once, at first insert, and
+                                                            -- never touched by a rescore (issue
+                                                            -- #185) — unlike computed_at, which
+                                                            -- score_and_store() bumps to now() on
+                                                            -- every rerun, this is the true "when
+                                                            -- was this first recommended" anchor
+                                                            -- the recommend->outcome hit-rate
+                                                            -- window is measured from. Preserved
+                                                            -- across rebuilds the same way
+                                                            -- dismissed/snoozed_until are. Added
+                                                            -- migration 016.
     UNIQUE (user_id, anime_id)
 );
 

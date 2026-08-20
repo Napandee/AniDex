@@ -584,17 +584,23 @@ def score_and_store(
     with conn.cursor() as cur:
         for anime_id, score, reason in scored:
             cur.execute("""
-                INSERT INTO recommendation_scores (user_id, anime_id, score, reason, source, dismissed, computed_at)
-                VALUES (%s, %s, %s, %s, %s, false, now())
+                INSERT INTO recommendation_scores (
+                    user_id, anime_id, score, reason, source, dismissed, computed_at, first_shown_at
+                )
+                VALUES (%s, %s, %s, %s, %s, false, now(), now())
                 ON CONFLICT (user_id, anime_id) DO UPDATE SET
                     score       = EXCLUDED.score,
                     reason      = EXCLUDED.reason,
                     source      = EXCLUDED.source,
                     computed_at = now()
-                    -- dismissed and snoozed_until are intentionally excluded from this
-                    -- SET clause: both are user decisions that must survive re-runs
-                    -- (issue #75 extends the original dismissed-preservation guarantee
-                    -- to cover the new time-boxed "not now" snooze too).
+                    -- dismissed, snoozed_until, and first_shown_at are intentionally
+                    -- excluded from this SET clause: dismissed/snoozed_until are user
+                    -- decisions that must survive re-runs (issue #75 extends the
+                    -- original dismissed-preservation guarantee to cover the new
+                    -- time-boxed "not now" snooze too). first_shown_at (issue #185)
+                    -- must survive re-runs for a different reason — it's the anchor
+                    -- the recommend->outcome hit-rate window is measured from, and a
+                    -- rescore isn't a fresh recommendation, so it must not reset it.
             """, (USER_ID, anime_id, score, json.dumps(reason), sources.get(anime_id, "similarity")))
     conn.commit()
     return len(scored)
