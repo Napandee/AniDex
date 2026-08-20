@@ -396,6 +396,19 @@
   "stats_studio_loyalty_tooltip_titles": "部作品",
   "stats_studio_loyalty_tooltip_rated": "已评分",
 
+  "stats_format_split_title": "按格式划分的观看时长",
+  "stats_format_split_sub": "将按集数计算的观看时长与按电影时长计算的观看时长分开统计，而不是合并成一个估算分钟数。",
+  "stats_format_split_episodes_label": "已观看集数",
+  "stats_format_split_movie_minutes_label": "已观看电影分钟数",
+  "stats_format_split_movie_count_label": "已观看电影数",
+
+  "stats_seasonal_card_title": "追番完成率",
+  "stats_seasonal_sub": "在你于原播出期间开始观看的{judged}部作品中，有{followed}部你追完了，有{dropped}部被弃番或未能追上。",
+  "stats_seasonal_excluded_line": "另有{count}部仍在连载中——现在下结论还为时过早。",
+  "stats_seasonal_rate_label": "追番完成率",
+  "stats_seasonal_followed_label": "追完",
+  "stats_seasonal_dropped_label": "弃番／落后",
+
   "stats_streaming_card_title": "流媒体覆盖",
   "stats_streaming_no_owned": "设置你已拥有的流媒体服务，即可查看哪项服务能解锁你积压剧集中最多的内容。",
   "stats_streaming_covered": "你的“观看中/计划中”积压剧集已被你拥有的服务完全覆盖。",

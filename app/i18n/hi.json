@@ -396,6 +396,19 @@
   "stats_studio_loyalty_tooltip_titles": "शीर्षक",
   "stats_studio_loyalty_tooltip_rated": "रेटेड",
 
+  "stats_format_split_title": "फ़ॉर्मैट के अनुसार देखने का समय",
+  "stats_format_split_sub": "एपिसोड-आधारित और मूवी-रनटाइम देखने के समय को अलग रखा गया है, बजाय इसके कि दोनों को एक अनुमानित मिनट संख्या में मिला दिया जाए।",
+  "stats_format_split_episodes_label": "देखे गए एपिसोड",
+  "stats_format_split_movie_minutes_label": "देखी गई मूवी के मिनट",
+  "stats_format_split_movie_count_label": "देखी गई मूवीज़",
+
+  "stats_seasonal_card_title": "सीज़नल फॉलो-थ्रू",
+  "stats_seasonal_sub": "{judged} शो जिन्हें आपने उनके मूल प्रसारण के दौरान देखना शुरू किया, उनमें से {followed} को आपने अंत तक देखा और {dropped} को या तो छोड़ दिया या कभी पूरा नहीं किया।",
+  "stats_seasonal_excluded_line": "{count} और अभी भी प्रसारित हो रहे हैं — अभी बताना जल्दबाज़ी होगी।",
+  "stats_seasonal_rate_label": "फॉलो-थ्रू दर",
+  "stats_seasonal_followed_label": "अंत तक देखा",
+  "stats_seasonal_dropped_label": "छोड़ा / पीछे रह गया",
+
   "stats_streaming_card_title": "स्ट्रीमिंग कवरेज",
   "stats_streaming_no_owned": "यह देखने के लिए कि कौन-सी सेवा आपके बैकलॉग का सबसे अधिक हिस्सा अनलॉक करेगी, अपनी मौजूदा स्ट्रीमिंग सेवाएँ सेट करें।",
   "stats_streaming_covered": "आपकी Watching/Planning बैकलॉग पहले से ही आपकी सेवाओं द्वारा कवर की जा चुकी है।",
