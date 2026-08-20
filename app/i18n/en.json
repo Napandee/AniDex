@@ -413,6 +413,7 @@
   "rec_scored_against": "scored against your completed & watching history",
   "rec_filter_new_season": "New this season ({count})",
   "rec_season_badge_title": "New this season — issue #13's seasonal discovery digest",
+  "rec_score_badge_title": "The recommender's underlying match score, normalized against your best-scoring candidate when this batch was generated — a different calculation from the % Match badge below",
   "rec_score_unavailable_badge": "New pick",
   "rec_score_unavailable_title": "Not enough watch history yet to score this — shown as a seasonal discovery pick instead",
   "rec_community_score_title": "AniList community score",

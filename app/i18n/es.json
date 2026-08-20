@@ -413,6 +413,7 @@
   "rec_scored_against": "puntuado según tu historial de completados y en visionado",
   "rec_filter_new_season": "Nuevas esta temporada ({count})",
   "rec_season_badge_title": "Nueva esta temporada — resumen de descubrimiento estacional (issue #13)",
+  "rec_score_badge_title": "La puntuación de coincidencia interna del recomendador, normalizada respecto al candidato con mejor puntuación cuando se generó este lote — un cálculo distinto del indicador de % de coincidencia de abajo",
   "rec_score_unavailable_badge": "Nueva sugerencia",
   "rec_score_unavailable_title": "Aún no hay suficiente historial de visualización para puntuar esto — se muestra como una recomendación de descubrimiento estacional",
   "rec_community_score_title": "Puntuación de la comunidad de AniList",

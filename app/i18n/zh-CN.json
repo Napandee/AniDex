@@ -413,6 +413,7 @@
   "rec_scored_against": "根据你的已完成与观看中历史评分",
   "rec_filter_new_season": "本季新增（{count}）",
   "rec_season_badge_title": "本季新增——季度发现摘要（issue #13）",
+  "rec_score_badge_title": "推荐器内部的匹配评分，是根据生成本批次时得分最高的候选项归一化得出的——与下方“匹配度”徽章的计算方式不同",
   "rec_score_unavailable_badge": "新发现",
   "rec_score_unavailable_title": "观看历史尚不足以计算评分——改为显示为季度发现推荐",
   "rec_community_score_title": "AniList 社区评分",

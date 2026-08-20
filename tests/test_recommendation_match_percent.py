@@ -174,9 +174,14 @@ def test_match_percent_chip_rendered_for_informative_entries(app_client, monkeyp
     assert '50% Match' in mid_card
     assert '100% Match' in high_card
 
-    # The existing internal-score badge is untouched and still present alongside.
-    assert 'rec-score-badge">10%</div>' in low_card
-    assert 'rec-score-badge">100%</div>' in high_card
+    # The existing internal-score badge is untouched (still 0-100, still int-cast)
+    # and still present alongside — coordinator review on #237 asked for a `title`
+    # explaining what it is, distinct from the new chip's tooltip, so match loosely
+    # on the value rather than the exact tag rather than pinning to a bare div.
+    assert '>10%</div>' in low_card
+    assert '>100%</div>' in high_card
+    assert 'rec-score-badge" title="' in low_card
+    assert 'rec-score-badge" title="' in high_card
 
 
 def test_match_percent_chip_absent_for_uninformative_entry(app_client, monkeypatch):

@@ -413,6 +413,7 @@
   "rec_scored_against": "あなたの視聴済み・視聴中の履歴に基づいてスコアリング",
   "rec_filter_new_season": "今シーズン新着（{count}）",
   "rec_season_badge_title": "今シーズン新着 — シーズナル発見ダイジェスト（issue #13）",
+  "rec_score_badge_title": "レコメンダー内部のマッチスコアで、このバッチ生成時に最高スコアの候補を基準に正規化されています — 下の「マッチ度」バッジとは異なる計算方法です",
   "rec_score_unavailable_badge": "新着ピック",
   "rec_score_unavailable_title": "スコアを算出するための視聴履歴がまだ十分ではありません — 代わりにシーズナル発見のおすすめとして表示しています",
   "rec_community_score_title": "AniListコミュニティスコア",
