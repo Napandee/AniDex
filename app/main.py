@@ -4529,6 +4529,126 @@ def _compute_rewatch_stats(user_id: int) -> dict:
     }
 
 
+# Taste-profile drift (issue #176) -- how the genre mix of a user's COMPLETED
+# library has shifted over time, derived entirely from library_entries.finish_date
+# + anime.genres, per the approach validated (against synthetic data) in #77's
+# comment thread -- no new schema, no snapshot table. The query below is the same
+# bucket-by-time/join-genres/count shape #77 validated, ported to this file's
+# existing `jsonb_array_elements_text(a.genres) AS genre` comma-join idiom (already
+# used by genre_rows above and _compute_drop_patterns) instead of #77's own
+# `CROSS JOIN LATERAL jsonb_array_elements(...)` -- same result set, just
+# consistent with how every other genre-fanout query in this file is written.
+#
+# Bucket-granularity threshold: #77 validated quarterly buckets against a
+# synthetic 180-title/4.5-year library (92% finish_date coverage, 17 non-empty
+# quarterly buckets) but flagged -- without being able to validate it against
+# real data -- that a library "under ~40-50 titles" would run quarterly buckets
+# too sparse to say anything. TASTE_DRIFT_MIN_COMPLETED_FOR_QUARTERLY takes the
+# top of that flagged range (50) as the concrete, stated cutoff this issue's
+# acceptance criteria call for: at >=50 COMPLETED entries with a usable
+# finish_date, bucket quarterly; below that, fall back to yearly buckets, which
+# keeps roughly the same per-bucket density from a smaller total by using wider
+# buckets. Deliberately count-based rather than span-based -- a short-span
+# library just degrades to fewer non-empty buckets either way (not a readability
+# problem the way an under-populated bucket is), so span doesn't need its own
+# cutoff on top of this one.
+TASTE_DRIFT_MIN_COMPLETED_FOR_QUARTERLY = 50
+# Bounds the chart's series count regardless of how many distinct genres a
+# library touches -- anything outside the top N overall collapses into "Other"
+# rather than producing an unreadable stacked-bar legend.
+TASTE_DRIFT_TOP_GENRES = 8
+
+
+def _format_taste_drift_bucket_label(bucket_iso: str, granularity: str) -> str:
+    year, month, _ = bucket_iso.split("-")
+    if granularity == "year":
+        return year
+    quarter = (int(month) - 1) // 3 + 1
+    return f"{year} Q{quarter}"
+
+
+def _compute_taste_drift(user_id: int) -> dict | None:
+    """Genre mix of this user's COMPLETED library, bucketed by finish_date, for
+    the /stats "taste drift" section (issue #176). Returns None when the user has
+    no COMPLETED entry with a usable finish_date yet (brand-new account, or an
+    AniList library where completion dates were never set) -- the section stays
+    hidden entirely in that case, same gating pattern as _compute_drop_patterns
+    and _compute_recommendation_outcomes above, rather than rendering an empty
+    chart.
+
+    Entries with a NULL finish_date are excluded from bucketing (can't be placed
+    on a time axis) but are still counted in total_completed vs. usable_completed
+    so the caller can be transparent about coverage instead of silently
+    presenting a partial picture as complete."""
+    totals_row = db.fetchone(
+        """
+        SELECT
+            COUNT(*) AS total_completed,
+            COUNT(*) FILTER (WHERE finish_date IS NOT NULL) AS usable_completed
+        FROM library_entries
+        WHERE user_id = %s AND status = 'COMPLETED'
+        """,
+        (user_id,),
+    )
+    total_completed = int(totals_row["total_completed"])
+    usable_completed = int(totals_row["usable_completed"])
+    if usable_completed == 0:
+        return None
+
+    granularity = (
+        "quarter" if usable_completed >= TASTE_DRIFT_MIN_COMPLETED_FOR_QUARTERLY else "year"
+    )
+
+    rows = db.fetchall(
+        """
+        SELECT date_trunc(%s, le.finish_date)::date AS bucket, genre, COUNT(*) AS cnt
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id,
+             jsonb_array_elements_text(a.genres) AS genre
+        WHERE le.user_id = %s AND le.status = 'COMPLETED' AND le.finish_date IS NOT NULL
+        GROUP BY bucket, genre
+        ORDER BY bucket, cnt DESC
+        """,
+        (granularity, user_id),
+    )
+
+    genre_totals: Counter = Counter()
+    for row in rows:
+        genre_totals[row["genre"]] += int(row["cnt"])
+    top_genres = [g for g, _ in genre_totals.most_common(TASTE_DRIFT_TOP_GENRES)]
+    top_genre_set = set(top_genres)
+    has_other = any(row["genre"] not in top_genre_set for row in rows)
+    series_genres = top_genres + (["Other"] if has_other else [])
+
+    buckets_seen: list[str] = []
+    matrix: dict[str, dict[str, int]] = {}
+    for row in rows:
+        bucket_iso = row["bucket"].isoformat()
+        if bucket_iso not in matrix:
+            matrix[bucket_iso] = {}
+            buckets_seen.append(bucket_iso)
+        genre = row["genre"] if row["genre"] in top_genre_set else "Other"
+        matrix[bucket_iso][genre] = matrix[bucket_iso].get(genre, 0) + int(row["cnt"])
+    buckets_seen.sort()
+
+    buckets_out = [
+        {
+            "bucket": b,
+            "label": _format_taste_drift_bucket_label(b, granularity),
+            "counts": {g: matrix[b].get(g, 0) for g in series_genres},
+        }
+        for b in buckets_seen
+    ]
+
+    return {
+        "granularity": granularity,
+        "genres": series_genres,
+        "buckets": buckets_out,
+        "total_completed": total_completed,
+        "usable_completed": usable_completed,
+    }
+
+
 @app.get("/api/stats")
 def stats_data(request: Request, year: int | None = None, season: str | None = None):
     user, denied = _require_user_api(request)
@@ -4641,6 +4761,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
     drop_patterns = _compute_drop_patterns(user["id"])  # issue #73, None below the sample-size gate
     recommendation_outcomes = _compute_recommendation_outcomes(user["id"])  # issue #185, None if never recommended anything
     rewatch_stats = _compute_rewatch_stats(user["id"])  # issue #189
+    taste_drift = _compute_taste_drift(user["id"])  # issue #176, None if no usable finish_date yet
 
     # Year-comparison extension of #wrapup-card (issue #193) — binge week, status
     # snapshot, score-distribution shift. Reuses #wrapup-card's *existing* `year`
@@ -4662,6 +4783,7 @@ def stats_data(request: Request, year: int | None = None, season: str | None = N
         "drop_patterns": drop_patterns,
         "recommendation_outcomes": recommendation_outcomes,
         "rewatch": rewatch_stats,
+        "taste_drift": taste_drift,
         "totals": {
             "completed": completed,
             "watching": int(totals["watching"]),

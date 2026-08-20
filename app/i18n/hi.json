@@ -380,6 +380,11 @@
   "stats_rewatch_list_empty": "अभी तक कोई दोबारा देखा गया शीर्षक नहीं — जो भी आप फिर से देखेंगे वह यहाँ दिखेगा।",
   "stats_rewatch_dist_empty": "यहाँ रीवॉच आँकड़े देखने के लिए कोई शीर्षक पूरा करें।",
 
+  "stats_taste_drift_title": "पसंद में बदलाव",
+  "stats_taste_drift_sub": "समय के साथ आपकी पूर्ण लाइब्रेरी की genre संरचना — {total} पूर्ण शीर्षकों में से {usable} में समाप्ति तिथि दर्ज है और नीचे {granularity} रूप में दिखाई गई है।",
+  "stats_taste_drift_quarterly": "तिमाही आधार पर",
+  "stats_taste_drift_yearly": "वार्षिक आधार पर",
+
   "stats_streaming_card_title": "स्ट्रीमिंग कवरेज",
   "stats_streaming_no_owned": "यह देखने के लिए कि कौन-सी सेवा आपके बैकलॉग का सबसे अधिक हिस्सा अनलॉक करेगी, अपनी मौजूदा स्ट्रीमिंग सेवाएँ सेट करें।",
   "stats_streaming_covered": "आपकी Watching/Planning बैकलॉग पहले से ही आपकी सेवाओं द्वारा कवर की जा चुकी है।",

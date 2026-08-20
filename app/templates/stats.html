@@ -134,6 +134,22 @@
     </div>
   </div>
 
+  <!-- Taste-profile drift (issue #176) — genre mix of the COMPLETED library over
+       time, derived from library_entries.finish_date + anime.genres per #77's
+       validated query (no new schema/snapshot table, see app/main.py's
+       _compute_taste_drift docstring). Its own clearly-separated section, not
+       folded into #wrapup-card or the "Top genres" chart above, per the issue.
+       Hidden entirely when data.taste_drift is null (no COMPLETED entry with a
+       usable finish_date yet) — same gating pattern as drop-patterns/
+       rec-outcomes below, rather than rendering an empty chart. -->
+  <div class="stats-grid" id="taste-drift-section" hidden>
+    <div class="chart-card chart-card--wide">
+      <h2 class="chart-title">{{ t('stats_taste_drift_title') }}</h2>
+      <p class="drop-patterns-sub" id="taste-drift-sub"></p>
+      <canvas id="chart-taste-drift"></canvas>
+    </div>
+  </div>
+
   <!-- Rewatch data (issue #189) — built entirely from library_entries.repeat_count,
        already synced from AniList's `repeat` field, no new data collection. Unlike
        the drop-patterns panel below, this always renders (no minimum-sample gate) —
@@ -312,6 +328,48 @@
       },
     },
   });
+
+  // Taste-profile drift (issue #176) — stacked bar of the COMPLETED library's
+  // genre mix per time bucket (quarterly or yearly, chosen server-side based on
+  // library size — see app/main.py's TASTE_DRIFT_MIN_COMPLETED_FOR_QUARTERLY).
+  // Hidden entirely when data.taste_drift is null (no COMPLETED entry with a
+  // usable finish_date yet).
+  (function renderTasteDrift(td) {
+    const section = document.getElementById('taste-drift-section');
+    if (!td || !td.buckets.length) return;
+    section.hidden = false;
+
+    const granularityLabel = td.granularity === 'quarter'
+      ? t('stats_taste_drift_quarterly')
+      : t('stats_taste_drift_yearly');
+    document.getElementById('taste-drift-sub').textContent = t('stats_taste_drift_sub', {
+      usable: td.usable_completed,
+      total: td.total_completed,
+      granularity: granularityLabel,
+    });
+
+    const TASTE_DRIFT_COLORS = [
+      '#2563eb', '#7c3aed', '#0891b2', '#f97316',
+      '#4ade80', '#f87171', '#facc15', '#60a5fa', '#94a3b8',
+    ];
+    const datasets = td.genres.map((g, i) => ({
+      label: g,
+      data: td.buckets.map(b => b.counts[g] || 0),
+      backgroundColor: TASTE_DRIFT_COLORS[i % TASTE_DRIFT_COLORS.length],
+    }));
+
+    new Chart(document.getElementById('chart-taste-drift'), {
+      type: 'bar',
+      data: { labels: td.buckets.map(b => b.label), datasets },
+      options: {
+        ...baseOpts,
+        scales: {
+          x: { stacked: true, grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+          y: { stacked: true, grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+        },
+      },
+    });
+  })(data.taste_drift);
 
   // Watch-activity heatmap (issue #10) — one cell per day, shaded by episodes
   // watched that day (approximated via completions' finish_date, see /api/stats).
