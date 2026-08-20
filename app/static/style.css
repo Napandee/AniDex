@@ -2528,10 +2528,17 @@ body.auth-page main {
 
   /* ── Progress stepper ─────────────────────────────────────────────────── */
   /* This used to shrink the +/- buttons to a fixed 20x20 on phones specifically
-     — smaller than their own desktop size — for one of the most-used controls
-     on the page (updating episode progress). Sized up to a real touch target
-     instead (#12). */
-  .prog-btn { width: 32px; height: 32px; font-size: 0.9rem; }
+     — smaller than their own desktop size (desktop has no explicit width/height,
+     just padding+font-size, ~15-20px) — for one of the most-used controls on the
+     page (updating episode progress). Sized up to a real touch target, but more
+     conservatively than a first pass at this (26x26, not 32x32) — at the
+     ≤480px breakpoint a 2-column card is only ~140-146px of usable content width,
+     and the stepper packs two buttons plus a progress value, "/total", and unit
+     label on one row. flex-wrap is added as a safety net so if that ever doesn't
+     fit (e.g. a 2-digit progress against a 2-digit total), the row wraps instead
+     of getting silently clipped by .card's overflow: hidden (#12). */
+  .progress-stepper { flex-wrap: wrap; row-gap: 0.15rem; }
+  .prog-btn { width: 26px; height: 26px; font-size: 0.8rem; }
   .prog-val { font-size: 0.8rem; }
   .prog-total, .prog-unit { font-size: 0.75rem; }
 

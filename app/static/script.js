@@ -6,9 +6,18 @@
 // app/main.py), not /static/service-worker.js — a script served under /static/
 // can only ever get a default scope of /static/*, which doesn't cover the
 // app's actual pages and fails the installability check.
+//
+// Runs on every page base.html renders, including the pre-auth /auth/login
+// page — that's intentional, not an oversight. auth_login.html only overrides
+// the nav_extra block, not <head>, so the manifest link and this script load
+// there too. The install prompt (and the SW itself, a no-op passthrough on an
+// already-unauthenticated route) should be available before a first-time user
+// even logs in, not gated behind auth.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    navigator.serviceWorker.register('/service-worker.js').catch(err => {
+      console.warn('Service worker registration failed:', err);
+    });
   });
 }
 
