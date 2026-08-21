@@ -130,8 +130,15 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   entire history and creating dozens/hundreds of old entries would flood their real
   AniList list. `full_pull == False` (routine day-to-day incremental sync) creates a
   new entry instead of skipping, via the same `enqueue_outbox_update()` path already
-  used for progress/status updates, defaulted to `status=WATCHING` at the detected
-  progress — `SaveMediaListEntry` upserts on AniList's side, so this is not a new
+  used for progress/status updates. Default status is `WATCHING` at the detected
+  progress for episodic content (TV/series) — but a movie/single-sitting title has no
+  sensible "still watching" resting state, so it must land `COMPLETED` at progress=1
+  instead, exactly like an existing PLANNING movie entry's first-watch handling
+  already does (`sync_netflix.py`'s `process()` checks its MOVIE branch before the
+  brand-new-entry branch specifically so a synthetic new movie entry falls into that
+  existing logic rather than needing its own copy of it — a real regression from
+  applying WATCHING uniformly was caught in review before merge, see git history).
+  `SaveMediaListEntry` upserts on AniList's side either way, so this is not a new
   mutation type. `scripts/anilist_sync_common.py`'s `resolve_or_create_user_list_entry()`
   is the single shared implementation of this decision (used by both
   `sync_crunchyroll.py` and `sync_netflix.py`, so the two providers can't drift), plus

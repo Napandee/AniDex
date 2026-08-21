@@ -498,20 +498,15 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
     watched_at = watched["watched_at"]
     rewatch_active = nf_state["rewatch_in_progress"] if nf_state else False
 
-    # ── Issue #252: brand-new AniList entry, not yet on the user's list ──────
-    # main() only ever builds a synthetic entry (for an incremental sync's
-    # unmatched-title case) with status=None — a real AniList entry's status is
-    # never None, so this is an unambiguous "create" sentinel. Checked before
-    # even the MOVIE dispatch below, so the resolved default (WATCHING, at the
-    # detected progress) applies uniformly to a newly-created entry regardless
-    # of format — including a movie, which would otherwise hit the MOVIE
-    # branch's al_ep < 1 case and get marked COMPLETED instead.
-    if status is None:
-        _update(conn, anilist_id, progress=watched_ep, status="WATCHING")
-        _save_state(conn, anilist_id, title, watched_at, False)
-        return f"new AniList entry created → WATCHING ep {watched_ep}"
-
     # ── Movies: a single watch event ──────────────────────────────────────────
+    # Checked before the brand-new-entry branch below (issue #252, corrected in
+    # review): a movie is watched in one sitting, so "still watching" is never
+    # the right resting state for it — including for a freshly-created entry.
+    # A synthetic new entry always has al_ep=0 and status=None, which satisfies
+    # neither of the first two conditions here, so it falls straight into the
+    # `al_ep < 1` case below and lands COMPLETED at progress=1 — exactly the
+    # same first-watch handling an existing PLANNING movie entry already gets.
+    # No special-casing needed; this is the same code path, not a new one.
     if watched["watched_format"] == "MOVIE":
         if status == "COMPLETED" and al_ep >= 1:
             _update(conn, anilist_id, repeat=repeat + 1)
@@ -523,6 +518,18 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
             return "movie watched → COMPLETED"
         _save_state(conn, anilist_id, title, watched_at, rewatch_active)
         return "movie — already COMPLETED, no change"
+
+    # ── Issue #252: brand-new AniList entry, not yet on the user's list ──────
+    # main() only ever builds a synthetic entry (for an incremental sync's
+    # unmatched-title case) with status=None — a real AniList entry's status is
+    # never None, so this is an unambiguous "create" sentinel. Only reached for
+    # non-movie (TV/series) formats — a new movie entry is already handled
+    # correctly by the MOVIE branch above (COMPLETED, not WATCHING — there's no
+    # sensible "still watching" state for single-sitting content).
+    if status is None:
+        _update(conn, anilist_id, progress=watched_ep, status="WATCHING")
+        _save_state(conn, anilist_id, title, watched_at, False)
+        return f"new AniList entry created → WATCHING ep {watched_ep}"
 
     # ── First sighting of a COMPLETED series — can't safely tell rewatch from
     # first sync without a baseline. Record and wait for next sync.
