@@ -301,6 +301,50 @@ body {
   min-height: 100vh;
 }
 
+/* Issue #230 — impersonation banner. Deliberately loud (warning colors, sticky
+   to the very top, above the normal header) and persistent for the entire
+   duration of an impersonated session — the whole point is that it can never
+   be mistaken for a normal session at a glance. */
+.impersonation-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1.5rem;
+  background: var(--pill-warning-bg);
+  color: var(--pill-warning-text-strong);
+  border-bottom: 2px solid var(--pill-warning-border);
+  font-weight: 600;
+  text-align: center;
+}
+
+.impersonation-banner-text {
+  font-size: 0.9rem;
+}
+
+.impersonation-stop-form {
+  margin: 0;
+}
+
+.impersonation-stop-btn {
+  font: inherit;
+  font-weight: 700;
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--pill-warning-border);
+  background: var(--pill-warning-text-strong);
+  color: var(--bg-header);
+  cursor: pointer;
+}
+
+.impersonation-stop-btn:hover {
+  opacity: 0.85;
+}
+
 header {
   padding: 1rem 2rem;
   border-bottom: 1px solid var(--border-subtle);

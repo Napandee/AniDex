@@ -557,6 +557,11 @@
   "admin_reactivate_btn": "再有効化",
   "admin_disable_2fa_confirm": "{email} の二段階認証を無効にしますか? 認証アプリとすべてのリカバリーコードを失った場合に使用してください — 再度有効にするには設定から2FAを再設定する必要があります。",
   "admin_disable_2fa_btn": "2FAを無効にする",
+  "admin_impersonate_btn": "このユーザーとしてログイン",
+  "admin_impersonate_confirm": "{email} として時間制限付きのサポートセッションを開始しますか？完全に監査され、短い時間で自動的に終了します。",
+
+  "impersonation_banner_text": "現在 {user_email} として表示しています（開始者: {admin_email}）。このセッションは {expires_at} に自動的に終了します。",
+  "impersonation_stop_btn": "セッションを終了",
 
   "admin_invites_title": "招待",
   "admin_invite_btn": "招待する",

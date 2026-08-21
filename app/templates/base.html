@@ -17,17 +17,31 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=55 — bumped for #228's .streaming-calendar-* rules (12-month
-       subscribe/cancel calendar on /streaming). Several other issues from the
-       same 2026-08-20 brainstorm batch are landing in parallel and may also
-       touch style.css — re-check this number at rebase time rather than
-       assuming it's still free; see the superseded v=54 comment for why a
-       stale cache-bust number is a real (not just cosmetic) bug here. -->
-  <link rel="stylesheet" href="/static/style.css?v=55">
+  <!-- v=56 — bumped for #230's .impersonation-banner/-text/-stop-* rules, on
+       top of #228's .streaming-calendar-* rules which independently claimed
+       v=55 in the same 2026-08-20 brainstorm batch (confirmed via rebase
+       conflict on this exact line — both PRs bumped from v=54 at the same
+       time). See the superseded v=51/v=54 comments for why this needs
+       bumping on every style.css change in this repo: several parallel
+       branches land CSS independently and a stale cache-bust value silently
+       serves an old stylesheet to a browser that already cached the previous
+       version. Re-check this against origin/main right before merging —
+       another parallel PR may have already claimed v=56. -->
+  <link rel="stylesheet" href="/static/style.css?v=56">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <script src="/static/script.js?v=25" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
+  {% if nav_impersonation %}
+  <div class="impersonation-banner" role="alert">
+    <span class="impersonation-banner-text">
+      {{ t('impersonation_banner_text', user_email=nav_user.email, admin_email=nav_impersonation.admin_email, expires_at=nav_impersonation.expires_at.strftime('%H:%M UTC')) }}
+    </span>
+    <form method="post" action="/admin/impersonate/stop" class="impersonation-stop-form">
+      <button type="submit" class="impersonation-stop-btn">{{ t('impersonation_stop_btn') }}</button>
+    </form>
+  </div>
+  {% endif %}
   <header>
     <nav>
       <a href="/" class="site-name">Anime Tracker</a>

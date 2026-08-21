@@ -106,7 +106,7 @@ CREATE TABLE admin_audit_log (
     id              SERIAL PRIMARY KEY,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     admin_user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    action          TEXT NOT NULL,   -- 'invite_created' | 'oauth_settings_updated' | 'privacy_defaults_updated' | 'password_reset' | 'user_deactivated'
+    action          TEXT NOT NULL,   -- 'invite_created' | 'oauth_settings_updated' | 'privacy_defaults_updated' | 'password_reset' | 'user_deactivated' | 'impersonation_started' | 'impersonation_ended' | 'impersonation_action' (#230)
     target_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
     detail          TEXT
 );
@@ -128,7 +128,14 @@ CREATE TABLE sessions (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),  -- touched roughly every 5 min of activity, not every request — see resolve_session()
     expires_at     TIMESTAMPTZ NOT NULL,
-    revoked_at     TIMESTAMPTZ                 -- NULL = still active
+    revoked_at     TIMESTAMPTZ,                -- NULL = still active
+    -- Admin "login as user" impersonation (issue #230, migration 027). NULL/NULL
+    -- for every ordinary session. impersonated_by is the admin who started this
+    -- session; impersonation_expires_at is its own short deadline
+    -- (IMPERSONATION_TTL_MINUTES in app/sessions.py), enforced independently of
+    -- (and much sooner than) expires_at above — see resolve_session().
+    impersonated_by           INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    impersonation_expires_at  TIMESTAMPTZ
 );
 
 -- Partial: serves list_active_sessions()'s read (only ever looks at live rows).

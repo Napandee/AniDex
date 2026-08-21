@@ -83,6 +83,9 @@
               {% endif %}
               {% if u.is_active %}
               {% if u.id != nav_user.id %}
+              <form method="post" action="/admin/users/{{ u.id }}/impersonate" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_impersonate_confirm', email=u.email) }}');">
+                <button type="submit" class="btn-save">{{ t('admin_impersonate_btn') }}</button>
+              </form>
               <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_deactivate_confirm', email=u.email) }}');">
                 <button type="submit" class="btn-save btn-warning">{{ t('admin_deactivate_btn') }}</button>
               </form>
