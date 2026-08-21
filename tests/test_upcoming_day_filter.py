@@ -18,6 +18,7 @@ Covers the acceptance criteria from #277:
 """
 
 import os
+import re
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -252,11 +253,15 @@ def test_overflow_text_links_to_same_filtered_view_as_its_day(pg_conn, app_modul
     month_html = _month_slice(resp.text)
 
     target_date_str = date(month_start.year, month_start.month, target_day).isoformat()
-    overflow_idx = month_html.index("upcoming-month-overflow")
-    # The overflow link's href carries the same date as the day's date-number link.
-    window = month_html[max(0, overflow_idx - 400):overflow_idx + 100]
-    assert f"date={target_date_str}" in window
-    assert "month_offset=0" in window
+    # issue #281 — the whole cell is one <a>; the overflow text is a plain <span>
+    # with no href of its own, so what matters is that it's nested inside the
+    # cell whose href carries this day's date, not that it has an adjacent href.
+    cell_start = month_html.index(f"date={target_date_str}")
+    cell_start = month_html.rindex("<a ", 0, cell_start)
+    cell_end = month_html.index("</a>", cell_start)
+    cell_html = month_html[cell_start:cell_end]
+    assert "month_offset=0" in cell_html.split(">", 1)[0]
+    assert "upcoming-month-overflow" in cell_html
 
 
 def test_day_cell_link_carries_nonzero_month_offset(pg_conn, app_module, client):
@@ -323,5 +328,78 @@ def test_plain_upcoming_still_renders_full_toggle_ui(pg_conn, app_module, client
     assert 'id="upcoming-list-view"' in resp.text
     assert 'id="upcoming-grid-view"' in resp.text
     assert 'id="upcoming-month-view"' in resp.text
+
+
+# ── 5. Whole day tile is the click target, not just the date number (#281) ──
+
+def test_whole_day_cell_is_a_single_anchor_not_just_the_date_number(pg_conn, app_module, client):
+    _register_and_login(client, email="wholecell@example.com")
+    uid = _user_id(pg_conn, "wholecell@example.com")
+    _insert_anime(pg_conn, 1, "Whole Cell Show")
+    _insert_entry(pg_conn, 1, uid)
+    _insert_airing(pg_conn, 1, 1, _now() + timedelta(hours=1))
+
+    today_local, *_ = _month_boundaries()
+    resp = client.get("/upcoming")
+    month_html = _month_slice(resp.text)
+
+    target_date_str = today_local.isoformat()
+    # The cell's own opening tag is the <a>, not a <div> with an inner date link.
+    assert f'<a href="/upcoming?date={target_date_str}&amp;month_offset=0" class="upcoming-month-cell' in month_html \
+        or f'<a href="/upcoming?date={target_date_str}&month_offset=0" class="upcoming-month-cell' in month_html
+    # The date number itself is a plain span now, not its own separate link.
+    assert '<span class="upcoming-month-date">' in month_html
+
+
+def test_month_grid_has_no_nested_anchors(pg_conn, app_module, client):
+    # HTML forbids nesting <a> inside <a> — with the whole cell as the click
+    # target (#281), the date number and overflow text must be plain elements,
+    # not their own separate links, or a browser's parser would auto-close the
+    # outer <a> early and break the click target.
+    _register_and_login(client, email="nonested@example.com")
+    uid = _user_id(pg_conn, "nonested@example.com")
+
+    today_local, month_start, next_month_start, days_in_month = _month_boundaries()
+    if today_local.day >= days_in_month:
+        pytest.skip("No later in-month day available this run.")
+    target_day = today_local.day + 1
+    airing_dt = datetime(month_start.year, month_start.month, target_day, 12, 0, tzinfo=timezone.utc)
+
+    n_shows = MONTH_CHIP_CAP + 2
+    for i in range(n_shows):
+        _insert_anime(pg_conn, i + 1, f"Nested Check Show {i + 1}")
+        _insert_entry(pg_conn, i + 1, uid)
+        _insert_airing(pg_conn, i + 1, 1, airing_dt + timedelta(minutes=i))
+
+    resp = client.get("/upcoming")
+    month_html = _month_slice(resp.text)
+
+    # Exactly one <a ...> opening tag per in-month cell, and it must be closed
+    # (</a>) before the next one opens — never two opening tags in a row.
+    depth = 0
+    for token in re.findall(r"<a\b|</a>", month_html):
+        if token == "<a":
+            assert depth == 0, "found a nested <a> inside another <a> in the month grid"
+            depth += 1
+        else:
+            depth -= 1
+            assert depth >= 0, "found a stray </a> with no matching <a>"
+    assert depth == 0
+
+
+def test_blank_leading_trailing_cells_are_not_links(pg_conn, app_module, client):
+    _register_and_login(client, email="blankcells@example.com")
+    uid = _user_id(pg_conn, "blankcells@example.com")
+    _insert_anime(pg_conn, 1, "Blank Cells Show")
+    _insert_entry(pg_conn, 1, uid)
+    _insert_airing(pg_conn, 1, 1, _now() + timedelta(hours=1))
+
+    resp = client.get("/upcoming")
+    month_html = _month_slice(resp.text)
+
+    # Every is-blank cell must be a plain <div>, never an <a> — out-of-month
+    # cells stay non-interactive.
+    for m in re.finditer(r'<(a|div)[^>]*class="upcoming-month-cell is-blank"', month_html):
+        assert m.group(1) == "div", "a blank (out-of-month) cell must not be a link"
     assert 'id="upcoming-view-list-btn"' in resp.text
     assert 'id="upcoming-view-month-btn"' in resp.text
