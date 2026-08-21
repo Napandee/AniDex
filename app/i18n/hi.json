@@ -295,6 +295,8 @@
   "queue_rewatch_plural": "{count} बार फिर से देखा",
   "queue_watched_btn": "देखा गया",
   "queue_notes_edit_title": "नोट्स संपादित करें / प्राथमिकता सेट करें",
+  "queue_notes_link_label": "नोट्स",
+  "queue_move_planning_btn": "योजना में ले जाएँ",
   "queue_empty": "आपकी योजना या रोकी गई सूची में कुछ भी नहीं है।",
   "queue_no_matches": "कोई मेल नहीं मिला।",
   "queue_rec_match": "मेल",

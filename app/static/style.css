@@ -1721,10 +1721,11 @@ body.auth-page main {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.85rem 1rem;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   position: relative;
+  cursor: pointer; /* whole card click-through to notes, issue #259 */
 }
-.queue-item:hover { border-color: var(--border-strong); }
+.queue-item:hover { border-color: var(--border-strong); box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 .queue-item.dragging { opacity: 0.4; border-style: dashed; border-color: var(--border-strong); }
 .queue-item[draggable="true"] { cursor: grab; }
 .queue-item[draggable="true"]:active { cursor: grabbing; }
@@ -1803,17 +1804,6 @@ body.auth-page main {
   border-radius: 999px;
   padding: 0.1rem 0.45rem;
 }
-
-.queue-notes-link {
-  font-size: 0.8rem;
-  color: var(--t9);
-  text-decoration: none;
-  padding: 0.25rem;
-  flex-shrink: 0;
-  transition: color 0.15s;
-  margin-top: 0.1rem;
-}
-.queue-notes-link:hover { color: var(--t4); }
 
 /* ── Upcoming episodes ───────────────────────────────────────────────────── */
 .upcoming-group {
@@ -2576,15 +2566,18 @@ a.drop-tag-chip-link:focus-visible {
 .btn-mark-watched:hover { background: var(--pill-success-border); color: var(--pill-success-text); }
 .btn-mark-watched:disabled { opacity: 0.5; cursor: default; }
 
-/* ── Add to planning (used outside rec cards) / Start rewatch (issue #191) ──
+/* ── Add to planning (used outside rec cards) / Start rewatch (issue #191) /
+   Move to Planning (queue page Paused cards, issue #259) ──
    Same visual treatment, but kept as separate class names on purpose -- script.js
    binds a click handler to every .btn-add-planning element by class selector, so
-   giving the rewatch button that class too (purely for style reuse) would silently
-   double-fire both handlers and let the "add to planning" one (status: PLANNING)
-   race the rewatch one (status: REPEATING) and clobber it. Confirmed live during
-   #191's manual verification -- caught only by clicking the real button, not by
-   reading the diff. */
-.btn-add-planning, .btn-start-rewatch {
+   giving the rewatch or move-to-planning buttons that class too (purely for style
+   reuse) would silently double-fire multiple handlers and let one status update
+   race/clobber another. Confirmed live during #191's manual verification --
+   caught only by clicking the real button, not by reading the diff. #259's
+   btn-move-planning posts the exact same {status: 'PLANNING'} payload as
+   btn-add-planning, but on the queue page's .queue-item cards rather than
+   .rec-card, so it needs its own binding too. */
+.btn-add-planning, .btn-start-rewatch, .btn-move-planning {
   background: var(--pill-info-bg);
   border: 1px solid var(--pill-info-border);
   border-radius: 6px;
@@ -2594,8 +2587,8 @@ a.drop-tag-chip-link:focus-visible {
   padding: 0.3rem 0.75rem;
   transition: background 0.15s, color 0.15s;
 }
-.btn-add-planning:hover, .btn-start-rewatch:hover { background: var(--pill-info-border); color: var(--pill-info-text-strong); }
-.btn-add-planning:disabled, .btn-start-rewatch:disabled { opacity: 0.5; cursor: default; }
+.btn-add-planning:hover, .btn-start-rewatch:hover, .btn-move-planning:hover { background: var(--pill-info-border); color: var(--pill-info-text-strong); }
+.btn-add-planning:disabled, .btn-start-rewatch:disabled, .btn-move-planning:disabled { opacity: 0.5; cursor: default; }
 
 /* ── btn-anilist (used on notes page and library) ───────────────────────── */
 .btn-anilist {
@@ -3295,7 +3288,7 @@ a.drop-tag-chip-link:focus-visible {
   .queue-cover { width: 48px; height: 68px; }
   .queue-rank { font-size: 0.9rem; min-width: 1.25rem; }
   .queue-actions { flex-direction: column; gap: 0.35rem; }
-  .btn-mark-watched { font-size: 0.75rem; padding: 0.3rem 0.5rem; }
+  .btn-mark-watched, .btn-move-planning { font-size: 0.75rem; padding: 0.3rem 0.5rem; }
 
   /* ── Stats grid — single column ───────────────────────────────────────── */
   .stats-grid { grid-template-columns: 1fr; }

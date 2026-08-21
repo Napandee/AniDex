@@ -295,6 +295,8 @@
   "queue_rewatch_plural": "Revisto {count} veces",
   "queue_watched_btn": "Visto",
   "queue_notes_edit_title": "Editar notas / definir prioridad",
+  "queue_notes_link_label": "Notas",
+  "queue_move_planning_btn": "Mover a Planeado",
   "queue_empty": "Nada en tu lista de planeados o en pausa.",
   "queue_no_matches": "Sin coincidencias.",
   "queue_rec_match": "coincidencia",

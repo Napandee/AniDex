@@ -44,7 +44,9 @@
   <li class="queue-item" draggable="true" data-anime-id="{{ e.id }}"
       data-format="{{ e.format or '' }}"
       data-episodes="{{ e.episodes or '' }}"
-      data-tags="{{ (e.personal_tags or []) | join(', ') }}">
+      data-tags="{{ (e.personal_tags or []) | join(', ') }}"
+      data-notes-back="PLANNING"
+      title="{{ t('queue_notes_edit_title') }}">
     <span class="queue-drag-handle" title="{{ t('queue_drag_handle_title') }}">⠿</span>
     <span class="queue-rank">{{ loop.index }}</span>
 
@@ -120,7 +122,11 @@
       <button class="btn-mark-watched"
               data-anime-id="{{ e.id }}"
               data-episodes="{{ e.episodes or '' }}">✓ {{ t('queue_watched_btn') }}</button>
-      <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="queue-notes-link" title="{{ t('queue_notes_edit_title') }}">✏</a>
+      {% if e.status == 'PAUSED' %}
+      <button class="btn-move-planning"
+              data-anime-id="{{ e.id }}">→ {{ t('queue_move_planning_btn') }}</button>
+      {% endif %}
+      <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="btn-notes-sm" title="{{ t('queue_notes_edit_title') }}">📝 {{ t('queue_notes_link_label') }}</a>
     </div>
   </li>
   {% endfor %}
@@ -140,7 +146,8 @@
   {% if rewatch_entries %}
   <ul class="queue-list" id="rewatch-list">
     {% for e in rewatch_entries %}
-    <li class="queue-item" data-anime-id="{{ e.id }}">
+    <li class="queue-item" data-anime-id="{{ e.id }}" data-notes-back="COMPLETED"
+        title="{{ t('queue_notes_edit_title') }}">
       {% if e.cover_image_url %}
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover">
       {% endif %}
@@ -198,7 +205,7 @@
 
       <div class="queue-actions">
         <button class="btn-start-rewatch" data-anime-id="{{ e.id }}">{{ t('queue_rewatch_start_btn') }}</button>
-        <a href="/anime/{{ e.id }}/notes?back=COMPLETED" class="queue-notes-link" title="{{ t('queue_notes_edit_title') }}">✏</a>
+        <a href="/anime/{{ e.id }}/notes?back=COMPLETED" class="btn-notes-sm" title="{{ t('queue_notes_edit_title') }}">📝 {{ t('queue_notes_link_label') }}</a>
       </div>
     </li>
     {% endfor %}

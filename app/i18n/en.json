@@ -295,6 +295,8 @@
   "queue_rewatch_plural": "Rewatched {count} times",
   "queue_watched_btn": "Watched",
   "queue_notes_edit_title": "Edit notes / set priority",
+  "queue_notes_link_label": "Notes",
+  "queue_move_planning_btn": "Move to Planning",
   "queue_empty": "Nothing in your planning or paused list.",
   "queue_no_matches": "No matches.",
   "queue_rec_match": "match",
