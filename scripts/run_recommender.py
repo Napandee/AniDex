@@ -61,6 +61,22 @@ INTER_REQUEST_SLEEP = 0.8  # seconds between API calls
 # ballooning the scoring/storage work below.
 SEASONAL_MAX_PAGES = 3
 
+# Issue #254 — a candidate's `anime` row used to be treated as "done forever" the
+# moment it existed at all, so any feature shipped later that depends on a new bit
+# of media detail (e.g. #158's `relations`, needed to suppress already-owned
+# sequels) silently never backfilled for candidates discovered before that feature
+# existed. CANDIDATE_STALENESS_DAYS re-fetches/re-upserts a candidate's full AniList
+# details if its `anime.last_synced_at` is older than this, not just when the row is
+# missing outright. 14 days chosen as the balance point: the built-in scheduler
+# reruns this job weekly, so every candidate still gets refreshed within
+# roughly its next 1-2 runs (self-healing a gap like #254's within a bounded, short
+# window) without re-fetching data on every single run for candidates that haven't
+# had a chance to change — AniList's 90 req/min budget is per-run cheap either way
+# (candidate sets here run in the hundreds, batched 50/request by
+# fetch_and_store_candidates), so the number is chosen for staleness-tolerance, not
+# because a smaller value would risk the rate limit.
+CANDIDATE_STALENESS_DAYS = 14
+
 # Collaborative-filtering signal (#27) — how much other same-instance users'
 # ratings move a candidate's score, tunable independently of the taste-profile
 # weights below. A rating counts as "highly rated" above CROSS_USER_MIN_SCORE
@@ -351,6 +367,28 @@ def fetch_seasonal_candidates(library_ids: set[int]) -> set[int]:
         page += 1
         time.sleep(INTER_REQUEST_SLEEP)
     return candidates
+
+
+def _select_ids_to_fetch(
+    conn, candidate_ids: set[int], staleness_days: int = CANDIDATE_STALENESS_DAYS
+) -> set[int]:
+    """Which candidate ids need a fresh AniList fetch this run (issue #254):
+    anything with no `anime` row at all (never seen before), plus anything whose
+    row exists but is older than `staleness_days` (a candidate discovered once and
+    never touched again, e.g. Kingdom S2/S4/S5 pre-dating #158's `relations`
+    capture). Deliberately excludes anything both known *and* still fresh — that's
+    the caching behavior this replaces, kept intact for candidates that haven't had
+    a chance to go stale yet."""
+    if not candidate_ids:
+        return set()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM anime WHERE id = ANY(%s) "
+            "AND last_synced_at > now() - (%s * INTERVAL '1 day')",
+            (list(candidate_ids), staleness_days),
+        )
+        fresh_ids = {row[0] for row in cur.fetchall()}
+    return candidate_ids - fresh_ids
 
 
 def fetch_and_store_candidates(conn, media_ids: list[int]) -> None:
@@ -721,16 +759,17 @@ def main() -> None:
         sources: dict[int, str] = {aid: "similarity" for aid in similarity_ids}
         sources.update({aid: "seasonal" for aid in seasonal_candidate_ids})
 
-        # Fetch details for candidates not yet in our anime table
-        with conn.cursor() as cur:
-            cur.execute("SELECT id FROM anime WHERE id = ANY(%s)", (list(all_candidate_ids),))
-            known_ids = {row[0] for row in cur.fetchall()}
-        unknown_ids = all_candidate_ids - known_ids
-        if unknown_ids:
-            print(f"\nStep 4/5 — Fetching details for {len(unknown_ids)} new anime...")
-            fetch_and_store_candidates(conn, list(unknown_ids))
+        # Fetch/refresh details for candidates not yet in our anime table, or whose
+        # row has gone stale (issue #254 — see CANDIDATE_STALENESS_DAYS above).
+        to_fetch_ids = _select_ids_to_fetch(conn, all_candidate_ids)
+        if to_fetch_ids:
+            print(
+                f"\nStep 4/5 — Fetching/refreshing details for {len(to_fetch_ids)} candidates "
+                f"(new, or last synced more than {CANDIDATE_STALENESS_DAYS}d ago)..."
+            )
+            fetch_and_store_candidates(conn, list(to_fetch_ids))
         else:
-            print("\nStep 4/5 — All candidate details already cached, skipping fetch.")
+            print("\nStep 4/5 — All candidate details already fresh, skipping fetch.")
 
         print(f"\nStep 5/5 — Scoring and storing {len(all_candidate_ids)} candidates...")
         n = score_and_store(conn, all_candidate_ids, profile, sources, rec_vote_counts)

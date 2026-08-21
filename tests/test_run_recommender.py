@@ -10,6 +10,13 @@ never clobber the `dismissed` flag (or `snoozed_until`, issue #75) on existing
 recommendation_scores rows — score_and_store()'s ON CONFLICT ... DO UPDATE SET
 clause must keep excluding both.
 
+Also covers issue #254 — a candidate's `anime` row used to be treated as
+permanently fresh the moment it existed at all, so #158's suppression logic above
+silently had nothing to suppress with for any candidate discovered before #158
+shipped (real case: Kingdom S2/S4/S5, first discovered 2026-08-10/08-16, `relations`
+capture landed 2026-08-19). _select_ids_to_fetch() replaces that binary known/
+unknown gate with a staleness-aware one.
+
 No real DB/network touched: fetch_cross_user_signal() and get_library_statuses()
 are monkeypatched (same discipline as test_sync_crunchyroll.py's fakes), and a
 minimal in-memory stand-in for the psycopg2 connection captures what score_and_store
@@ -144,6 +151,154 @@ def test_upsert_anime_defaults_relations_to_empty_list_when_absent():
     cur = _FakeUpsertCursor()
     rr._upsert_anime(cur, media)
     assert json.loads(cur.last_params[-1]) == []
+
+
+# ── _select_ids_to_fetch — staleness-aware candidate refresh gate (issue #254) ──
+
+class _FakeStalenessCursor:
+    """Stand-in for the single `SELECT id FROM anime WHERE ... last_synced_at > ...`
+    query _select_ids_to_fetch issues. `fresh_ids` is the canned set the fake "DB"
+    would return — i.e. rows that exist AND are within the staleness window."""
+
+    def __init__(self, fresh_ids):
+        self.fresh_ids = fresh_ids
+        self.last_query = None
+        self.last_params = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params):
+        self.last_query = query
+        self.last_params = params
+
+    def fetchall(self):
+        return [(i,) for i in self.fresh_ids]
+
+
+class _FakeStalenessConn:
+    def __init__(self, fresh_ids):
+        self.cur = _FakeStalenessCursor(fresh_ids)
+
+    def cursor(self):
+        return self.cur
+
+
+def test_select_ids_to_fetch_refetches_unknown_ids():
+    # id 1 has never been seen at all — no row in `anime` — must be selected.
+    conn = _FakeStalenessConn(fresh_ids=set())
+    assert rr._select_ids_to_fetch(conn, {1}) == {1}
+
+
+def test_select_ids_to_fetch_skips_genuinely_fresh_known_ids():
+    # id 1 exists and is within the staleness window — the caching behavior this
+    # replaces must still be preserved for candidates that haven't gone stale.
+    conn = _FakeStalenessConn(fresh_ids={1})
+    assert rr._select_ids_to_fetch(conn, {1}) == set()
+
+
+def test_select_ids_to_fetch_refetches_stale_known_ids():
+    # id 1 has a row, but it's older than the staleness window (the fake DB's
+    # canned "fresh" query simply doesn't return it) — this is the exact Kingdom
+    # S2 case: a row that exists but predates a feature that depends on newer data.
+    conn = _FakeStalenessConn(fresh_ids=set())
+    assert rr._select_ids_to_fetch(conn, {1}) == {1}
+
+
+def test_select_ids_to_fetch_mixed_batch_only_refetches_unknown_and_stale():
+    conn = _FakeStalenessConn(fresh_ids={2})  # only 2 is known-and-fresh
+    assert rr._select_ids_to_fetch(conn, {1, 2, 3}) == {1, 3}
+
+
+def test_select_ids_to_fetch_empty_candidates_short_circuits_without_querying():
+    conn = _FakeStalenessConn(fresh_ids=set())
+    assert rr._select_ids_to_fetch(conn, set()) == set()
+    assert conn.cur.last_query is None  # never even ran a query for an empty set
+
+
+def test_select_ids_to_fetch_uses_configured_staleness_window():
+    conn = _FakeStalenessConn(fresh_ids=set())
+    rr._select_ids_to_fetch(conn, {1}, staleness_days=30)
+    assert conn.cur.last_params[1] == 30
+
+
+# ── Kingdom S2 reproduction — stale/empty relations self-heals end to end ─────
+#
+# Shape of the real bug (issue #254): Kingdom S2 was discovered as a recommender
+# candidate before #158's relations-capture code shipped, so its `anime` row has
+# been sitting with `relations = []` and a stale `last_synced_at` ever since —
+# even though it already has a real row (not "unknown"). #158's suppression logic
+# is correct; the data it depends on just never got refreshed. This walks the
+# full lifecycle: (1) the stale row gets selected for refetch, (2) refetching
+# repopulates `relations` with the real PREQUEL edge, (3) scoring against that
+# now-fresh data correctly suppresses the candidate.
+
+KINGDOM_S1_ID = 101
+KINGDOM_S2_ID = 202
+
+
+def test_kingdom_s2_stale_row_is_selected_for_refetch():
+    # Kingdom S2's row exists but is not in the "fresh" set the staleness query
+    # would return — mirrors last_synced_at being older than CANDIDATE_STALENESS_DAYS.
+    conn = _FakeStalenessConn(fresh_ids=set())
+    assert rr._select_ids_to_fetch(conn, {KINGDOM_S2_ID}) == {KINGDOM_S2_ID}
+
+
+def test_kingdom_s2_refetch_repopulates_relations():
+    # Before the fix, this candidate would never be re-fetched at all, so
+    # `relations` would stay permanently `[]`. After the fix, fetch_and_store_candidates
+    # is called on it and _upsert_anime persists the real PREQUEL edge.
+    media = {
+        "id": KINGDOM_S2_ID,
+        "idMal": None,
+        "title": {"romaji": "Kingdom 2nd Season", "english": None, "native": None},
+        "format": "TV", "status": "FINISHED", "episodes": 13,
+        "season": "SPRING", "seasonYear": 2019,
+        "genres": [], "tags": [], "studios": {"edges": []},
+        "averageScore": None, "coverImage": {}, "bannerImage": None, "description": None,
+        "externalLinks": [], "streamingEpisodes": [],
+        "relations": {
+            "edges": [
+                {
+                    "relationType": "PREQUEL",
+                    "node": {
+                        "id": KINGDOM_S1_ID,
+                        "title": {"romaji": "Kingdom", "english": None},
+                        "coverImage": {"large": "http://example/kingdom-s1.jpg"},
+                        "format": "TV",
+                    },
+                },
+            ]
+        },
+    }
+    cur = _FakeUpsertCursor()
+    rr._upsert_anime(cur, media)
+
+    relations_param = json.loads(cur.last_params[-1])
+    assert relations_param == [
+        {
+            "id": KINGDOM_S1_ID,
+            "title": "Kingdom",
+            "cover": "http://example/kingdom-s1.jpg",
+            "format": "TV",
+            "relation_type": "PREQUEL",
+        }
+    ]
+
+
+def test_kingdom_s2_no_longer_recommended_once_relations_refreshed(monkeypatch):
+    # Kingdom S1 is PAUSED in the library (Andreas's real reported case) — once
+    # S2's relations are populated (simulating the post-refetch state), scoring
+    # must suppress it exactly like any other candidate with a fresh PREQUEL edge.
+    anime_rows = [
+        _anime_row(KINGDOM_S2_ID, relations=[{"id": KINGDOM_S1_ID, "relation_type": "PREQUEL"}]),
+    ]
+    conn, n = _run_score_and_store(monkeypatch, anime_rows, {KINGDOM_S1_ID: "PAUSED"})
+    assert n == 0
+    assert conn.inserted == []
 
 
 # ── score_and_store — end-to-end suppression + dismissed-flag preservation ───

@@ -481,6 +481,8 @@
   "rec_anilist_votes_display_singular": "{count} usuario de AniList está de acuerdo",
   "rec_anilist_votes_display_plural": "{count} usuarios de AniList están de acuerdo",
   "rec_add_planning_btn": "+ Planeado",
+  "rec_planning_badge": "En tu cola",
+  "rec_planning_badge_title": "Ya está en tu lista de planificados — no es un descubrimiento nuevo, solo se puntuó para poder priorizarse en \"ver a continuación\"",
   "rec_dismiss_label": "Descartar:",
   "rec_dismiss_not_interested": "No me interesa",
   "rec_dismiss_seen_it": "Ya lo vi",

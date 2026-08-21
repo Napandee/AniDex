@@ -481,6 +481,8 @@
   "rec_anilist_votes_display_singular": "{count} AniList user agrees",
   "rec_anilist_votes_display_plural": "{count} AniList users agree",
   "rec_add_planning_btn": "+ Planning",
+  "rec_planning_badge": "In your queue",
+  "rec_planning_badge_title": "Already on your Planning list — this isn't a new discovery, just scored so it can be prioritized in \"watch next\"",
   "rec_dismiss_label": "Dismiss:",
   "rec_dismiss_not_interested": "Not interested",
   "rec_dismiss_seen_it": "Seen it",

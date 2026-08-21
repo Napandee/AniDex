@@ -481,6 +481,8 @@
   "rec_anilist_votes_display_singular": "{count} 位 AniList 用户认可",
   "rec_anilist_votes_display_plural": "{count} 位 AniList 用户认可",
   "rec_add_planning_btn": "+ 计划观看",
+  "rec_planning_badge": "已在队列中",
+  "rec_planning_badge_title": "已在你的计划观看列表中——这不是新发现，只是为了能在“下一部要看”中优先显示而参与评分",
   "rec_dismiss_label": "忽略：",
   "rec_dismiss_not_interested": "不感兴趣",
   "rec_dismiss_seen_it": "已看过",

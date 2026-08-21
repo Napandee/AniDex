@@ -43,6 +43,13 @@
 
     <div class="rec-body">
       <div class="rec-info">
+        {% if e.from_planning %}
+        {# Issue #254 — this candidate is already on the user's own Planning list
+           (source='similarity' collapses this with genuine discovery picks in the
+           DB, so the distinction is made live here instead). Visually separates
+           "watch next, you already queued this" from an actual new discovery. #}
+        <span class="rec-planning-chip" title="{{ t('rec_planning_badge_title') }}">{{ t('rec_planning_badge') }}</span>
+        {% endif %}
         <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
         {% if e.title_english and e.title_english != e.title_romaji %}
         <p class="title-sub">{{ e.title_romaji }}</p>
@@ -110,7 +117,9 @@
       <div class="rec-footer">
         <div class="rec-actions">
           <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-rec btn-rec--anilist">{{ t('notes_anilist_link') }}</a>
+          {% if not e.from_planning %}
           <button class="btn-rec btn-rec--planning btn-add-planning" data-anime-id="{{ e.id }}">{{ t('rec_add_planning_btn') }}</button>
+          {% endif %}
         </div>
         <div class="rec-dismiss-row">
           <span class="dismiss-label">{{ t('rec_dismiss_label') }}</span>
