@@ -122,7 +122,7 @@
         {% for day in week %}
         <div class="upcoming-month-cell{% if not day.in_month %} is-blank{% endif %}{% if day.is_today %} is-today{% endif %}">
           {% if day.in_month %}
-          <a href="/upcoming?date={{ day.date.isoformat() }}&month_offset={{ month_offset }}" class="upcoming-month-date">{{ day.date.day }}</a>
+          <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-date">{{ day.date.day }}</a>
           {% for e in day.entries %}
           <div class="upcoming-month-chip" title="{{ e.title_english or e.title_romaji }} — {{ t('upcoming_month_chip_ep', num=e.episode) }}">
             <span class="upcoming-month-chip-dot"></span>
@@ -130,7 +130,7 @@
           </div>
           {% endfor %}
           {% if day.overflow > 0 %}
-          <a href="/upcoming?date={{ day.date.isoformat() }}&month_offset={{ month_offset }}" class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</a>
+          <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</a>
           {% endif %}
           {% endif %}
         </div>
