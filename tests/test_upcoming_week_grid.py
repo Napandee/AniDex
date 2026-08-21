@@ -135,11 +135,13 @@ def _user_id(pg_conn, email):
 
 
 def _grid_slice(html):
-    """Only the weekly-grid section of the rendered page (list view + everything
-    before the grid div is stripped out) — the same episode text legitimately
-    appears in the List view too, so assertions about the grid must be scoped."""
-    idx = html.index('id="upcoming-grid-view"')
-    return html[idx:]
+    """Only the weekly-grid section of the rendered page (list view before it, and
+    the Month calendar view added after it in #257, are both stripped out) — the
+    same episode text legitimately appears in the List view and the Month view
+    too, so assertions about the weekly grid must be scoped to just this section."""
+    start = html.index('id="upcoming-grid-view"')
+    end = html.index('id="upcoming-month-view"')
+    return html[start:end]
 
 
 def _now():

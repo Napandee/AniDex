@@ -3229,7 +3229,7 @@ _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
 
 
 @app.get("/upcoming", response_class=HTMLResponse)
-def upcoming(request: Request, week_offset: int = 0):
+def upcoming(request: Request, week_offset: int = 0, month_offset: int = 0):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -3237,8 +3237,11 @@ def upcoming(request: Request, week_offset: int = 0):
     # airing_schedule_cache only ever holds not-yet-aired rows (rows are deleted the
     # moment an episode airs — see stats.html's comment on the same table), so a week
     # before the current one can never have anything to show. Clamp rather than let
-    # Prev walk into a guaranteed-empty grid.
+    # Prev walk into a guaranteed-empty grid. Same reasoning applies to month_offset
+    # below (a month prior to the current one is guaranteed empty since every day in
+    # it is strictly in the past).
     week_offset = max(0, week_offset)
+    month_offset = max(0, month_offset)
 
     tz_name = config.get(user["id"], "timezone")
     try:
@@ -3320,6 +3323,66 @@ def upcoming(request: Request, week_offset: int = 0):
         if week_start <= entry_date < week_end:
             week_grid[entry_date.weekday()]["entries"].append(entry)
 
+    # Month calendar grid (issue #257) — third toggle alongside List and Weekly
+    # grid, reusing the exact same `entries` list built above rather than a
+    # separate query. No widening of the SQL query above turned out to be needed:
+    # it already has no upper bound on airing_at, so every future entry regardless
+    # of how far out is already present in `entries`; and airing_schedule_cache
+    # never holds already-aired rows (see the week_offset clamp comment above), so
+    # days earlier in the displayed month than today are correctly guaranteed
+    # empty rather than needing a past-data fetch — resolving the open question
+    # in #257 in favor of "render empty" by construction, not by a UI choice.
+    def _add_months(d: date, months: int) -> date:
+        total = d.month - 1 + months
+        year = d.year + total // 12
+        month = total % 12 + 1
+        return date(year, month, 1)
+
+    first_of_this_month = today_local.replace(day=1)
+    month_start = _add_months(first_of_this_month, month_offset)
+    next_month_start = _add_months(month_start, 1)
+
+    # Leading/trailing blank cells for days outside the displayed month, matching
+    # typical calendar UI conventions (#257) — rendered as genuinely blank (no date
+    # number, no chips), matching the linked mockup's Option B rather than showing
+    # muted adjacent-month content.
+    leading_blanks = month_start.weekday()  # Monday=0 .. Sunday=6
+    days_in_month = (next_month_start - month_start).days
+    trailing_blanks = (7 - (leading_blanks + days_in_month) % 7) % 7
+    total_cells = leading_blanks + days_in_month + trailing_blanks
+    grid_start = month_start - timedelta(days=leading_blanks)
+
+    entries_by_date = {}
+    for entry in entries:
+        entries_by_date.setdefault(entry["airing_local"].date(), []).append(entry)
+
+    # Cap on chips rendered per day cell before an overflow indicator takes over.
+    # 3 was picked to comfortably fit the month cell's compact height (~5.5rem,
+    # see .upcoming-month-cell in style.css) alongside the date number without the
+    # cell growing tall enough to break the 7-column grid's row alignment — a
+    # busy day (a simulcast night with several shows airing) realistically has at
+    # most a handful of entries, so "+N more" stays rare rather than the common case.
+    MONTH_CHIP_CAP = 3
+
+    month_grid = []
+    cursor = grid_start
+    for _ in range(total_cells // 7):
+        week_cells = []
+        for _ in range(7):
+            in_month = month_start <= cursor < next_month_start
+            day_entries = entries_by_date.get(cursor, []) if in_month else []
+            week_cells.append({
+                "date": cursor,
+                "in_month": in_month,
+                "is_today": cursor == today_local,
+                "entries": day_entries[:MONTH_CHIP_CAP],
+                "overflow": max(0, len(day_entries) - MONTH_CHIP_CAP),
+            })
+            cursor += timedelta(days=1)
+        month_grid.append(week_cells)
+
+    month_dow_labels = [name[:3] for name in weekday_names]
+
     return templates.TemplateResponse(
         request,
         "upcoming.html",
@@ -3329,6 +3392,10 @@ def upcoming(request: Request, week_offset: int = 0):
             "week_offset": week_offset,
             "week_start": week_start,
             "week_end_inclusive": week_end - timedelta(days=1),
+            "month_grid": month_grid,
+            "month_offset": month_offset,
+            "month_start": month_start,
+            "month_dow_labels": month_dow_labels,
         },
     )
 
