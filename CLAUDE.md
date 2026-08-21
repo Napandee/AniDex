@@ -121,6 +121,35 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   (`scripts/sync_primevideo.py` is a documented `NotImplementedError` placeholder, not
   wired into `run_full_sync.py`) pending issue #17, gated on a manual capture of Amazon's
   private API.
+  **Create-vs-skip contract for an unmatched title (issue #252):** when a provider sync
+  resolves a title to a real AniList `media_id` but that anime has no existing
+  `library_entries` row for the user, the decision depends on `full_pull` — whether
+  this run is the very first connect's full historical walk, or a user-triggered force
+  full resync (issue #20/#21), both of which set the flag the same way. `full_pull ==
+  True` keeps the conservative behavior: skip, never auto-create — walking a user's
+  entire history and creating dozens/hundreds of old entries would flood their real
+  AniList list. `full_pull == False` (routine day-to-day incremental sync) creates a
+  new entry instead of skipping, via the same `enqueue_outbox_update()` path already
+  used for progress/status updates. Default status is `WATCHING` at the detected
+  progress for episodic content (TV/series) — but a movie/single-sitting title has no
+  sensible "still watching" resting state, so it must land `COMPLETED` at progress=1
+  instead, exactly like an existing PLANNING movie entry's first-watch handling
+  already does (`sync_netflix.py`'s `process()` checks its MOVIE branch before the
+  brand-new-entry branch specifically so a synthetic new movie entry falls into that
+  existing logic rather than needing its own copy of it — a real regression from
+  applying WATCHING uniformly was caught in review before merge, see git history).
+  `SaveMediaListEntry` upserts on AniList's side either way, so this is not a new
+  mutation type. `scripts/anilist_sync_common.py`'s `resolve_or_create_user_list_entry()`
+  is the single shared implementation of this decision (used by both
+  `sync_crunchyroll.py` and `sync_netflix.py`, so the two providers can't drift), plus
+  `ensure_anime_stub()` for the local `anime` row a synthetic entry's foreign keys
+  require (the global `anime` table only ever gets a row for media already on
+  *someone's* list — a title nobody has tracked yet has no local row to reference until
+  this stub creates one). **Any future provider sync script — Prime Video (#17) or
+  Plex/Jellyfin (#150–153) — must implement this same full_pull-gated create-vs-skip
+  pattern from day one** (reuse `resolve_or_create_user_list_entry()` rather than
+  reintroducing an unconditional skip), not ship the original bug and need this same
+  fix retrofitted later.
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.

@@ -163,12 +163,20 @@ def test_enqueue_outbox_update_status_only_sets_just_that_column():
     conn = _FakeOutboxConn()
     common.enqueue_outbox_update(conn, 42, "netflix", status="COMPLETED")
 
+    # Issue #252 — the library_entries write is now an upsert (INSERT ... ON
+    # CONFLICT DO UPDATE), so it can create a brand-new row too, not just update
+    # an existing one. The ON CONFLICT SET clause still only touches the columns
+    # actually supplied (matching the old bare-UPDATE behavior for an existing
+    # row); the leading VALUES params carry INSERT-branch defaults for whatever
+    # wasn't supplied, unused whenever the row already exists.
     update_sql, update_params = conn.queries[0]
+    assert "INSERT INTO library_entries" in update_sql
+    assert "ON CONFLICT (user_id, anime_id) DO UPDATE SET" in update_sql
     assert "status = %s" in update_sql
     assert "progress = %s" not in update_sql
     assert "repeat_count = %s" not in update_sql
     assert "sync_status = 'pending'" in update_sql
-    assert list(update_params) == ["COMPLETED", common.USER_ID, 42]
+    assert list(update_params) == [common.USER_ID, 42, "COMPLETED", 0, 0, "COMPLETED"]
 
     insert_sql, insert_params = conn.queries[2]
     assert "INSERT INTO status_sync_outbox" in insert_sql
@@ -183,10 +191,26 @@ def test_enqueue_outbox_update_progress_and_repeat_without_status():
     assert "progress = %s" in update_sql
     assert "repeat_count = %s" in update_sql
     assert "status = %s" not in update_sql
-    assert list(update_params) == [5, 2, common.USER_ID, 42]
+    # INSERT-branch status defaults to the 'PLANNING' placeholder (never actually
+    # persisted here since a row for anime_id 42 already exists in real use) —
+    # the ON CONFLICT SET clause omits status entirely, so an existing row's real
+    # status is left untouched either way.
+    assert list(update_params) == [common.USER_ID, 42, "PLANNING", 5, 2, 5, 2]
 
     insert_sql, insert_params = conn.queries[2]
     assert insert_params == (common.USER_ID, 42, "crunchyroll", None, 5, 2)
+
+
+def test_enqueue_outbox_update_creates_new_row_when_none_exists():
+    # Issue #252 — the actual new behavior: when no library_entries row exists
+    # yet for (user, anime), the INSERT branch fires (no ON CONFLICT), creating
+    # one with the caller-supplied status/progress/repeat.
+    conn = _FakeOutboxConn()
+    common.enqueue_outbox_update(conn, 99, "crunchyroll", status="WATCHING", progress=3)
+
+    insert_sql, insert_params = conn.queries[0]
+    assert "INSERT INTO library_entries" in insert_sql
+    assert list(insert_params) == [common.USER_ID, 99, "WATCHING", 3, 0, "WATCHING", 3]
 
 
 def test_enqueue_outbox_update_supersedes_existing_pending_or_failed_row():
@@ -205,6 +229,83 @@ def test_enqueue_outbox_update_does_not_commit():
     conn = _FakeOutboxConn()
     common.enqueue_outbox_update(conn, 42, "netflix", status="CURRENT")
     assert conn.committed is False
+
+
+# ── ensure_anime_stub — issue #252 ──────────────────────────────────────────
+
+def test_ensure_anime_stub_inserts_minimal_row_on_conflict_do_nothing():
+    conn = _FakeOutboxConn()
+    common.ensure_anime_stub(conn, 20678, "The Testament of Sister New Devil")
+
+    sql, params = conn.queries[0]
+    assert "INSERT INTO anime" in sql
+    assert "ON CONFLICT (id) DO NOTHING" in sql
+    assert params == (20678, "The Testament of Sister New Devil")
+
+
+# ── resolve_or_create_user_list_entry — issue #252 ──────────────────────────
+# The real bug: incremental CR/Netflix sync resolved a title correctly (e.g. via
+# the title-search cache) but the anime wasn't on the user's AniList list, so it
+# was silently skipped forever. Reproduces issue #252's Context section shape:
+# a title resolves to a media_id with no existing user_list/library_entries row.
+
+def test_full_pull_unmatched_title_still_skips():
+    # Regression coverage for the deliberately-unchanged case: the initial
+    # full-history walk (or a user-triggered Force Full Resync, #20/#21) must
+    # NOT auto-create — same behavior as before this issue.
+    user_list = {}
+    conn = _FakeOutboxConn()
+    decision = common.resolve_or_create_user_list_entry(
+        20678, "The Testament of Sister New Devil", user_list, full_pull=True, conn=conn,
+    )
+    assert decision == "skip"
+    assert user_list == {}
+    assert conn.queries == []  # no anime stub written
+
+
+def test_incremental_unmatched_title_creates_synthetic_entry():
+    # The fix: a normal day-to-day incremental sync (full_pull=False) for a title
+    # that resolved correctly but isn't tracked yet creates a new entry instead.
+    user_list = {}
+    conn = _FakeOutboxConn()
+    decision = common.resolve_or_create_user_list_entry(
+        20678, "The Testament of Sister New Devil", user_list, full_pull=False, conn=conn,
+    )
+    assert decision == "create"
+    assert user_list[20678] == {
+        "status": None, "progress": 0, "repeat": 0,
+        "total_episodes": None, "format": None,
+        "title": "The Testament of Sister New Devil",
+    }
+    # The anime stub is written before the caller's own outbox enqueue, so the
+    # library_entries/status_sync_outbox FK constraint on anime_id is satisfied.
+    sql, params = conn.queries[0]
+    assert "INSERT INTO anime" in sql
+    assert params == (20678, "The Testament of Sister New Devil")
+
+
+def test_incremental_unmatched_title_dry_run_skips_db_write():
+    # sync_netflix.py's DRY_RUN mode passes conn=None — no DB write, but the
+    # synthetic entry is still added so the rest of DRY_RUN's logging/process()
+    # path exercises the same decision a real run would make.
+    user_list = {}
+    decision = common.resolve_or_create_user_list_entry(
+        20678, "The Testament of Sister New Devil", user_list, full_pull=False, conn=None,
+    )
+    assert decision == "create"
+    assert user_list[20678]["status"] is None
+
+
+def test_already_tracked_title_returns_existing_and_does_not_touch_user_list():
+    user_list = {154587: {"status": "CURRENT", "progress": 3, "repeat": 0,
+                           "total_episodes": 24, "format": "TV", "title": "Attack on Titan"}}
+    conn = _FakeOutboxConn()
+    decision = common.resolve_or_create_user_list_entry(
+        154587, "Attack on Titan", user_list, full_pull=False, conn=conn,
+    )
+    assert decision == "existing"
+    assert user_list[154587]["status"] == "CURRENT"  # untouched
+    assert conn.queries == []
 
 
 # ── Season-aware matching (issue #159) ───────────────────────────────────────

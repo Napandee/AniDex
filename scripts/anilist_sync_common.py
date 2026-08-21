@@ -308,6 +308,20 @@ def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None =
     decoupled and collectively rate-limited across every outbox source, not just this
     one provider's own sequential calls.
 
+    Issue #252 — the library_entries write is an upsert (INSERT ... ON CONFLICT DO
+    UPDATE), not a bare UPDATE, so this can also *create* a brand-new row for an
+    anime the user has no prior library_entries row for at all — same pattern
+    app/main.py's bulk_set_status() already uses for UI bulk edits. On the INSERT
+    branch (no existing row), status/progress/repeat default to a placeholder
+    ('PLANNING'/0/0) only if the caller didn't supply them — in practice every
+    caller creating a genuinely new row (sync_crunchyroll.py/sync_netflix.py's
+    incremental-sync auto-create path) always passes status='WATCHING' explicitly,
+    so that placeholder should never actually be persisted. On the UPDATE branch
+    (row already exists), behavior is unchanged from before: only the
+    explicitly-provided columns are touched, exactly as the old bare UPDATE did.
+    `anime_id` must already exist in the `anime` table before calling this for a
+    row that doesn't exist yet — see ensure_anime_stub() below.
+
     Deliberately does not commit — runs inside the caller's own transaction, so it
     lands atomically together with that call's own state-tracking write
     (save_nf_state()/save_cr_state()), which does the actual commit. This replaces the
@@ -324,20 +338,30 @@ def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None =
 
     with conn.cursor() as cur:
         set_clauses = ["sync_status = 'pending'"]
-        params: list = []
+        set_params: list = []
         if status is not None:
             set_clauses.append("status = %s")
-            params.append(status)
+            set_params.append(status)
         if progress is not None:
             set_clauses.append("progress = %s")
-            params.append(progress)
+            set_params.append(progress)
         if repeat is not None:
             set_clauses.append("repeat_count = %s")
-            params.append(repeat)
-        params.extend([USER_ID, anime_id])
+            set_params.append(repeat)
+
+        insert_params = [
+            USER_ID, anime_id,
+            status if status is not None else "PLANNING",
+            progress if progress is not None else 0,
+            repeat if repeat is not None else 0,
+        ]
         cur.execute(
-            f"UPDATE library_entries SET {', '.join(set_clauses)} WHERE user_id = %s AND anime_id = %s",
-            params,
+            f"""
+            INSERT INTO library_entries (user_id, anime_id, status, progress, repeat_count, sync_status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+            ON CONFLICT (user_id, anime_id) DO UPDATE SET {', '.join(set_clauses)}
+            """,
+            insert_params + set_params,
         )
         cur.execute(
             "DELETE FROM status_sync_outbox WHERE user_id = %s AND anime_id = %s AND state IN ('pending', 'failed')",
@@ -349,6 +373,79 @@ def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None =
             VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (USER_ID, anime_id, source, status, progress, repeat),
+        )
+
+
+def resolve_or_create_user_list_entry(media_id: int, title: str, user_list: dict,
+                                       full_pull: bool, conn) -> str:
+    """Issue #252 — the shared "is this title tracked yet, and if not, should this
+    sync create a new AniList entry for it" decision. sync_crunchyroll.py and
+    sync_netflix.py had identical `if media_id not in user_list: skip` gates before
+    this issue; extracted here so both scripts share one tested implementation
+    instead of duplicating the fix (and the regression risk of the two drifting).
+
+    Mutates `user_list` in place on a create decision, adding a synthetic
+    "brand-new" entry: status=None, progress=0, repeat=0 — process() in both
+    scripts treats status=None as the unambiguous "no existing AniList row yet"
+    sentinel (a real AniList entry's status is never None) and creates it via the
+    existing outbox path with the resolved WATCHING default, at whatever progress
+    the caller's own diff logic computes from there.
+
+    Returns one of:
+      "existing" — media_id was already in user_list; nothing changed here.
+      "create"   — media_id was not tracked and full_pull is False (a normal
+                   incremental sync): a synthetic entry was just added to
+                   user_list, and — if conn is not None — a matching `anime` stub
+                   row was upserted first (see ensure_anime_stub()) so the
+                   outbox write's foreign-key constraint succeeds.
+      "skip"     — media_id was not tracked and full_pull is True: the original,
+                   unchanged, conservative behavior for the initial full-history
+                   walk (or a user-triggered Force Full Resync, #20/#21 — both
+                   set full_pull) — never auto-create from a full backfill.
+
+    conn may be None (sync_netflix.py's DRY_RUN mode) — no DB write happens in
+    that case, matching every other DRY_RUN-guarded write in that script; the
+    synthetic user_list entry is still added so DRY_RUN's logging/process() path
+    exercises the same decision it would make for real.
+    """
+    if media_id in user_list:
+        return "existing"
+    if full_pull:
+        return "skip"
+    if conn is not None:
+        ensure_anime_stub(conn, media_id, title)
+    user_list[media_id] = {
+        "status": None, "progress": 0, "repeat": 0,
+        "total_episodes": None, "format": None, "title": title,
+    }
+    return "create"
+
+
+def ensure_anime_stub(conn, anime_id: int, title: str) -> None:
+    """Issue #252 — the global `anime` table only ever gets a row via
+    sync_anilist.py's upsert_anime(), which only ever runs for media on some
+    user's *existing* AniList list. A title an incremental Crunchyroll/Netflix
+    sync resolves via title-search but that isn't on anyone's list yet (the
+    exact new-entry case this issue fixes) therefore has no local `anime` row —
+    and library_entries.anime_id / status_sync_outbox.anime_id both carry a
+    FOREIGN KEY REFERENCES anime(id), so enqueue_outbox_update() would fail with
+    a foreign-key violation without this.
+
+    Inserts the bare minimum (id + title_romaji, the only two NOT NULL columns)
+    as a placeholder, deliberately ON CONFLICT DO NOTHING — never overwrites a
+    real, richer anime row (e.g. one another user's sync already populated, or
+    a prior stub already inserted here). The placeholder title is whatever the
+    provider's own watch-history reported (CR's series_title / Netflix's
+    seriesTitle), which may not exactly match AniList's romaji title — that's
+    fine, it only has to hold until the next sync_anilist.py run enriches it
+    with real data, which happens automatically once the entry this creates is
+    actually pushed to AniList and shows up in the user's list on the next
+    AniList→Postgres sync step (run_full_sync.py always runs that step right
+    after crunchyroll/netflix)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO anime (id, title_romaji) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING",
+            (anime_id, title),
         )
 
 

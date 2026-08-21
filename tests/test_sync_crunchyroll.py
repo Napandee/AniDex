@@ -465,6 +465,32 @@ def test_no_progress_since_last_sync_makes_no_anilist_call(monkeypatch):
     assert not any(c[0] == "update" for c in calls)
 
 
+def test_new_entry_creates_watching_status_at_detected_episode(monkeypatch):
+    # Issue #252 — the resolved decision: a brand-new entry (status=None is
+    # main()'s create sentinel, built by resolve_or_create_user_list_entry() for
+    # an incremental sync's unmatched-title case) defaults to WATCHING at the
+    # detected CR episode, not left implicit and not just a bare progress bump.
+    calls = _capture(monkeypatch)
+    entry = _entry(status=None, progress=0, repeat=0, total=None)
+    result = cr.process("The Testament of Sister New Devil", cr_ep=3, entry=entry, cr_state=None, conn=None)
+    assert "new" in result.lower()
+    assert ("update", 42, {"progress": 3, "status": "WATCHING"}) in calls
+    assert ("save", 42, 3, False) in calls
+
+
+def test_new_entry_branch_checked_before_every_other_branch(monkeypatch):
+    # status=None must win over every other check in process() — a real AniList
+    # status is never None, so nothing else should ever match first regardless of
+    # what cr_ep/total look like (e.g. cr_ep >= total, which would otherwise read
+    # like a rewatch-completion for an existing REPEATING entry).
+    calls = _capture(monkeypatch)
+    entry = _entry(status=None, progress=0, repeat=0, total=12)
+    result = cr.process("Some New Show", cr_ep=12, entry=entry, cr_state=None, conn=None)
+    assert ("update", 42, {"progress": 12, "status": "WATCHING"}) in calls
+    assert "COMPLETED" not in result
+    assert "rewatch" not in result.lower()
+
+
 def test_repeating_branch_does_not_save_state_if_update_fails(monkeypatch):
     # Regression test (issue #52) — the identical bug shape was confirmed live in
     # sync_netflix.py's equivalent branch (issue #48): a mid-write failure left

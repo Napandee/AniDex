@@ -275,6 +275,45 @@ def _capture(monkeypatch):
     return calls
 
 
+def test_new_tv_entry_creates_watching_status_at_detected_episode(monkeypatch):
+    # Issue #252 — the resolved decision: a brand-new entry (status=None is
+    # main()'s create sentinel, built by resolve_or_create_user_list_entry() for
+    # an incremental sync's unmatched-title case) defaults to WATCHING at the
+    # detected episode, not left implicit and not just a bare progress bump.
+    # Shaped after the actual issue #252 case (a rewatch on a title with no
+    # existing AniList entry): entry.progress=0, watched["episode"] = new_count
+    # since main() computes it as entry["progress"] + new_count = 0 + new_count.
+    calls = _capture(monkeypatch)
+    entry = _entry(status=None, progress=0, repeat=0, total=None)
+    result = nf.process(
+        "The Testament of Sister New Devil",
+        _watched(episode=3, new_count=3),
+        entry, None, conn=None,
+    )
+    assert "new" in result.lower()
+    assert ("update", 42, {"progress": 3, "status": "WATCHING"}) in calls
+    assert ("save", 42, False) in calls
+
+
+def test_new_movie_entry_lands_completed_not_watching(monkeypatch):
+    # Issue #252, corrected in review: a brand-new entry that's a MOVIE must NOT
+    # get the TV/series WATCHING default — a movie is watched in one sitting, so
+    # there's no sensible "still watching" resting state for it. The MOVIE
+    # branch is checked first and already handles a synthetic new entry
+    # (al_ep=0, status=None) correctly via its existing al_ep < 1 case, exactly
+    # like an existing PLANNING movie's first watch (see
+    # test_movie_first_watch_marks_completed below) — no separate "new entry"
+    # logic needed for this case at all.
+    calls = _capture(monkeypatch)
+    entry = _entry(status=None, progress=0, repeat=0, total=1)
+    result = nf.process(
+        "Some New Movie", _watched(fmt="MOVIE", episode=1, new_count=1), entry, None, conn=None,
+    )
+    assert ("update", 42, {"progress": 1, "status": "COMPLETED"}) in calls
+    assert "COMPLETED" in result
+    assert "WATCHING" not in result
+
+
 def test_movie_first_watch_marks_completed(monkeypatch):
     calls = _capture(monkeypatch)
     entry = _entry(status="PLANNING", progress=0, total=1)

@@ -70,7 +70,7 @@ from dotenv import load_dotenv
 
 from anilist_sync_common import (
     enqueue_outbox_update, find_anilist_id, is_plausible_match,
-    load_user_list_from_db, seed_search_cache,
+    load_user_list_from_db, resolve_or_create_user_list_entry, seed_search_cache,
 )
 
 load_dotenv()
@@ -499,6 +499,14 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
     rewatch_active = nf_state["rewatch_in_progress"] if nf_state else False
 
     # ── Movies: a single watch event ──────────────────────────────────────────
+    # Checked before the brand-new-entry branch below (issue #252, corrected in
+    # review): a movie is watched in one sitting, so "still watching" is never
+    # the right resting state for it — including for a freshly-created entry.
+    # A synthetic new entry always has al_ep=0 and status=None, which satisfies
+    # neither of the first two conditions here, so it falls straight into the
+    # `al_ep < 1` case below and lands COMPLETED at progress=1 — exactly the
+    # same first-watch handling an existing PLANNING movie entry already gets.
+    # No special-casing needed; this is the same code path, not a new one.
     if watched["watched_format"] == "MOVIE":
         if status == "COMPLETED" and al_ep >= 1:
             _update(conn, anilist_id, repeat=repeat + 1)
@@ -510,6 +518,18 @@ def process(title: str, watched: dict, entry: dict, nf_state: dict | None, conn)
             return "movie watched → COMPLETED"
         _save_state(conn, anilist_id, title, watched_at, rewatch_active)
         return "movie — already COMPLETED, no change"
+
+    # ── Issue #252: brand-new AniList entry, not yet on the user's list ──────
+    # main() only ever builds a synthetic entry (for an incremental sync's
+    # unmatched-title case) with status=None — a real AniList entry's status is
+    # never None, so this is an unambiguous "create" sentinel. Only reached for
+    # non-movie (TV/series) formats — a new movie entry is already handled
+    # correctly by the MOVIE branch above (COMPLETED, not WATCHING — there's no
+    # sensible "still watching" state for single-sitting content).
+    if status is None:
+        _update(conn, anilist_id, progress=watched_ep, status="WATCHING")
+        _save_state(conn, anilist_id, title, watched_at, False)
+        return f"new AniList entry created → WATCHING ep {watched_ep}"
 
     # ── First sighting of a COMPLETED series — can't safely tell rewatch from
     # first sync without a baseline. Record and wait for next sync.
@@ -607,6 +627,11 @@ def main():
     else:
         log("Full walk not yet complete — re-walking full history this run")
         watermark = None
+    # Issue #252 — a full-pull run (initial connect OR a user-triggered Force Full
+    # Resync, #21 — both land here via watermark being None) keeps the conservative
+    # skip-if-untracked behavior below; only a genuine day-to-day incremental sync
+    # (watermark is not None) is allowed to auto-create a new AniList entry.
+    full_pull = watermark is None
     log(f"Fetching Netflix viewing activity since {watermark or '(no watermark — full walk)'}")
 
     client = NetflixHistory(NETFLIX_COOKIE_HEADER, NETFLIX_PROFILE_GUID)
@@ -628,7 +653,7 @@ def main():
         log("No new activity — nothing to do")
         if conn:
             conn.close()
-        _emit_result(0, len(raw_items), watermark is None)
+        _emit_result(0, len(raw_items), full_pull)
         sys.exit(0)
 
     watched_by_series = aggregate_by_series(raw_items)
@@ -668,10 +693,20 @@ def main():
             skipped += 1
             continue
 
-        if media_id not in user_list:
+        # Issue #252 — incremental sync: genuinely new watch activity for a title
+        # that isn't tracked yet should originate a new AniList entry instead of
+        # being silently dropped forever. Full-pull runs (initial connect or a
+        # Force Full Resync, #21) keep the original skip behavior. conn may be
+        # None here in DRY_RUN — resolve_or_create_user_list_entry() skips the DB
+        # write in that case but still exercises the same decision. See its
+        # docstring for the full contract.
+        decision = resolve_or_create_user_list_entry(media_id, title, user_list, full_pull, conn)
+        if decision == "skip":
             log(f"  ✗ Not in your AniList: '{title}'")
             skipped += 1
             continue
+        if decision == "create":
+            log(f"  + Not yet tracked — creating a new AniList entry: '{title}'")
 
         nf_state = nf_state_map.get(media_id)
         per_series_watermark = nf_state.get("last_seen_watched_at") if nf_state else None
@@ -730,7 +765,7 @@ def main():
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
         f"({index_hits} index hits, {search_hits} API searches)"
         + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
-    _emit_result(updated, len(raw_items), watermark is None)
+    _emit_result(updated, len(raw_items), full_pull)
 
 
 if __name__ == "__main__":
