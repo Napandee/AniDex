@@ -69,6 +69,269 @@ def test_multiple_relations_only_prequel_checked():
     assert rr._has_unwatched_prequel(media, {20: "COMPLETED", 10: "WATCHING"}) is True
 
 
+# ── _has_unwatched_prequel — multi-hop chain walking (issue #266) ────────────
+#
+# #158's original check only ever looked at the candidate's immediate PREQUEL
+# edge. These cover the actual bug: Kingdom S4 was still recommended because its
+# direct prequel, S3, was never added to the library at all — the real answer
+# (S1 is Paused) was two hops further back. `resolve_relations` here is a plain
+# dict-backed stand-in for _make_prequel_relation_resolver's real DB/AniList-
+# backed callable — _has_unwatched_prequel only calls it, never builds it itself,
+# so this is a faithful unit-level substitute.
+
+KINGDOM_S3_ID = 303
+KINGDOM_S4_ID = 404
+
+
+def _resolver(chain: dict[int, list]):
+    """chain: {anime_id: relations-list} — models "this ancestor's own PREQUEL
+    edges, as if freshly fetched/loaded from `anime`." Missing keys mean "AniList
+    has nothing more for this id" (empty result), matching the real resolver's
+    not-found behavior."""
+    return lambda anime_id: chain.get(anime_id, [])
+
+
+def test_multi_hop_chain_with_missing_intermediate_season_suppresses():
+    # The exact Kingdom S4 shape: S4 -> S3 (no `anime` row at all, needs an
+    # on-demand fetch) -> S2 (same) -> S1 (in the library, Paused).
+    candidate = {"id": KINGDOM_S4_ID, "relations": [{"id": KINGDOM_S3_ID, "relation_type": "PREQUEL"}]}
+    library_statuses = {KINGDOM_S1_ID: "PAUSED"}
+    resolve_relations = _resolver({
+        KINGDOM_S3_ID: [{"id": KINGDOM_S2_ID, "relation_type": "PREQUEL"}],
+        KINGDOM_S2_ID: [{"id": KINGDOM_S1_ID, "relation_type": "PREQUEL"}],
+    })
+    assert rr._has_unwatched_prequel(candidate, library_statuses, resolve_relations) is True
+
+
+def test_multi_hop_chain_everything_watched_does_not_suppress():
+    # Two hops back, through an intermediate not in the library, to an ancestor
+    # that IS in the library and COMPLETED — the legitimate "watch next" case,
+    # unaffected by how many hops away it is.
+    candidate = {"id": 900, "relations": [{"id": 901, "relation_type": "PREQUEL"}]}
+    library_statuses = {902: "COMPLETED"}
+    resolve_relations = _resolver({
+        901: [{"id": 902, "relation_type": "PREQUEL"}],
+    })
+    assert rr._has_unwatched_prequel(candidate, library_statuses, resolve_relations) is False
+
+
+def test_multi_hop_chain_runs_out_with_no_library_evidence_does_not_suppress():
+    # Chain ends (AniList has nothing further) without ever finding an ancestor
+    # in the library at all — "no evidence either way," per #266's scope (c).
+    candidate = {"id": 910, "relations": [{"id": 911, "relation_type": "PREQUEL"}]}
+    resolve_relations = _resolver({911: []})
+    assert rr._has_unwatched_prequel(candidate, {}, resolve_relations) is False
+
+
+def test_prequel_chain_cycle_does_not_infinite_loop():
+    # A -> B -> A. Without the visited-set this would loop forever; with it, the
+    # walk simply can't requeue A a second time and terminates.
+    candidate = {"id": 1, "relations": [{"id": 2, "relation_type": "PREQUEL"}]}
+    resolve_relations = _resolver({
+        2: [{"id": 1, "relation_type": "PREQUEL"}],  # points back at the candidate
+    })
+    assert rr._has_unwatched_prequel(candidate, {}, resolve_relations) is False
+
+
+def test_prequel_chain_self_referencing_cycle_does_not_infinite_loop():
+    # A single node whose own PREQUEL edge points at itself.
+    candidate = {"id": 1, "relations": [{"id": 1, "relation_type": "PREQUEL"}]}
+    resolve_relations = _resolver({1: [{"id": 1, "relation_type": "PREQUEL"}]})
+    assert rr._has_unwatched_prequel(candidate, {}, resolve_relations) is False
+
+
+def test_prequel_chain_depth_cap_bounds_the_walk():
+    # A chain longer than MAX_PREQUEL_CHAIN_HOPS, with the one hide-status
+    # ancestor sitting just past the cap — the walk must give up before reaching
+    # it (bounded worst-case cost) rather than suppressing.
+    chain_len = rr.MAX_PREQUEL_CHAIN_HOPS + 5
+    chain = {}
+    for i in range(1, chain_len + 1):
+        chain[i] = [{"id": i + 1, "relation_type": "PREQUEL"}]
+    library_statuses = {chain_len + 1: "WATCHING"}  # just out of reach
+    candidate = {"id": 0, "relations": [{"id": 1, "relation_type": "PREQUEL"}]}
+    resolve_relations = _resolver(chain)
+    assert rr._has_unwatched_prequel(candidate, library_statuses, resolve_relations) is False
+
+
+def test_prequel_chain_within_depth_cap_still_suppresses():
+    # Same shape as above, but the hide-status ancestor is well within the cap —
+    # proves the cap doesn't accidentally block legitimate shorter real chains.
+    chain = {1: [{"id": 2, "relation_type": "PREQUEL"}]}
+    library_statuses = {2: "PAUSED"}
+    candidate = {"id": 0, "relations": [{"id": 1, "relation_type": "PREQUEL"}]}
+    resolve_relations = _resolver(chain)
+    assert rr._has_unwatched_prequel(candidate, library_statuses, resolve_relations) is True
+
+
+def test_single_hop_still_works_without_a_resolver():
+    # No resolver given at all (the pre-#266 call shape) — behaves exactly like
+    # the original single-hop function; an ancestor not in the library just ends
+    # the walk instead of looking further.
+    candidate = {"id": 0, "relations": [{"id": 1, "relation_type": "PREQUEL"}]}
+    assert rr._has_unwatched_prequel(candidate, {}) is False
+    assert rr._has_unwatched_prequel(candidate, {1: "WATCHING"}) is True
+
+
+# ── _make_prequel_relation_resolver — on-demand ancestor lookups (issue #266) ─
+#
+# The real resolver _has_unwatched_prequel's chain walk uses in production:
+# local `anime` row first, live AniList fetch (same MEDIA_DETAILS_QUERY/gql()/
+# _upsert_anime path as everywhere else in this file) only when that row is
+# missing or has never captured relations, in-run memoization either way.
+
+class _FakeResolverCursor:
+    def __init__(self, conn):
+        self.conn = conn
+        self._select_id = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params=None):
+        q = query.strip()
+        if q.startswith("SELECT relations FROM anime WHERE id"):
+            self._select_id = params[0]
+        elif q.startswith("INSERT INTO anime"):
+            self.conn.upserted_ids.append(params[0])  # media["id"] is the first bind param
+        else:
+            raise AssertionError(f"unexpected query in fake resolver cursor: {q[:60]!r}")
+
+    def fetchone(self):
+        row = self.conn.db_rows.get(self._select_id)
+        return {"relations": row} if row is not None else None
+
+
+class _FakeResolverConn:
+    """db_rows: {anime_id: relations-list} standing in for what's already in the
+    `anime` table — an id absent from this dict models "no row at all"."""
+
+    def __init__(self, db_rows):
+        self.db_rows = db_rows
+        self.upserted_ids: list[int] = []
+        self.committed = 0
+
+    def cursor(self, cursor_factory=None):
+        return _FakeResolverCursor(self)
+
+    def commit(self):
+        self.committed += 1
+
+
+def _anilist_media_payload(media_id, prequel_id=None, prequel_title="Prequel"):
+    edges = []
+    if prequel_id is not None:
+        edges.append({
+            "relationType": "PREQUEL",
+            "node": {
+                "id": prequel_id,
+                "title": {"romaji": prequel_title, "english": None},
+                "coverImage": {"large": None},
+                "format": "TV",
+            },
+        })
+    return {
+        "Page": {
+            "media": [{
+                "id": media_id,
+                "idMal": None,
+                "title": {"romaji": f"Show {media_id}", "english": None, "native": None},
+                "format": "TV", "status": "FINISHED", "episodes": 13,
+                "season": "SPRING", "seasonYear": 2021,
+                "genres": [], "tags": [], "studios": {"edges": []},
+                "averageScore": None, "coverImage": {}, "bannerImage": None, "description": None,
+                "externalLinks": [], "streamingEpisodes": [],
+                "relations": {"edges": edges},
+            }],
+        },
+    }
+
+
+def test_relation_resolver_uses_local_row_without_hitting_anilist(monkeypatch):
+    conn = _FakeResolverConn(db_rows={KINGDOM_S3_ID: [{"id": KINGDOM_S1_ID, "relation_type": "PREQUEL"}]})
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError("must not hit AniList when a local row already has relations")
+
+    monkeypatch.setattr(rr, "gql", fail_if_called)
+
+    resolve_relations = rr._make_prequel_relation_resolver(conn)
+    assert resolve_relations(KINGDOM_S3_ID) == [{"id": KINGDOM_S1_ID, "relation_type": "PREQUEL"}]
+
+
+def test_relation_resolver_fetches_from_anilist_when_row_missing(monkeypatch):
+    conn = _FakeResolverConn(db_rows={})
+    call_ids = []
+
+    def fake_gql(query, variables, retries=5):
+        call_ids.append(list(variables["ids"]))
+        return _anilist_media_payload(KINGDOM_S3_ID, prequel_id=KINGDOM_S2_ID, prequel_title="Kingdom 2nd Season")
+
+    monkeypatch.setattr(rr, "gql", fake_gql)
+    monkeypatch.setattr(rr.time, "sleep", lambda *_: None)
+
+    resolve_relations = rr._make_prequel_relation_resolver(conn)
+    result = resolve_relations(KINGDOM_S3_ID)
+
+    assert result == [{
+        "id": KINGDOM_S2_ID,
+        "title": "Kingdom 2nd Season",
+        "cover": None,
+        "format": "TV",
+        "relation_type": "PREQUEL",
+    }]
+    assert call_ids == [[KINGDOM_S3_ID]]
+    assert conn.upserted_ids == [KINGDOM_S3_ID]  # persisted so future runs don't refetch it
+    assert conn.committed == 1
+
+
+def test_relation_resolver_memoizes_within_one_run(monkeypatch):
+    # Same ancestor needed twice in one run (e.g. two candidates sharing a
+    # franchise) must only ever hit AniList once.
+    conn = _FakeResolverConn(db_rows={})
+    call_ids = []
+
+    def fake_gql(query, variables, retries=5):
+        call_ids.append(list(variables["ids"]))
+        return _anilist_media_payload(KINGDOM_S3_ID)
+
+    monkeypatch.setattr(rr, "gql", fake_gql)
+    monkeypatch.setattr(rr.time, "sleep", lambda *_: None)
+
+    resolve_relations = rr._make_prequel_relation_resolver(conn)
+    first = resolve_relations(KINGDOM_S3_ID)
+    second = resolve_relations(KINGDOM_S3_ID)
+
+    assert first == second == []
+    assert call_ids == [[KINGDOM_S3_ID]]  # only one AniList call across both lookups
+
+
+def test_relation_resolver_handles_anilist_returning_no_media(monkeypatch):
+    conn = _FakeResolverConn(db_rows={})
+    monkeypatch.setattr(rr, "gql", lambda *a, **kw: {"Page": {"media": []}})
+    monkeypatch.setattr(rr.time, "sleep", lambda *_: None)
+
+    resolve_relations = rr._make_prequel_relation_resolver(conn)
+    assert resolve_relations(999999) == []
+
+
+def test_relation_resolver_handles_anilist_error_without_raising(monkeypatch):
+    # A transient AniList failure mid-chain-walk must not blow up the whole
+    # recommender run — treated as "no evidence," same as a genuine dead end.
+    conn = _FakeResolverConn(db_rows={})
+
+    def boom(*a, **kw):
+        raise RuntimeError("AniList unreachable")
+
+    monkeypatch.setattr(rr, "gql", boom)
+
+    resolve_relations = rr._make_prequel_relation_resolver(conn)
+    assert resolve_relations(123) == []
+
+
 # ── _upsert_anime — relations persistence (mirrors sync_anilist.py's pattern) ─
 
 class _FakeUpsertCursor:
@@ -354,9 +617,22 @@ def _anime_row(anime_id, relations=None):
     }
 
 
-def _run_score_and_store(monkeypatch, anime_rows, library_statuses):
+def _run_score_and_store(monkeypatch, anime_rows, library_statuses, resolve_relations=None):
+    """`resolve_relations`, if given, is a plain anime_id -> relations-list
+    callable standing in for _make_prequel_relation_resolver's real DB/AniList-
+    backed one (issue #266) — score_and_store() only ever calls the factory, not
+    a DB/network client directly, so monkeypatching the factory to hand back a
+    fixed callable is enough to exercise the multi-hop wiring without needing the
+    fake cursor/conn below to understand the resolver's own queries. Defaults to
+    "nothing more to find" (an always-empty resolver), which reproduces the exact
+    pre-#266 single-hop behavior for every test that isn't specifically about
+    walking past the immediate prequel."""
     monkeypatch.setattr(rr, "fetch_cross_user_signal", lambda conn, ids, uid: {})
     monkeypatch.setattr(rr, "get_library_statuses", lambda conn: library_statuses)
+    monkeypatch.setattr(
+        rr, "_make_prequel_relation_resolver",
+        lambda conn: (resolve_relations or (lambda anime_id: [])),
+    )
     conn = _FakeScoreConn(anime_rows)
     profile = {"genres": {}, "tags": {}, "studios": {}}
     ids = {row["id"] for row in anime_rows}
@@ -411,6 +687,23 @@ def test_mixed_batch_only_suppresses_the_sequel_candidate(monkeypatch):
     assert n == 1
     stored_ids = {row["params"][1] for row in conn.inserted}
     assert stored_ids == {501}
+
+
+def test_score_and_store_suppresses_via_multi_hop_chain(monkeypatch):
+    # Integration-level proof that score_and_store() actually wires a resolver
+    # through to _has_unwatched_prequel (issue #266) — not just that the pure
+    # function can walk a chain when handed one directly (covered above). The
+    # candidate's direct prequel (S3) isn't itself in the library; the resolver
+    # supplies S3's own PREQUEL edge to S2, and S2 -> S1 is in the library, Paused.
+    anime_rows = [
+        _anime_row(KINGDOM_S4_ID, relations=[{"id": KINGDOM_S3_ID, "relation_type": "PREQUEL"}]),
+    ]
+    resolve_relations = _resolver({KINGDOM_S3_ID: [{"id": KINGDOM_S1_ID, "relation_type": "PREQUEL"}]})
+    conn, n = _run_score_and_store(
+        monkeypatch, anime_rows, {KINGDOM_S1_ID: "PAUSED"}, resolve_relations=resolve_relations
+    )
+    assert n == 0
+    assert conn.inserted == []
 
 
 # ── AniList vote count plumbing (issue #226) ──────────────────────────────────

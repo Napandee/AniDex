@@ -17,19 +17,23 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=56 — bumped for #230's .impersonation-banner/-text/-stop-* rules, on
-       top of #228's .streaming-calendar-* rules which independently claimed
-       v=55 in the same 2026-08-20 brainstorm batch (confirmed via rebase
-       conflict on this exact line — both PRs bumped from v=54 at the same
-       time). See the superseded v=51/v=54 comments for why this needs
-       bumping on every style.css change in this repo: several parallel
-       branches land CSS independently and a stale cache-bust value silently
-       serves an old stylesheet to a browser that already cached the previous
-       version. Re-check this against origin/main right before merging —
-       another parallel PR may have already claimed v=56. -->
-  <link rel="stylesheet" href="/static/style.css?v=56">
+  <!-- v=57 — bumped for #257's month-grid CSS, which merged (PR #275)
+       without bumping this value, leaving browsers with an already-cached
+       style.css silently stuck on the pre-#257 stylesheet. See the
+       superseded v=51/v=54/v=56 comments for why this needs bumping on
+       every style.css change in this repo: several parallel branches land
+       CSS independently and a stale cache-bust value silently serves an old
+       stylesheet to a browser that already cached the previous version.
+       Re-check this against origin/main right before merging — another
+       parallel PR may have already claimed v=57. -->
+  <link rel="stylesheet" href="/static/style.css?v=57">
   <script>window.I18N = {{ i18n_json|safe }};</script>
-  <script src="/static/script.js?v=25" defer></script>
+  <!-- v=26 — same #257/PR #275 gap as style.css above: the month-toggle
+       click-handler wiring shipped in script.js without bumping this value,
+       so a cached script.js left the new Month button with no listener
+       attached client-side. Bump this on every script.js change too, same
+       reasoning as style.css's v= comment. -->
+  <script src="/static/script.js?v=26" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% if nav_impersonation %}
