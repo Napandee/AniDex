@@ -409,6 +409,25 @@ def fetch_and_store_candidates(conn, media_ids: list[int]) -> None:
             time.sleep(INTER_REQUEST_SLEEP)
 
 
+def _parse_relations(media: dict) -> list[dict]:
+    """The exact `anime.relations` shape (issue #158): AniList's `relations.edges`
+    flattened to just what the app/recommender need. Shared by _upsert_anime (the
+    write path) and _make_prequel_relation_resolver below (issue #266's on-demand
+    ancestor lookups) so both stay in sync with a single parsing definition."""
+    return [
+        {
+            "id": edge["node"]["id"],
+            "title": (edge["node"].get("title") or {}).get("english")
+                     or (edge["node"].get("title") or {}).get("romaji", ""),
+            "cover": (edge["node"].get("coverImage") or {}).get("large"),
+            "format": edge["node"].get("format"),
+            "relation_type": edge.get("relationType", "OTHER"),
+        }
+        for edge in ((media.get("relations") or {}).get("edges") or [])
+        if edge.get("node")
+    ]
+
+
 def _upsert_anime(cur, media: dict) -> None:
     studios = [
         {"name": e["node"]["name"], "isMain": e["isMain"]}
@@ -424,18 +443,7 @@ def _upsert_anime(cur, media: dict) -> None:
     # here so brand-new recommender candidates (not yet in any user's library, so
     # sync_anilist.py has never touched them) still get relation data to check for an
     # unwatched PREQUEL at scoring time.
-    relations = [
-        {
-            "id": edge["node"]["id"],
-            "title": (edge["node"].get("title") or {}).get("english")
-                     or (edge["node"].get("title") or {}).get("romaji", ""),
-            "cover": (edge["node"].get("coverImage") or {}).get("large"),
-            "format": edge["node"].get("format"),
-            "relation_type": edge.get("relationType", "OTHER"),
-        }
-        for edge in ((media.get("relations") or {}).get("edges") or [])
-        if edge.get("node")
-    ]
+    relations = _parse_relations(media)
     cur.execute("""
         INSERT INTO anime (
             id, id_mal, title_romaji, title_english, title_native,
@@ -593,19 +601,138 @@ def score_candidate(
 # surface (issue #158).
 PREQUEL_HIDE_STATUSES = {"WATCHING", "PLANNING", "PAUSED", "DROPPED"}
 
+# Issue #266 — #158's suppression only ever checked a candidate's *immediate*
+# PREQUEL edge, which silently did nothing whenever an intermediate season was
+# never manually added to the library (the real Kingdom S4 case: S4 -> S3 [never
+# added] -> S2 [never added] -> S1 [Paused] — single-hop found nothing at S3 and
+# gave up, even though the real answer was two hops further back). This bounds
+# how many PREQUEL hops _has_unwatched_prequel will walk backward looking for an
+# ancestor's real library status. Kingdom — this repo's concrete motivating case
+# — currently has 5 seasons; 10 gives any real franchise generous headroom to grow
+# past that while still hard-capping the worst-case number of on-demand AniList
+# lookups one candidate's suppression check can trigger (see
+# _make_prequel_relation_resolver below). This is a per-candidate walk, not a
+# catalog-wide loop, but still worth bounding explicitly rather than trusting
+# AniList's relation graph to always be a short, finite chain — the visited-set
+# in the walk below is the other half of that same defensiveness, for an actual
+# graph cycle (which AniList's data model doesn't forbid).
+MAX_PREQUEL_CHAIN_HOPS = 10
 
-def _has_unwatched_prequel(media: dict, library_statuses: dict[int, str]) -> bool:
-    """True if `media` has a single-hop PREQUEL relation to an anime already in the
-    user's library whose status means the earlier season isn't finished yet (issue
-    #158). Single-hop only — no recursive chain-walking to older ancestor seasons,
-    that's explicitly out of scope for v1 (see the issue for why)."""
-    for rel in (media.get("relations") or []):
-        if rel.get("relation_type") != "PREQUEL":
+
+def _has_unwatched_prequel(
+    media: dict,
+    library_statuses: dict[int, str],
+    resolve_relations=None,
+    max_hops: int = MAX_PREQUEL_CHAIN_HOPS,
+) -> bool:
+    """True if `media`'s PREQUEL chain — walked backward hop by hop, not just the
+    immediate prequel (issue #266, extending #158's single-hop check) — reaches an
+    ancestor already in the user's library with a status in PREQUEL_HIDE_STATUSES.
+
+    Walk semantics (see #266's acceptance criteria):
+      - Suppress the moment ANY ancestor, at ANY distance, is found in the library
+        with a hide-status.
+      - A branch that reaches an ancestor found COMPLETED stops there without
+        suppressing — the legitimate "watch next" case, unaffected by how far back
+        it is (issue #158's original exception, unchanged).
+      - An ancestor not in the library at all isn't evidence either way — keep
+        walking through it, using `resolve_relations(anime_id)` to learn its own
+        PREQUEL edges on demand. That's needed for ancestors that are neither in
+        the library nor a scored candidate this run (e.g. Kingdom S3 above — no
+        `anime` row for it at all). `resolve_relations` is optional and defaults
+        to "don't look any further" so every pre-#266 call site/test keeps its
+        original single-hop behavior unchanged.
+      - Bounded by `max_hops` total hops popped off the walk queue, and a
+        visited-set guards against a cyclical relation graph.
+    """
+    visited = {media.get("id")}
+    queue: list[tuple[dict, int]] = [(media, 0)]
+    while queue:
+        current, hops = queue.pop(0)
+        if hops >= max_hops:
             continue
-        prequel_status = library_statuses.get(rel.get("id"))
-        if prequel_status in PREQUEL_HIDE_STATUSES:
-            return True
+        for rel in (current.get("relations") or []):
+            if rel.get("relation_type") != "PREQUEL":
+                continue
+            prequel_id = rel.get("id")
+            if prequel_id is None or prequel_id in visited:
+                continue
+            visited.add(prequel_id)
+            status = library_statuses.get(prequel_id)
+            if status in PREQUEL_HIDE_STATUSES:
+                return True
+            if status == "COMPLETED":
+                continue  # resolved branch — stop here, don't walk past it
+            if resolve_relations is None:
+                continue
+            ancestor_relations = resolve_relations(prequel_id)
+            if ancestor_relations:
+                queue.append(({"id": prequel_id, "relations": ancestor_relations}, hops + 1))
     return False
+
+
+def _make_prequel_relation_resolver(conn):
+    """Builds the `resolve_relations(anime_id)` callback _has_unwatched_prequel's
+    chain walk uses to learn an ancestor's own PREQUEL edges (issue #266),
+    memoized for the lifetime of one score_and_store() call — a shared ancestor
+    (e.g. two candidates from the same franchise) is never looked up twice in the
+    same run, and neither is the same ancestor across multiple candidates' walks.
+
+    Checks the local `anime` row first. Falls back to a live AniList fetch —
+    reusing the exact MEDIA_DETAILS_QUERY/gql()/_upsert_anime path
+    fetch_and_store_candidates already uses, not a new query shape — only when
+    that row is missing entirely or has never captured `relations` at all (an
+    empty list is indistinguishable from "genuinely has no relations," so this
+    doesn't force a refetch on every leaf, just on ones that could plausibly
+    still be hiding real chain data).
+
+    Deliberately does NOT consult #254's CANDIDATE_STALENESS_DAYS window here —
+    per #266's "open questions": for a suppression check specifically, correctness
+    (not re-showing a candidate whose earlier season is genuinely unwatched)
+    matters more than the request-budget savings that window was tuned for, and
+    the walk is already hard-bounded by MAX_PREQUEL_CHAIN_HOPS plus this cache, so
+    the extra calls this can trigger stay small. #254's own staleness mechanism
+    for top-level candidate refreshes (_select_ids_to_fetch) is untouched.
+    """
+    cache: dict[int, list] = {}
+
+    def get_relations(anime_id: int) -> list:
+        if anime_id in cache:
+            return cache[anime_id]
+
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT relations FROM anime WHERE id = %s", (anime_id,))
+            row = cur.fetchone()
+        if row and row.get("relations"):
+            cache[anime_id] = row["relations"]
+            return row["relations"]
+
+        try:
+            data = gql(MEDIA_DETAILS_QUERY, {"ids": [anime_id], "page": 1})
+            time.sleep(INTER_REQUEST_SLEEP)
+        except Exception as e:
+            print(
+                f"  Warning: prequel-chain lookup failed for anime {anime_id}: {e}",
+                file=sys.stderr,
+            )
+            cache[anime_id] = []
+            return []
+
+        media_list = (data.get("Page") or {}).get("media") or []
+        if not media_list:
+            cache[anime_id] = []
+            return []
+
+        media = media_list[0]
+        with conn.cursor() as write_cur:
+            _upsert_anime(write_cur, media)
+        conn.commit()
+
+        relations = _parse_relations(media)
+        cache[anime_id] = relations
+        return relations
+
+    return get_relations
 
 
 def score_and_store(
@@ -627,6 +754,10 @@ def score_and_store(
     vote_counts = vote_counts or {}
     cross_user_signal = fetch_cross_user_signal(conn, all_candidate_ids, USER_ID)
     library_statuses = get_library_statuses(conn)
+    # issue #266 — one resolver per run, shared across every candidate's chain
+    # walk below, so ancestors common to more than one candidate (or revisited
+    # deeper in the same candidate's own chain) are only ever looked up once.
+    resolve_relations = _make_prequel_relation_resolver(conn)
 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
@@ -637,11 +768,12 @@ def score_and_store(
 
     scored: list[tuple[int, float, dict]] = []
     for anime_id, media in media_rows.items():
-        # issue #158 — skip candidates that are a sequel to an earlier season the
-        # user already owns but hasn't finished (WATCHING/PLANNING/PAUSED/DROPPED).
-        # COMPLETED earlier seasons are the legitimate "watch next" case and must
-        # still be scored normally.
-        if _has_unwatched_prequel(media, library_statuses):
+        # issue #158 / #266 — skip candidates whose PREQUEL chain, walked back as
+        # far as needed (not just the immediate prequel), reaches an earlier
+        # season the user already owns but hasn't finished (WATCHING/PLANNING/
+        # PAUSED/DROPPED). A COMPLETED earlier season anywhere in that chain is
+        # the legitimate "watch next" case and must still be scored normally.
+        if _has_unwatched_prequel(media, library_statuses, resolve_relations):
             continue
         raw, reason = score_candidate(
             media, profile, cross_user_signal.get(anime_id), vote_counts.get(anime_id)
