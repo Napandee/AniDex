@@ -120,9 +120,13 @@
       {% endfor %}
       {% for week in month_grid %}
         {% for day in week %}
-        <div class="upcoming-month-cell{% if not day.in_month %} is-blank{% endif %}{% if day.is_today %} is-today{% endif %}">
-          {% if day.in_month %}
-          <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-date">{{ day.date.day }}</a>
+        {% if day.in_month %}
+        {# issue #281 — the whole tile is the click target (not just the date
+           number), so this is an <a>, not a <div>. The date/overflow text below
+           are plain spans rather than their own nested links — HTML doesn't
+           allow an <a> inside another <a>. #}
+        <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-cell{% if day.is_today %} is-today{% endif %}">
+          <span class="upcoming-month-date">{{ day.date.day }}</span>
           {% for e in day.entries %}
           <div class="upcoming-month-chip" title="{{ e.title_english or e.title_romaji }} — {{ t('upcoming_month_chip_ep', num=e.episode) }}">
             <span class="upcoming-month-chip-dot"></span>
@@ -130,10 +134,12 @@
           </div>
           {% endfor %}
           {% if day.overflow > 0 %}
-          <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</a>
+          <span class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</span>
           {% endif %}
-          {% endif %}
-        </div>
+        </a>
+        {% else %}
+        <div class="upcoming-month-cell is-blank"></div>
+        {% endif %}
         {% endfor %}
       {% endfor %}
     </div>
