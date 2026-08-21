@@ -41,6 +41,7 @@
       <div class="view-toggle-group" role="group" aria-label="{{ t('upcoming_view_group_label') }}">
         <button type="button" id="upcoming-view-list-btn" class="filter-btn active" data-view="list">{{ t('upcoming_view_list_btn') }}</button>
         <button type="button" id="upcoming-view-grid-btn" class="filter-btn" data-view="grid">{{ t('upcoming_view_grid_btn') }}</button>
+        <button type="button" id="upcoming-view-month-btn" class="filter-btn" data-view="month">{{ t('upcoming_view_month_btn') }}</button>
       </div>
     </div>
   </div>
@@ -84,6 +85,42 @@
         <p class="upcoming-grid-empty">{{ t('upcoming_grid_empty') }}</p>
         {% endif %}
       </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="upcoming-month-view" hidden>
+    <div class="upcoming-month-nav" role="group" aria-label="{{ t('upcoming_month_nav_label') }}">
+      {% if month_offset > 0 %}
+      <a href="/upcoming?month_offset={{ month_offset - 1 }}" class="filter-btn upcoming-month-nav-btn">&larr; {{ t('upcoming_month_prev_btn') }}</a>
+      {% else %}
+      <span class="filter-btn upcoming-month-nav-btn is-disabled" aria-disabled="true">&larr; {{ t('upcoming_month_prev_btn') }}</span>
+      {% endif %}
+      <span class="upcoming-month-label">{{ month_start.strftime('%B %Y') }}</span>
+      <a href="/upcoming" class="filter-btn upcoming-month-nav-btn{% if month_offset == 0 %} active{% endif %}">{{ t('upcoming_month_today_btn') }}</a>
+      <a href="/upcoming?month_offset={{ month_offset + 1 }}" class="filter-btn upcoming-month-nav-btn">{{ t('upcoming_month_next_btn') }} &rarr;</a>
+    </div>
+    <div class="upcoming-month-grid">
+      {% for name in month_dow_labels %}
+      <div class="upcoming-month-dow">{{ name }}</div>
+      {% endfor %}
+      {% for week in month_grid %}
+        {% for day in week %}
+        <div class="upcoming-month-cell{% if not day.in_month %} is-blank{% endif %}{% if day.is_today %} is-today{% endif %}">
+          {% if day.in_month %}
+          <div class="upcoming-month-date">{{ day.date.day }}</div>
+          {% for e in day.entries %}
+          <div class="upcoming-month-chip" title="{{ e.title_english or e.title_romaji }} — {{ t('upcoming_month_chip_ep', num=e.episode) }}">
+            <span class="upcoming-month-chip-dot"></span>
+            <span class="upcoming-month-chip-text">{{ e.title_english or e.title_romaji }} · {{ t('upcoming_month_chip_ep', num=e.episode) }}</span>
+          </div>
+          {% endfor %}
+          {% if day.overflow > 0 %}
+          <div class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</div>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
       {% endfor %}
     </div>
   </div>

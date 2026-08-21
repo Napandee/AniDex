@@ -949,22 +949,27 @@ if (recFilterEl) {
   }
 }
 
-// ── Upcoming — list / weekly grid view toggle ──────────────────────────────────
+// ── Upcoming — list / weekly grid / month view toggle ───────────────────────────
 (function () {
   const listBtn = document.getElementById('upcoming-view-list-btn');
   const gridBtn = document.getElementById('upcoming-view-grid-btn');
+  const monthBtn = document.getElementById('upcoming-view-month-btn');
   const listView = document.getElementById('upcoming-list-view');
   const gridView = document.getElementById('upcoming-grid-view');
-  if (!listBtn || !gridBtn || !listView || !gridView) return;
+  const monthView = document.getElementById('upcoming-month-view');
+  if (!listBtn || !gridBtn || !monthBtn || !listView || !gridView || !monthView) return;
 
   const STORAGE_KEY = 'upcoming-view';
+  const VIEWS = ['list', 'grid', 'month'];
 
   function setView(view) {
-    const isGrid = view === 'grid';
-    listView.hidden = isGrid;
-    gridView.hidden = !isGrid;
-    listBtn.classList.toggle('active', !isGrid);
-    gridBtn.classList.toggle('active', isGrid);
+    if (!VIEWS.includes(view)) view = 'list';
+    listView.hidden = view !== 'list';
+    gridView.hidden = view !== 'grid';
+    monthView.hidden = view !== 'month';
+    listBtn.classList.toggle('active', view === 'list');
+    gridBtn.classList.toggle('active', view === 'grid');
+    monthBtn.classList.toggle('active', view === 'month');
   }
 
   listBtn.addEventListener('click', () => {
@@ -975,9 +980,13 @@ if (recFilterEl) {
     setView('grid');
     localStorage.setItem(STORAGE_KEY, 'grid');
   });
+  monthBtn.addEventListener('click', () => {
+    setView('month');
+    localStorage.setItem(STORAGE_KEY, 'month');
+  });
 
   const saved = localStorage.getItem(STORAGE_KEY);
-  setView(saved === 'grid' ? 'grid' : 'list');
+  setView(VIEWS.includes(saved) ? saved : 'list');
 })();
 
 // ── Upcoming — mark episode seen ──────────────────────────────────────────────
