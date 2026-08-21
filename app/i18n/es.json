@@ -287,6 +287,8 @@
   "upcoming_month_chip_ep": "Ep {num}",
   "upcoming_month_overflow": "+{num} más",
   "upcoming_empty": "No hay próximos episodios — nada emitiéndose actualmente en tu lista.",
+  "upcoming_day_back_btn": "Volver al mes",
+  "upcoming_day_empty": "Nada emitiéndose este día.",
 
   "title_queue": "Cola de visualización — Anime Tracker",
   "queue_page_title": "Cola de visualización",

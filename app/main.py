@@ -23,7 +23,7 @@ import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -3229,7 +3229,18 @@ _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
 
 
 @app.get("/upcoming", response_class=HTMLResponse)
-def upcoming(request: Request, week_offset: int = 0, month_offset: int = 0):
+def upcoming(
+    request: Request,
+    week_offset: int = 0,
+    month_offset: int = 0,
+    # Named date_str (not `date`) to avoid shadowing the `date` class imported from
+    # datetime at module level, which _add_months and the month-grid code below both
+    # call directly as `date(...)` — a same-named parameter shadows that for the
+    # entire function body, silently breaking every date(...) call in this route
+    # (caught by the existing month/week-grid test suite, not by anything date-filter
+    # specific). alias="date" keeps the public query string as ?date=YYYY-MM-DD.
+    date_str: str = Query(default=None, alias="date"),
+):
     user, denied = _require_user(request)
     if denied:
         return denied
@@ -3298,6 +3309,27 @@ def upcoming(request: Request, week_offset: int = 0, month_offset: int = 0):
             entry["relative"] = f"in {days} days"
             entry["group"] = f"In {weeks} week{'s' if weeks > 1 else ''}"
         entries.append(entry)
+
+    # Day-filtered list view (issue #277) — clicking a day cell or its "+N more"
+    # overflow text in the month grid links here via `?date=YYYY-MM-DD`, reusing
+    # the same `entries` list (and the same entry-card markup) rather than a
+    # separate query or a new modal/popover. Invalid/missing date falls back to
+    # None, which the template treats identically to no filter at all.
+    date_filter = None
+    if date_str:
+        try:
+            date_filter = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            date_filter = None
+
+    # Named date_filter_entries, not day_entries — the month-grid loop below
+    # declares its own local `day_entries` per cell, which would otherwise
+    # silently shadow/overwrite this one before it reaches the template context.
+    date_filter_entries = (
+        [e for e in entries if e["airing_local"].date() == date_filter]
+        if date_filter is not None
+        else None
+    )
 
     # Weekly Mon-Sun broadcast-calendar grid — bounded to exactly one real calendar
     # week (issue #256), reusing the same `entries` already built above. No change to
@@ -3396,6 +3428,8 @@ def upcoming(request: Request, week_offset: int = 0, month_offset: int = 0):
             "month_offset": month_offset,
             "month_start": month_start,
             "month_dow_labels": month_dow_labels,
+            "date_filter": date_filter,
+            "day_entries": date_filter_entries,
         },
     )
 

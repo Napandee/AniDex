@@ -287,6 +287,8 @@
   "upcoming_month_chip_ep": "Ep {num}",
   "upcoming_month_overflow": "+{num} more",
   "upcoming_empty": "No upcoming episodes — nothing currently airing in your list.",
+  "upcoming_day_back_btn": "Back to month",
+  "upcoming_day_empty": "Nothing airing on this day.",
 
   "title_queue": "Watch Queue — Anime Tracker",
   "queue_page_title": "Watch Queue",

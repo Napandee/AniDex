@@ -2033,11 +2033,14 @@ body.auth-page main {
 .upcoming-month-cell.is-today { border-color: var(--accent); }
 
 .upcoming-month-date {
+  display: block;
   font-size: 0.72rem;
   color: var(--t7);
   margin-bottom: 0.3rem;
   font-variant-numeric: tabular-nums;
+  text-decoration: none;
 }
+.upcoming-month-date:hover { color: var(--accent); text-decoration: underline; }
 .upcoming-month-cell.is-today .upcoming-month-date { color: var(--pill-info-text-strong); font-weight: 700; }
 
 .upcoming-month-chip {
@@ -2070,10 +2073,22 @@ body.auth-page main {
 }
 
 .upcoming-month-overflow {
+  display: inline-block;
   font-size: 0.65rem;
   color: var(--t8);
   padding-left: 0.15rem;
+  text-decoration: none;
+  cursor: pointer;
 }
+.upcoming-month-overflow:hover { color: var(--accent); text-decoration: underline; }
+
+.upcoming-day-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.upcoming-day-header .upcoming-group { margin: 0; }
 
 /* ── Stats page ──────────────────────────────────────────────────────────── */
 /* .stats body class no longer used — page now uses normal layout */
