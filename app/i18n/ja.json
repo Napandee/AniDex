@@ -291,6 +291,8 @@
   "queue_rewatch_plural": "{count}回再視聴",
   "queue_watched_btn": "視聴済み",
   "queue_notes_edit_title": "ノートを編集／優先度を設定",
+  "queue_notes_link_label": "ノート",
+  "queue_move_planning_btn": "視聴予定に移動",
   "queue_empty": "視聴予定または一時停止のリストには何もありません。",
   "queue_no_matches": "該当なし。",
   "queue_rec_match": "マッチ度",

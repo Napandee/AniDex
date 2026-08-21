@@ -1236,6 +1236,22 @@ document.querySelectorAll('.btn-delete-sm').forEach(btn => {
   }
 }());
 
+// ── Queue card click-through to notes (issue #259) ─────────────────────────────
+// Mirrors the .card click delegation used on library.html (see the "Notes modal"
+// section above) so a queue card is as obviously clickable as a library card —
+// the previous approach relied solely on a small Unicode pencil link that turned
+// out to render as a barely-visible mark in practice. The notes link itself (now
+// styled as a legible .btn-notes-sm chip, see queue.html) stays in the DOM too,
+// both as a fallback discoverable target and for keyboard/screen-reader access,
+// since a bare click-delegated <li> isn't independently focusable.
+document.querySelectorAll('.queue-item[data-anime-id]').forEach(item => {
+  item.addEventListener('click', e => {
+    if (e.target.closest('button, select, a, input, textarea, .star, .queue-drag-handle')) return;
+    const back = item.dataset.notesBack || 'PLANNING';
+    window.location.href = `/anime/${item.dataset.animeId}/notes?back=${encodeURIComponent(back)}`;
+  });
+});
+
 // ── Mark watched (queue page) ─────────────────────────────────────────────────
 document.querySelectorAll('.btn-mark-watched').forEach(btn => {
   btn.addEventListener('click', async () => {
@@ -1296,6 +1312,39 @@ document.querySelectorAll('.btn-start-rewatch').forEach(btn => {
     } catch {
       btn.disabled = false;
       btn.textContent = t('queue_rewatch_start_btn');
+    }
+  });
+});
+
+// ── Move to Planning (queue page, Paused cards — issue #259) ───────────────────
+// Same endpoint/pattern as .btn-mark-watched above ({status: 'PLANNING'} instead
+// of 'COMPLETED'), kept as its own class rather than reusing .btn-add-planning —
+// see the CSS comment above .btn-add-planning/.btn-start-rewatch for why a shared
+// binding class across pages with different card-container structures silently
+// double-fires and clobbers the intended status (confirmed the hard way in #191).
+document.querySelectorAll('.btn-move-planning').forEach(btn => {
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    const animeId = btn.dataset.animeId;
+    const item = btn.closest('.queue-item');
+
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: 'PLANNING'}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+
+      item.style.transition = 'opacity 0.3s';
+      item.style.opacity = '0';
+      setTimeout(() => item.remove(), 300);
+    } catch {
+      btn.disabled = false;
+      btn.textContent = '→ ' + t('queue_move_planning_btn');
     }
   });
 });

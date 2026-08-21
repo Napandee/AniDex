@@ -291,6 +291,8 @@
   "queue_rewatch_plural": "重看了 {count} 次",
   "queue_watched_btn": "已观看",
   "queue_notes_edit_title": "编辑笔记／设置优先级",
+  "queue_notes_link_label": "笔记",
+  "queue_move_planning_btn": "移至计划观看",
   "queue_empty": "计划观看或已暂停列表中暂无内容。",
   "queue_no_matches": "没有匹配项。",
   "queue_rec_match": "匹配度",
