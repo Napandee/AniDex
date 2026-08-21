@@ -19,6 +19,10 @@ Covers the acceptance-criteria scenarios from issue #255:
      episode is invisible to the universe entirely.
   3. Titles on no recognized streaming service land in an explicit, non-empty
      `uncovered_titles` bucket rather than being silently dropped from any count.
+  3b. Every title chip in `uncovered_titles` / `marginal[*].titles` / `ranked_all[*].titles`
+      is a `{id, title, status}` dict carrying the REAL anime id (#271 — makes the
+      title clickable through to `/anime/{id}/notes`), not a bare string, and the id
+      is verified to match the right anime, not just "some id present".
   4. Per-owned-service marginal/unique contribution: a service redundant with another
      owned service reports zero unique titles.
   5. The full ranked list includes every STREAMING_SITES entry, owned and unowned,
@@ -246,6 +250,12 @@ def _seed_realistic_library(pg_conn):
     _set_owned(pg_conn, ["Crunchyroll", "Netflix", "Hulu"])
 
 
+def _titles(chips):
+    """Extract the bare title strings from a list of {id, title, status} chip dicts,
+    for tests that only care about which titles are present, not their ids."""
+    return {c["title"] for c in chips}
+
+
 def test_universe_includes_watching_planning_and_upcoming_excludes_completed(
     pg_conn, app_module, _seeded_user
 ):
@@ -280,7 +290,10 @@ def test_setcover_uncovered_bucket_is_explicit_not_silently_dropped(
 
     result = app_module._compute_streaming_setcover(USER_ID)
 
-    assert result["uncovered_titles"] == ["T7"]
+    # {id, title, status} dicts (#271), not bare strings — and the id must be the
+    # REAL anime id (T7 was inserted as anime id 7), so the template's link to
+    # /anime/{id}/notes actually points at the right title.
+    assert result["uncovered_titles"] == [{"id": 7, "title": "T7", "status": "WATCHING"}]
     # Universe size counts every tracked title, covered or not.
     assert result["universe_size"] == 8
 
@@ -298,12 +311,13 @@ def test_setcover_marginal_contribution_zero_for_redundant_service(
     # zero titles reachable ONLY through Netflix among the owned services.
     assert marginal["Netflix"]["count"] == 0
     assert marginal["Netflix"]["titles"] == []
-    # Hulu uniquely covers T4 (T5 is shared with Crunchyroll).
+    # Hulu uniquely covers T4 (T5 is shared with Crunchyroll). {id, title, status}
+    # dicts now (#271) — assert the real anime id (4), not just the title string.
     assert marginal["Hulu"]["count"] == 1
-    assert marginal["Hulu"]["titles"] == ["T4"]
+    assert marginal["Hulu"]["titles"] == [{"id": 4, "title": "T4", "status": "PLANNING"}]
     # Crunchyroll uniquely covers T2 (T1/T3 shared w/ Netflix, T5 shared w/ Hulu).
     assert marginal["Crunchyroll"]["count"] == 1
-    assert marginal["Crunchyroll"]["titles"] == ["T2"]
+    assert marginal["Crunchyroll"]["titles"] == [{"id": 2, "title": "T2", "status": "WATCHING"}]
 
 
 def test_setcover_full_ranked_list_has_no_threshold_cutoff(pg_conn, app_module, _seeded_user):
@@ -322,9 +336,13 @@ def test_setcover_full_ranked_list_has_no_threshold_cutoff(pg_conn, app_module, 
     assert ranked["Bilibili TV"]["owned"] is False
 
     # Title-level breakdown, not just a count — this is the exact bilibili gap #255
-    # calls out by name.
+    # calls out by name. {id, title, status} dicts now (#271) — check both the
+    # title set AND that every chip's id is the real matching anime id.
     assert ranked["Bilibili TV"]["count"] == 5
-    assert set(ranked["Bilibili TV"]["titles"]) == {"T1", "T2", "T3", "T4", "T6"}
+    assert _titles(ranked["Bilibili TV"]["titles"]) == {"T1", "T2", "T3", "T4", "T6"}
+    assert {c["id"]: c["title"] for c in ranked["Bilibili TV"]["titles"]} == {
+        1: "T1", 2: "T2", 3: "T3", 4: "T4", 6: "T6",
+    }
 
     assert ranked["Crunchyroll"]["count"] == 4
     assert ranked["Hulu"]["count"] == 2
@@ -436,3 +454,11 @@ def test_streaming_page_renders_setcover_sections(pg_conn, app_module, client):
 
     # Nav tab present and marked active on this page.
     assert 'href="/streaming"' in resp.text
+
+    # #271: every title chip now links through to its real /anime/{id}/notes page
+    # (id 1 = "Shared Title", id 2 = "Bilibili Exclusive") with the title's own
+    # status threaded through as ?back=, not a bare unlinked <span>.
+    assert '<a href="/anime/1/notes?back=WATCHING"' in resp.text
+    assert '<a href="/anime/2/notes?back=PLANNING"' in resp.text
+    assert '<span class="drop-tag-chip">Shared Title</span>' not in resp.text
+    assert '<span class="drop-tag-chip">Bilibili Exclusive</span>' not in resp.text

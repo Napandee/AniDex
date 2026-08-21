@@ -78,7 +78,7 @@
     <details class="streaming-title-details">
       <summary>{% if sc_uncovered_titles | length == 1 %}{{ t('streaming_titles_singular', count=sc_uncovered_titles | length) }}{% else %}{{ t('streaming_titles_plural', count=sc_uncovered_titles | length) }}{% endif %}</summary>
       <div class="drop-tag-cloud">
-        {% for title in sc_uncovered_titles %}<span class="drop-tag-chip">{{ title }}</span>{% endfor %}
+        {% for t in sc_uncovered_titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
       </div>
     </details>
     {% else %}
@@ -102,7 +102,7 @@
         </summary>
         {% if m.titles %}
         <div class="drop-tag-cloud">
-          {% for title in m.titles %}<span class="drop-tag-chip">{{ title }}</span>{% endfor %}
+          {% for t in m.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
         </div>
         {% else %}
         <p class="settings-section-desc">{{ t('streaming_marginal_zero_unique') }}</p>
@@ -147,7 +147,7 @@
         </summary>
         {% if r.titles %}
         <div class="drop-tag-cloud">
-          {% for title in r.titles %}<span class="drop-tag-chip">{{ title }}</span>{% endfor %}
+          {% for t in r.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
         </div>
         {% else %}
         <p class="settings-section-desc">{{ t('streaming_full_ranked_zero_titles') }}</p>

@@ -3762,7 +3762,8 @@ def _compute_streaming_calendar(user_id: int) -> dict:
 def _streaming_universe(user_id: int) -> list[dict]:
     rows = db.fetchall(
         """
-        SELECT le.anime_id AS id, a.title_english, a.title_romaji, a.external_links
+        SELECT le.anime_id AS id, a.title_english, a.title_romaji, a.external_links,
+               le.status
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         WHERE le.user_id = %s
@@ -3787,6 +3788,7 @@ def _streaming_universe(user_id: int) -> list[dict]:
             "id": row["id"],
             "title": row["title_english"] or row["title_romaji"],
             "sites": sites,
+            "status": row["status"],
         })
     return universe
 
@@ -3824,6 +3826,20 @@ def _greedy_set_cover(services: list[str], universe_ids: set, id_to_sites: dict)
     return selected
 
 
+def _title_pairs(ids, id_to_title: dict, id_to_status: dict) -> list[dict]:
+    """{id, title, status} pairs, title-sorted — shared shape for every
+    title-chip list `_compute_streaming_setcover` returns (#271: threads the
+    anime id through so the template can link each chip to
+    /anime/{id}/notes, instead of the bare title strings it used to return)."""
+    return sorted(
+        (
+            {"id": aid, "title": id_to_title[aid], "status": id_to_status[aid]}
+            for aid in ids
+        ),
+        key=lambda t: t["title"],
+    )
+
+
 def _compute_streaming_setcover(user_id: int) -> dict:
     """Shared by GET /streaming. A distinct read-model from _compute_streaming_coverage
     above (title-level and combination-framed, not episodes-remaining/per-service) but
@@ -3838,10 +3854,19 @@ def _compute_streaming_setcover(user_id: int) -> dict:
     covered = [t for t in universe if t["sites"]]
     # Titles on no recognized streaming service at all — never silently dropped
     # from the count (#255 acceptance criteria: an explicit, honest bucket).
-    uncovered_titles = sorted(t["title"] for t in universe if not t["sites"])
+    # {id, title} pairs (not bare strings, #271) so the template can link each
+    # chip through to that title's real /anime/{id}/notes page.
+    uncovered_titles = sorted(
+        (
+            {"id": t["id"], "title": t["title"], "status": t["status"]}
+            for t in universe if not t["sites"]
+        ),
+        key=lambda t: t["title"],
+    )
 
     id_to_sites = {t["id"]: t["sites"] for t in covered}
     id_to_title = {t["id"]: t["title"] for t in covered}
+    id_to_status = {t["id"]: t["status"] for t in covered}
 
     owned_coverable_ids = {t["id"] for t in covered if t["sites"] & owned}
     owned_total_covered = len(owned_coverable_ids)
@@ -3863,7 +3888,7 @@ def _compute_streaming_setcover(user_id: int) -> dict:
         marginal.append({
             "service": svc,
             "count": len(unique_ids),
-            "titles": sorted(id_to_title[aid] for aid in unique_ids),
+            "titles": _title_pairs(unique_ids, id_to_title, id_to_status),
         })
 
     # Full ranked list of every allowlisted service, owned or not — no coverage
@@ -3876,7 +3901,7 @@ def _compute_streaming_setcover(user_id: int) -> dict:
             "owned": svc in owned,
             "count": len(ids),
             "pct": round(len(ids) / len(covered) * 100, 1) if covered else 0.0,
-            "titles": sorted(id_to_title[aid] for aid in ids),
+            "titles": _title_pairs(ids, id_to_title, id_to_status),
         })
     ranked_all.sort(key=lambda r: (-r["count"], r["service"]))
 
