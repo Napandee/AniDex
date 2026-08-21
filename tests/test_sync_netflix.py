@@ -275,6 +275,39 @@ def _capture(monkeypatch):
     return calls
 
 
+def test_new_tv_entry_creates_watching_status_at_detected_episode(monkeypatch):
+    # Issue #252 — the resolved decision: a brand-new entry (status=None is
+    # main()'s create sentinel, built by resolve_or_create_user_list_entry() for
+    # an incremental sync's unmatched-title case) defaults to WATCHING at the
+    # detected episode, not left implicit and not just a bare progress bump.
+    # Shaped after the actual issue #252 case (a rewatch on a title with no
+    # existing AniList entry): entry.progress=0, watched["episode"] = new_count
+    # since main() computes it as entry["progress"] + new_count = 0 + new_count.
+    calls = _capture(monkeypatch)
+    entry = _entry(status=None, progress=0, repeat=0, total=None)
+    result = nf.process(
+        "The Testament of Sister New Devil",
+        _watched(episode=3, new_count=3),
+        entry, None, conn=None,
+    )
+    assert "new" in result.lower()
+    assert ("update", 42, {"progress": 3, "status": "WATCHING"}) in calls
+    assert ("save", 42, False) in calls
+
+
+def test_new_entry_branch_checked_before_movie_dispatch(monkeypatch):
+    # status=None must win even for a MOVIE watch — otherwise it would hit the
+    # MOVIE branch's al_ep < 1 case and get marked COMPLETED instead of the
+    # resolved WATCHING default.
+    calls = _capture(monkeypatch)
+    entry = _entry(status=None, progress=0, repeat=0, total=1)
+    result = nf.process(
+        "Some New Movie", _watched(fmt="MOVIE", episode=1, new_count=1), entry, None, conn=None,
+    )
+    assert ("update", 42, {"progress": 1, "status": "WATCHING"}) in calls
+    assert "COMPLETED" not in result
+
+
 def test_movie_first_watch_marks_completed(monkeypatch):
     calls = _capture(monkeypatch)
     entry = _entry(status="PLANNING", progress=0, total=1)

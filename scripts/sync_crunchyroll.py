@@ -55,8 +55,8 @@ import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    enqueue_outbox_update, find_anilist_id, load_user_list_from_db, seed_search_cache,
-    season_suffix_candidates,
+    enqueue_outbox_update, find_anilist_id, load_user_list_from_db,
+    resolve_or_create_user_list_entry, seed_search_cache, season_suffix_candidates,
 )
 
 load_dotenv()
@@ -481,6 +481,20 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     last_ep = cr_state["last_seen_episode"] if cr_state else al_ep
     rewatch_active = cr_state["rewatch_in_progress"] if cr_state else False
 
+    # ── Issue #252: brand-new AniList entry, not yet on the user's list ──────
+    # main() only ever builds a synthetic entry (for an incremental sync's
+    # unmatched-title case) with status=None — a real AniList entry's status is
+    # never None, so this is an unambiguous "create" sentinel. Must be checked
+    # before every other branch below: status=None satisfies none of their
+    # equality checks, so without this it would silently fall through to the
+    # generic progress-advance branch at the bottom, which only sets progress —
+    # missing the resolved decision that a newly-created entry defaults to
+    # WATCHING, not whatever AniList defaults an id-less SaveMediaListEntry to.
+    if status is None:
+        _update(conn, anilist_id, progress=cr_ep, status="WATCHING")
+        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        return f"new AniList entry created → WATCHING ep {cr_ep}"
+
     # ── First-time seeing a COMPLETED series in CR history ────────────────────
     # Without prior state we can't safely distinguish "rewatch" from "first sync".
     # Record state and do nothing — next sync will have a baseline.
@@ -576,6 +590,11 @@ def main():
     else:
         log("Full walk not yet complete — re-walking full history this run")
         watermark = None
+    # Issue #252 — a full-pull run (initial connect OR a user-triggered Force Full
+    # Resync, #20 — both land here via watermark being None) keeps the conservative
+    # skip-if-untracked behavior below; only a genuine day-to-day incremental sync
+    # (watermark is not None) is allowed to auto-create a new AniList entry.
+    full_pull = watermark is None
     log(f"Fetching Crunchyroll watch history since {watermark or '(no watermark — full walk)'}")
 
     client = CrunchyrollHistory(CRUNCHYROLL_ETP_RT)
@@ -598,7 +617,7 @@ def main():
             log("Reached true end of Crunchyroll history — full walk marked complete")
         log("No new activity — nothing to do")
         conn.close()
-        _emit_result(0, len(raw_items), watermark is None)
+        _emit_result(0, len(raw_items), full_pull)
         sys.exit(0)
 
     # Issue #99 — reads the local library_entries mirror instead of making our own
@@ -653,10 +672,18 @@ def main():
             skipped += 1
             continue
 
-        if media_id not in user_list:
+        # Issue #252 — incremental sync: genuinely new watch activity for a title
+        # that isn't tracked yet should originate a new AniList entry instead of
+        # being silently dropped forever. Full-pull runs (initial connect or a
+        # Force Full Resync, #20) keep the original skip behavior. See
+        # resolve_or_create_user_list_entry()'s docstring for the full decision.
+        decision = resolve_or_create_user_list_entry(media_id, title, user_list, full_pull, conn)
+        if decision == "skip":
             log(f"  ✗ Not in your AniList: '{label}'")
             skipped += 1
             continue
+        if decision == "create":
+            log(f"  + Not yet tracked — creating a new AniList entry: '{label}'")
 
         watched_at = _parse_watched_at(data.get("watched_at"))
         if watched_at:
@@ -689,7 +716,7 @@ def main():
     conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
         f"({index_hits} index hits, {search_hits} API searches, {override_hits} manual overrides)")
-    _emit_result(updated, len(raw_items), watermark is None)
+    _emit_result(updated, len(raw_items), full_pull)
 
 
 if __name__ == "__main__":
