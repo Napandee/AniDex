@@ -1776,15 +1776,51 @@ body.auth-page main {
 
 .queue-title { font-size: 0.95rem; font-weight: 600; color: var(--t1); }
 
-.queue-badges { display: flex; gap: 0.4rem; flex-shrink: 0; align-items: center; }
+/* ── Action column layout (issue #269) ──────────────────────────────────────
+   Before this pass, .queue-badges (rank/status/rewatch/AniList-link) lived
+   inside .queue-top, right-aligned against the title row, while the actual
+   action buttons lived in a separate .queue-actions flex child further to
+   the right. The two groups sat visually adjacent — read as one pile of
+   mismatched controls — without being one real container, so nothing about
+   spacing/alignment/color was actually shared between them.
+
+   Two options were considered:
+     (A) Flatten everything to a single row of icon-only chips (max density,
+         matching the AniList link's existing icon-only pattern).
+     (B) Keep Watched/Move to Planning/Start Rewatch as labeled buttons —
+         they change real state and issue #269 explicitly keeps their
+         behavior unchanged, so discoverability matters more than density —
+         but group all read-only metadata into one badge tier, all actions
+         into one button tier, in a single .queue-side column, and shrink
+         Notes (already redundant with the whole card being click-through
+         per #259) down to an icon-only chip matching AniList's.
+
+   (B) was chosen: it fixes the actual complaint (no shared container, no
+   shared color language) without touching the labeled buttons an issue
+   explicitly asked to leave alone. Color is now deliberate rather than
+   accidental: teal = priority rank, neutral/orange = status, violet =
+   rewatch count AND the notes action (same "personal layer" family), blue =
+   AniList's external-link family (both the badge-row icon and the
+   Move to Planning / Start Rewatch "advance status" buttons), green =
+   Watched, the one true completion action. */
+.queue-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.queue-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.35rem; align-items: center; }
 
 .badge-priority {
   font-size: 0.7rem;
   font-weight: 700;
   padding: 0.15rem 0.5rem;
-  background: var(--accent);
-  color: #fff;
   border-radius: 999px;
+  border: 1px solid var(--pill-teal-border);
+  background: var(--pill-teal-bg);
+  color: var(--pill-teal-text-strong);
 }
 
 .badge-status {
@@ -2606,10 +2642,31 @@ a.drop-tag-chip-link:focus-visible {
 /* ── Queue actions ──────────────────────────────────────────────────────────── */
 .queue-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-shrink: 0;
+}
+
+/* Queue-only sizing harmonization so Watched and Move to Planning/Start
+   Rewatch read as one matched button family instead of two slightly
+   different widths — scoped to .queue-actions rather than edited on the
+   shared .btn-add-planning rule below, since that rule also styles the
+   "Add to Planning" button on rec-cards elsewhere and must stay untouched. */
+.queue-actions .btn-move-planning,
+.queue-actions .btn-start-rewatch {
+  padding: 0.35rem 0.6rem;
+}
+
+/* Notes was the widest, least-necessary-as-text control in the old stack —
+   the whole card is already click-through to notes (#259) and this link
+   only needs to exist as a discoverable fallback + keyboard target, so it
+   drops its label and matches .btn-anilist-sm's icon-only footprint. */
+.queue-actions .btn-notes-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-mark-watched {

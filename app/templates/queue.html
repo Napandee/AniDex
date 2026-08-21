@@ -62,16 +62,6 @@
           <div class="title-sub">{{ e.title_romaji }}</div>
           {% endif %}
         </div>
-        <div class="queue-badges">
-          {% if e.watch_next_priority %}
-          <span class="badge-priority">#{{ e.watch_next_priority }}</span>
-          {% endif %}
-          <span class="badge-status badge-{{ e.status | lower }}">{{ t('status_' + e.status.lower()) }}</span>
-          {% if e.repeat_count %}
-          <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
-          {% endif %}
-          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
-        </div>
       </div>
 
       <div class="queue-meta">
@@ -118,15 +108,32 @@
       {% endif %}
     </div>
 
-    <div class="queue-actions">
-      <button class="btn-mark-watched"
-              data-anime-id="{{ e.id }}"
-              data-episodes="{{ e.episodes or '' }}">✓ {{ t('queue_watched_btn') }}</button>
-      {% if e.status == 'PAUSED' %}
-      <button class="btn-move-planning"
-              data-anime-id="{{ e.id }}">→ {{ t('queue_move_planning_btn') }}</button>
-      {% endif %}
-      <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="btn-notes-sm" title="{{ t('queue_notes_edit_title') }}">📝 {{ t('queue_notes_link_label') }}</a>
+    {# ── Action column (issue #269) ─────────────────────────────────────────
+       Two grouped tiers rather than one flat stack: read-only metadata
+       (rank/status/rewatch-count/AniList link) on top, state-changing
+       actions (Watched / Move to Planning / Notes) below. See the fuller
+       layout-decision writeup above .queue-side in style.css. #}
+    <div class="queue-side">
+      <div class="queue-badges">
+        {% if e.watch_next_priority %}
+        <span class="badge-priority">#{{ e.watch_next_priority }}</span>
+        {% endif %}
+        <span class="badge-status badge-{{ e.status | lower }}">{{ t('status_' + e.status.lower()) }}</span>
+        {% if e.repeat_count %}
+        <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
+        {% endif %}
+        <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+      </div>
+      <div class="queue-actions">
+        <button class="btn-mark-watched"
+                data-anime-id="{{ e.id }}"
+                data-episodes="{{ e.episodes or '' }}">✓ {{ t('queue_watched_btn') }}</button>
+        {% if e.status == 'PAUSED' %}
+        <button class="btn-move-planning"
+                data-anime-id="{{ e.id }}">→ {{ t('queue_move_planning_btn') }}</button>
+        {% endif %}
+        <a href="/anime/{{ e.id }}/notes?back=PLANNING" class="btn-notes-sm" title="{{ t('queue_notes_edit_title') }}" aria-label="{{ t('queue_notes_link_label') }}">📝</a>
+      </div>
     </div>
   </li>
   {% endfor %}
@@ -159,12 +166,6 @@
             {% if e.title_english and e.title_english != e.title_romaji %}
             <div class="title-sub">{{ e.title_romaji }}</div>
             {% endif %}
-          </div>
-          <div class="queue-badges">
-            {% if e.repeat_count %}
-            <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
-            {% endif %}
-            <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
           </div>
         </div>
 
@@ -203,9 +204,17 @@
         {% endif %}
       </div>
 
-      <div class="queue-actions">
-        <button class="btn-start-rewatch" data-anime-id="{{ e.id }}">{{ t('queue_rewatch_start_btn') }}</button>
-        <a href="/anime/{{ e.id }}/notes?back=COMPLETED" class="btn-notes-sm" title="{{ t('queue_notes_edit_title') }}">📝 {{ t('queue_notes_link_label') }}</a>
+      <div class="queue-side">
+        <div class="queue-badges">
+          {% if e.repeat_count %}
+          <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
+          {% endif %}
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+        </div>
+        <div class="queue-actions">
+          <button class="btn-start-rewatch" data-anime-id="{{ e.id }}">{{ t('queue_rewatch_start_btn') }}</button>
+          <a href="/anime/{{ e.id }}/notes?back=COMPLETED" class="btn-notes-sm" title="{{ t('queue_notes_edit_title') }}" aria-label="{{ t('queue_notes_link_label') }}">📝</a>
+        </div>
       </div>
     </li>
     {% endfor %}
