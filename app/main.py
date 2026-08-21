@@ -2718,11 +2718,22 @@ def _fetch_visible_recommendations(user_id: int) -> list[dict]:
     the new seasonal discovery digest. The LIMIT is applied per-source (via
     ROW_NUMBER) rather than globally, so a season with a lot of new releases can't
     starve out the similarity picks (or vice versa) — both get their own top-100
-    budget, sorted by score within each."""
+    budget, sorted by score within each.
+
+    Issue #254: `from_planning` is a separate, live signal from `source` — it's not
+    stored on `recommendation_scores` at all, since run_recommender.py's candidate
+    fetch/scoring logic deliberately isn't touched by this (presentation-only fix).
+    A candidate discovered via the user's own PLANNING list gets written with
+    source='similarity', identically to a genuine AniList-recommendations pick —
+    that's still correct for scoring purposes, but reads on the page as "the app
+    doesn't know I already have this". The LEFT JOIN below checks the *current*
+    library_entries status instead of freezing a label at the last recommender run,
+    so it stays accurate even if the user later removes the item from Planning."""
     return db.fetchall(
         """
         SELECT id, title_english, title_romaji, cover_image_url, format, episodes,
-               average_score, genres, season, season_year, rec_score, reason, source
+               average_score, genres, season, season_year, rec_score, reason, source,
+               from_planning
         FROM (
             SELECT
                 a.id,
@@ -2738,9 +2749,12 @@ def _fetch_visible_recommendations(user_id: int) -> list[dict]:
                 rs.score  AS rec_score,
                 rs.reason,
                 rs.source,
+                (le.id IS NOT NULL) AS from_planning,
                 ROW_NUMBER() OVER (PARTITION BY rs.source ORDER BY rs.score DESC) AS rn
             FROM recommendation_scores rs
             JOIN anime a ON a.id = rs.anime_id
+            LEFT JOIN library_entries le
+                ON le.anime_id = a.id AND le.user_id = rs.user_id AND le.status = 'PLANNING'
             WHERE rs.dismissed = false
               AND (rs.snoozed_until IS NULL OR rs.snoozed_until <= now())
               AND rs.user_id = %s

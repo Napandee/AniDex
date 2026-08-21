@@ -481,6 +481,8 @@
   "rec_anilist_votes_display_singular": "{count}人のAniListユーザーが同意",
   "rec_anilist_votes_display_plural": "{count}人のAniListユーザーが同意",
   "rec_add_planning_btn": "+ 視聴予定",
+  "rec_planning_badge": "キュー登録済み",
+  "rec_planning_badge_title": "すでに視聴予定リストに登録済みです — 新しい発見ではなく、「次に見る」で優先表示できるようスコアが付いています",
   "rec_dismiss_label": "除外：",
   "rec_dismiss_not_interested": "興味なし",
   "rec_dismiss_seen_it": "視聴済み",

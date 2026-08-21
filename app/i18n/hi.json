@@ -481,6 +481,8 @@
   "rec_anilist_votes_display_singular": "{count} AniList उपयोगकर्ता सहमत है",
   "rec_anilist_votes_display_plural": "{count} AniList उपयोगकर्ता सहमत हैं",
   "rec_add_planning_btn": "+ योजना",
+  "rec_planning_badge": "आपकी कतार में",
+  "rec_planning_badge_title": "पहले से ही आपकी योजना सूची में है — यह कोई नई खोज नहीं है, बस \"आगे देखें\" में प्राथमिकता देने के लिए स्कोर किया गया है",
   "rec_dismiss_label": "खारिज करें:",
   "rec_dismiss_not_interested": "रुचि नहीं",
   "rec_dismiss_seen_it": "देख लिया",

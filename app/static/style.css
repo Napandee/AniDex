@@ -2448,6 +2448,24 @@ a.drop-tag-chip-link:focus-visible {
   backdrop-filter: blur(4px);
 }
 
+/* Issue #254 — "In your queue" chip for a Planning-sourced recommendation, so it
+   doesn't read as an actual new discovery (the app already knows it's queued).
+   Reuses the violet "already in library" token .related-in-library established
+   for the same "you already have this" meaning elsewhere in the app, kept
+   deliberately distinct from both .rec-score-badge (blue) and
+   .match-percent-chip (green success) so it can't be mistaken for either. */
+.rec-planning-chip {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--pill-violet-text-strong);
+  background: var(--pill-violet-bg);
+  border: 1px solid var(--pill-violet-border);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  margin-bottom: 0.25rem;
+}
+
 /* ── Rec card body layout ─────────────────────────────────────────────────── */
 .rec-body {
   display: flex;
