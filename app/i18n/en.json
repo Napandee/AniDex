@@ -3,6 +3,7 @@
   "nav_upcoming": "Upcoming",
   "nav_queue": "Queue",
   "nav_recommended": "Recommended",
+  "nav_streaming": "Streaming",
   "nav_stats": "Stats",
   "nav_search_placeholder": "Search…",
   "nav_settings_title": "Settings",
@@ -696,6 +697,35 @@
   "streaming_owned_title": "Services you own",
   "streaming_owned_empty": "You haven't set which streaming services you own yet.",
   "streaming_owned_manage_link": "Manage in Settings →",
+
+  "streaming_universe_title": "Your coverage universe",
+  "streaming_universe_desc": "Every title in Watching, Planning, or with an episode still airing that you're tracking (Completed excluded) — the full set your coverage is measured against.",
+  "streaming_universe_count_label": "Titles in this universe",
+
+  "streaming_minimal_title": "Minimum services to keep everything",
+  "streaming_minimal_desc": "The smallest combination of services you already own that keeps access to everything reachable at all (greedy set-cover, not guaranteed globally optimal).",
+  "streaming_minimal_none_owned": "You haven't set which streaming services you own yet — see Settings.",
+  "streaming_minimal_coverage_label": "Covers",
+  "streaming_minimal_fully_uncovered": "None of your owned services cover anything in your coverage universe.",
+
+  "streaming_uncovered_title": "Not available anywhere we know of",
+  "streaming_uncovered_desc": "These titles aren't on any recognized streaming service per AniList's data — no service, owned or not, would unlock them.",
+  "streaming_uncovered_empty": "Every title in your coverage universe is on at least one recognized streaming service.",
+
+  "streaming_marginal_title": "What each service you own uniquely covers",
+  "streaming_marginal_desc": "For each service you own, the titles only reachable through that one — what you'd lose by dropping it.",
+  "streaming_marginal_none_owned": "Set which streaming services you own in Settings to see this.",
+  "streaming_marginal_zero_unique": "Nothing unique here — every title it covers is also on another service you own.",
+
+  "streaming_swap_title": "Consider swapping",
+  "streaming_swap_desc": "An un-owned service whose coverage alone matches or beats what your owned services cover combined.",
+  "streaming_swap_none": "No un-owned service matches or beats what your owned services already cover together.",
+  "streaming_swap_line": "{service} alone covers {count} — as much as, or more than, your {owned_count} owned service(s) cover combined ({owned_total}).",
+
+  "streaming_full_ranked_title": "Every streaming service, ranked",
+  "streaming_full_ranked_desc": "All recognized services, owned or not, ranked by coverage of your universe — no cutoff.",
+  "streaming_full_ranked_empty_universe": "Your coverage universe is empty — nothing in Watching, Planning, or airing soon yet.",
+  "streaming_full_ranked_zero_titles": "Doesn't cover anything in your coverage universe.",
 
   "streaming_ranked_title": "If you added…",
   "streaming_ranked_empty_no_owned": "Set which streaming services you already own in Settings to see personalized coverage.",

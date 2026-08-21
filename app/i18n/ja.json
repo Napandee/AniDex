@@ -3,6 +3,7 @@
   "nav_upcoming": "放送予定",
   "nav_queue": "キュー",
   "nav_recommended": "おすすめ",
+  "nav_streaming": "配信",
   "nav_stats": "統計",
   "nav_search_placeholder": "検索…",
   "nav_settings_title": "設定",
@@ -696,6 +697,35 @@
   "streaming_owned_title": "契約中のサービス",
   "streaming_owned_empty": "契約中の配信サービスがまだ設定されていません。",
   "streaming_owned_manage_link": "設定で管理 →",
+
+  "streaming_universe_title": "あなたのカバレッジ対象",
+  "streaming_universe_desc": "視聴中・視聴予定、またはまだ放送されていないエピソードがある追跡中の作品すべて（完了は除く）— カバレッジの計算対象となる全体集合です。",
+  "streaming_universe_count_label": "対象作品数",
+
+  "streaming_minimal_title": "すべてを維持するために必要な最小サービス",
+  "streaming_minimal_desc": "契約中のサービスのうち、到達可能なものすべてへのアクセスを維持できる最小の組み合わせ（貪欲法によるセットカバー — 必ずしも最適とは限りません）。",
+  "streaming_minimal_none_owned": "契約中の配信サービスがまだ設定されていません — 設定を確認してください。",
+  "streaming_minimal_coverage_label": "カバー範囲",
+  "streaming_minimal_fully_uncovered": "契約中のサービスは、あなたのカバレッジ対象を何もカバーしていません。",
+
+  "streaming_uncovered_title": "把握している範囲では配信されていない作品",
+  "streaming_uncovered_desc": "AniListのデータ上、これらの作品はどの既知の配信サービスにも見つかりません — 契約の有無を問わず、どのサービスでも視聴できません。",
+  "streaming_uncovered_empty": "カバレッジ対象の作品はすべて、少なくとも1つの既知の配信サービスで視聴できます。",
+
+  "streaming_marginal_title": "契約中の各サービスが独自にカバーしているもの",
+  "streaming_marginal_desc": "契約中の各サービスについて、そのサービスでしか視聴できない作品 — 解約すると失うものです。",
+  "streaming_marginal_none_owned": "これを見るには、設定で契約中の配信サービスを設定してください。",
+  "streaming_marginal_zero_unique": "このサービス独自の作品はありません — カバーしている作品はすべて他の契約中サービスでも視聴できます。",
+
+  "streaming_swap_title": "乗り換えの検討",
+  "streaming_swap_desc": "契約していないサービス単体で、契約中のサービス全体のカバー範囲と同等以上になるものです。",
+  "streaming_swap_none": "契約中のサービス全体のカバー範囲と同等以上になる未契約サービスはありません。",
+  "streaming_swap_line": "{service}単体で{count}件をカバー — 契約中の{owned_count}件のサービス合計（{owned_total}件）と同等以上です。",
+
+  "streaming_full_ranked_title": "すべての配信サービスをランキング",
+  "streaming_full_ranked_desc": "契約の有無を問わず、既知のサービスすべてをカバレッジ対象への網羅度で順位付け — 足切りなし。",
+  "streaming_full_ranked_empty_universe": "カバレッジ対象がまだありません — 視聴中・視聴予定・近日放送の作品がまだありません。",
+  "streaming_full_ranked_zero_titles": "このサービスはカバレッジ対象を何もカバーしていません。",
 
   "streaming_ranked_title": "追加した場合…",
   "streaming_ranked_empty_no_owned": "パーソナライズされたカバレッジを見るには、設定で契約中の配信サービスを設定してください。",
