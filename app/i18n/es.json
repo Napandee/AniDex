@@ -274,6 +274,10 @@
   "upcoming_view_list_btn": "Lista",
   "upcoming_view_grid_btn": "Cuadrícula semanal",
   "upcoming_grid_empty": "Nada en emisión",
+  "upcoming_grid_nav_label": "Navegación semanal",
+  "upcoming_grid_prev_btn": "Ant.",
+  "upcoming_grid_next_btn": "Sig.",
+  "upcoming_grid_today_btn": "Hoy",
   "upcoming_empty": "No hay próximos episodios — nada emitiéndose actualmente en tu lista.",
 
   "title_queue": "Cola de visualización — Anime Tracker",

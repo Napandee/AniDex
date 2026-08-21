@@ -274,6 +274,10 @@
   "upcoming_view_list_btn": "列表",
   "upcoming_view_grid_btn": "每周网格",
   "upcoming_grid_empty": "暂无播出",
+  "upcoming_grid_nav_label": "周导航",
+  "upcoming_grid_prev_btn": "上一周",
+  "upcoming_grid_next_btn": "下一周",
+  "upcoming_grid_today_btn": "本周",
   "upcoming_empty": "没有即将播出的剧集——你的列表中当前没有正在播出的作品。",
 
   "title_queue": "观看队列 — Anime Tracker",

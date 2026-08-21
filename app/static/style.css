@@ -1872,11 +1872,30 @@ body.auth-page main {
   gap: 0.75rem;
   align-items: start;
 }
-/* .upcoming-grid's `display: grid` is an author-stylesheet rule, which the cascade
-   ranks above the browser's default `[hidden] { display: none }` UA rule regardless
-   of selector specificity — so the bare class alone would never actually hide this
-   element. This higher-specificity attribute-selector override restores it. */
+/* #upcoming-grid-view is the JS-toggled wrapper (plain `hidden` attribute, no
+   competing author `display` rule on the wrapper itself since #256 moved
+   `display: grid` onto the nested .upcoming-grid) — kept as a defensive override in
+   case a future author rule ever lands directly on the wrapper again. */
 #upcoming-grid-view[hidden] { display: none; }
+
+.upcoming-grid-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+.upcoming-grid-nav-btn.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+.upcoming-grid-week-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--t3);
+  margin-right: auto;
+}
 
 .upcoming-grid-day {
   background: var(--bg-inset);
