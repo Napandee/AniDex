@@ -17,16 +17,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=57 — bumped for #257's month-grid CSS, which merged (PR #275)
-       without bumping this value, leaving browsers with an already-cached
-       style.css silently stuck on the pre-#257 stylesheet. See the
-       superseded v=51/v=54/v=56 comments for why this needs bumping on
+  <!-- v=58 — bumped for #268's credential-card collapse fix. See the
+       superseded v=51/v=54/v=56/v=57 comments for why this needs bumping on
        every style.css change in this repo: several parallel branches land
        CSS independently and a stale cache-bust value silently serves an old
-       stylesheet to a browser that already cached the previous version.
-       Re-check this against origin/main right before merging — another
-       parallel PR may have already claimed v=57. -->
-  <link rel="stylesheet" href="/static/style.css?v=57">
+       stylesheet to a browser that already cached the previous version — v=57
+       itself only exists because #275 skipped this exact step. Re-check this
+       against origin/main right before merging — another parallel PR may have
+       already claimed v=58. -->
+  <link rel="stylesheet" href="/static/style.css?v=58">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=26 — same #257/PR #275 gap as style.css above: the month-toggle
        click-handler wiring shipped in script.js without bumping this value,
