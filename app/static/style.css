@@ -1882,6 +1882,10 @@ body.auth-page main {
   gap: 0.6rem;
   margin-bottom: 0.9rem;
 }
+.upcoming-grid-nav-btn {
+  display: inline-block;
+  text-decoration: none;
+}
 .upcoming-grid-nav-btn.is-disabled {
   opacity: 0.4;
   cursor: default;
