@@ -32,6 +32,131 @@
     <p class="streaming-manage-link"><a href="/settings?tab=sync">{{ t('streaming_owned_manage_link') }}</a></p>
   </div>
 
+  {# ── Set-cover recommendation (issue #255, v3) ──────────────────────────────
+     Coverage universe = Watching + Planning + Upcoming (Completed excluded), see
+     _compute_streaming_setcover's docstring in app/main.py. Deliberately placed
+     ahead of #182's per-service marginal-value ranking below — this is the
+     sharper "what do I actually need" answer #22's brainstorm originally deferred. #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_universe_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_universe_desc') }}</p>
+    <p class="streaming-summary-line">
+      <span class="streaming-summary-item">
+        {{ t('streaming_universe_count_label') }}:
+        <strong>{% if sc_universe_size == 1 %}{{ t('streaming_titles_singular', count=sc_universe_size) }}{% else %}{{ t('streaming_titles_plural', count=sc_universe_size) }}{% endif %}</strong>
+      </span>
+    </p>
+  </div>
+
+  {# ── Minimal owned-combination recommendation ───────────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_minimal_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_minimal_desc') }}</p>
+
+    {% if not owned_services %}
+    <p class="settings-section-desc">{{ t('streaming_minimal_none_owned') }}</p>
+    {% elif sc_minimal_combination %}
+    <div class="genre-list streaming-owned-list">
+      {% for s in sc_minimal_combination %}<span class="genre">{{ s }}</span>{% endfor %}
+    </div>
+    <p class="streaming-summary-line">
+      <span class="streaming-summary-item">
+        {{ t('streaming_minimal_coverage_label') }}:
+        <strong>{% if sc_owned_total_covered == 1 %}{{ t('streaming_titles_singular', count=sc_owned_total_covered) }}{% else %}{{ t('streaming_titles_plural', count=sc_owned_total_covered) }}{% endif %}</strong>
+      </span>
+    </p>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_minimal_fully_uncovered') }}</p>
+    {% endif %}
+  </div>
+
+  {# ── Honest "not available anywhere we know of" bucket — never silently omitted #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_uncovered_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_uncovered_desc') }}</p>
+    {% if sc_uncovered_titles %}
+    <details class="streaming-title-details">
+      <summary>{% if sc_uncovered_titles | length == 1 %}{{ t('streaming_titles_singular', count=sc_uncovered_titles | length) }}{% else %}{{ t('streaming_titles_plural', count=sc_uncovered_titles | length) }}{% endif %}</summary>
+      <div class="drop-tag-cloud">
+        {% for title in sc_uncovered_titles %}<span class="drop-tag-chip">{{ title }}</span>{% endfor %}
+      </div>
+    </details>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_uncovered_empty') }}</p>
+    {% endif %}
+  </div>
+
+  {# ── Per-owned-service unique/marginal contribution ─────────────────────────── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_marginal_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_marginal_desc') }}</p>
+    {% if not owned_services %}
+    <p class="settings-section-desc">{{ t('streaming_marginal_none_owned') }}</p>
+    {% else %}
+    <div class="streaming-marginal-list">
+      {% for m in sc_marginal %}
+      <details class="streaming-title-details">
+        <summary>
+          <span class="streaming-rank-label">{{ m.service }}</span>
+          — {% if m.count == 1 %}{{ t('streaming_titles_singular', count=m.count) }}{% else %}{{ t('streaming_titles_plural', count=m.count) }}{% endif %}
+        </summary>
+        {% if m.titles %}
+        <div class="drop-tag-cloud">
+          {% for title in m.titles %}<span class="drop-tag-chip">{{ title }}</span>{% endfor %}
+        </div>
+        {% else %}
+        <p class="settings-section-desc">{{ t('streaming_marginal_zero_unique') }}</p>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Swap/consolidation suggestion ───────────────────────────────────────────── #}
+  {% if owned_services %}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_swap_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_swap_desc') }}</p>
+    {% if sc_swap_candidates %}
+    <ul class="streaming-swap-list">
+      {% for s in sc_swap_candidates %}
+      <li>{{ t('streaming_swap_line', service=s.service, count=s.count, owned_count=owned_services | length, owned_total=sc_owned_total_covered) }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="settings-section-desc">{{ t('streaming_swap_none') }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Full ranked list of every allowlisted service — no coverage threshold ──── #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_full_ranked_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_full_ranked_desc') }}</p>
+    {% if sc_universe_size == 0 %}
+    <p class="settings-section-desc">{{ t('streaming_full_ranked_empty_universe') }}</p>
+    {% endif %}
+    <div class="streaming-marginal-list">
+      {% for r in sc_ranked_all %}
+      <details class="streaming-title-details">
+        <summary>
+          <span class="streaming-rank-label">{{ r.service }}</span>
+          {% if r.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
+          — {{ r.pct }}% ({% if r.count == 1 %}{{ t('streaming_titles_singular', count=r.count) }}{% else %}{{ t('streaming_titles_plural', count=r.count) }}{% endif %})
+        </summary>
+        {% if r.titles %}
+        <div class="drop-tag-cloud">
+          {% for title in r.titles %}<span class="drop-tag-chip">{{ title }}</span>{% endfor %}
+        </div>
+        {% else %}
+        <p class="settings-section-desc">{{ t('streaming_full_ranked_zero_titles') }}</p>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+  </div>
+
   {# ── Marginal-value ranking (the core of #182) ─────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">{{ t('streaming_ranked_title') }}</h2>

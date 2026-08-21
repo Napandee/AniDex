@@ -2357,6 +2357,37 @@ a.drop-tag-chip-link:focus-visible {
 .streaming-card-cta { font-size: 0.82rem; color: var(--accent); text-decoration: none; }
 .streaming-card-cta:hover { text-decoration: underline; }
 
+/* ── Streaming: set-cover recommendation (issue #255) ─────────────────────── */
+/* Native <details>/<summary> for title-level breakdowns — no JS needed, matches
+   the disclosure-over-curation intent of #255 (full ranked list, no threshold). */
+
+.streaming-marginal-list { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+
+.streaming-title-details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+}
+.streaming-title-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--t3);
+  list-style: none;
+}
+.streaming-title-details summary::-webkit-details-marker { display: none; }
+.streaming-title-details summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.4rem;
+  color: var(--t6);
+  transition: transform 0.15s ease;
+}
+.streaming-title-details[open] summary::before { transform: rotate(90deg); }
+.streaming-title-details .drop-tag-cloud { margin-top: 0.5rem; }
+
+.streaming-swap-list { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--t3); }
+.streaming-swap-list li { margin-bottom: 0.3rem; }
+
 /* ── Recommendations ─────────────────────────────────────────────────────── */
 
 .page-header { margin-bottom: 2rem; }

@@ -3728,6 +3728,171 @@ def _compute_streaming_calendar(user_id: int) -> dict:
     }
 
 
+# ── Streaming Set-Cover Recommendation (issue #255, v3 of #182/#228) ────────────
+# The actual "which combination of services do I need" answer #22's original
+# brainstorm deferred (idea 11, "set-cover framing") — title-level, not
+# episodes-remaining-weighted, and framed as combinations of services rather than
+# each service scored in isolation like #182's marginal-value ranking above (kept
+# unchanged; this is an additive layer, not a replacement — see #255's Out of scope).
+#
+# Coverage universe = Watching + Planning + "Upcoming", Completed excluded (#255's
+# own scope, explicitly matching #182's precedent that a finished title needs no
+# further "access"). "Upcoming" reuses #228's airing_schedule_cache rather than a
+# second upcoming-episode source: any tracked title that ISN'T already
+# Watching/Planning but still has an unaired episode on the calendar (in practice,
+# almost always a Paused/Repeating/Dropped title whose next episode is still
+# airing) — a title genuinely still relevant to a subscribe/cancel decision even
+# though its list status alone wouldn't have surfaced it. A title with no
+# airing_schedule_cache rows at all and a non-Watching/Planning status (an
+# unannounced/finished backlog title) is correctly left out.
+def _streaming_universe(user_id: int) -> list[dict]:
+    rows = db.fetchall(
+        """
+        SELECT le.anime_id AS id, a.title_english, a.title_romaji, a.external_links
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+          AND le.status <> 'COMPLETED'
+          AND (
+                le.status IN ('WATCHING', 'PLANNING')
+                OR EXISTS (
+                    SELECT 1 FROM airing_schedule_cache asc2
+                    WHERE asc2.anime_id = le.anime_id AND asc2.airing_at > now()
+                )
+              )
+        """,
+        (user_id,),
+    )
+    universe = []
+    for row in rows:
+        sites = {
+            lnk.get("site") for lnk in (row["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        }
+        universe.append({
+            "id": row["id"],
+            "title": row["title_english"] or row["title_romaji"],
+            "sites": sites,
+        })
+    return universe
+
+
+def _greedy_set_cover(services: list[str], universe_ids: set, id_to_sites: dict) -> list[str]:
+    """Standard greedy set-cover approximation: repeatedly pick the service that
+    covers the most still-uncovered ids, until nothing is left uncovered (or no
+    remaining candidate covers anything further). Exact optimal set-cover is
+    NP-hard and unnecessary at this scale (a handful of real streaming services)
+    — #255's own "Open questions" section explicitly leaves this call to the
+    implementer.
+
+    Tie-break rule: alphabetical by service name. `services` is iterated in
+    already-sorted order and a later candidate only replaces the current best on a
+    STRICT `>` (not `>=`), so among two services covering an equal number of
+    still-uncovered titles the alphabetically-first one is kept — simple,
+    deterministic, and doesn't require a secondary metric this feature has no
+    strong opinion on (e.g. price, which AniDex has no data for at all)."""
+    remaining = set(universe_ids)
+    selected: list[str] = []
+    candidates = sorted(services)
+    while remaining:
+        best_service, best_covers = None, set()
+        for svc in candidates:
+            if svc in selected:
+                continue
+            covers = {aid for aid in remaining if svc in id_to_sites.get(aid, ())}
+            if len(covers) > len(best_covers):
+                best_service, best_covers = svc, covers
+        if not best_service or not best_covers:
+            break  # nothing left can be covered by any candidate — shouldn't happen
+                   # since `universe_ids` is pre-filtered to owned-coverable titles
+        selected.append(best_service)
+        remaining -= best_covers
+    return selected
+
+
+def _compute_streaming_setcover(user_id: int) -> dict:
+    """Shared by GET /streaming. A distinct read-model from _compute_streaming_coverage
+    above (title-level and combination-framed, not episodes-remaining/per-service) but
+    built over the same universe/STREAMING_SITES machinery."""
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+
+    universe = _streaming_universe(user_id)
+    covered = [t for t in universe if t["sites"]]
+    # Titles on no recognized streaming service at all — never silently dropped
+    # from the count (#255 acceptance criteria: an explicit, honest bucket).
+    uncovered_titles = sorted(t["title"] for t in universe if not t["sites"])
+
+    id_to_sites = {t["id"]: t["sites"] for t in covered}
+    id_to_title = {t["id"]: t["title"] for t in covered}
+
+    owned_coverable_ids = {t["id"] for t in covered if t["sites"] & owned}
+    owned_total_covered = len(owned_coverable_ids)
+
+    minimal_combination = (
+        _greedy_set_cover(sorted(owned), owned_coverable_ids, id_to_sites) if owned else []
+    )
+
+    # Per-owned-service marginal/unique contribution: the title list only
+    # reachable through that ONE owned service (what you'd lose by dropping it) —
+    # independent of which services the greedy algorithm above actually selected,
+    # since #255 asks for this "for each currently-owned service", not just the
+    # minimal subset.
+    marginal = []
+    for svc in sorted(owned):
+        unique_ids = [
+            aid for aid in owned_coverable_ids if id_to_sites[aid] & owned == {svc}
+        ]
+        marginal.append({
+            "service": svc,
+            "count": len(unique_ids),
+            "titles": sorted(id_to_title[aid] for aid in unique_ids),
+        })
+
+    # Full ranked list of every allowlisted service, owned or not — no coverage
+    # threshold cutoff (#255 acceptance criteria: transparency over curation).
+    ranked_all = []
+    for svc in sorted(STREAMING_SITES):
+        ids = [t["id"] for t in covered if svc in t["sites"]]
+        ranked_all.append({
+            "service": svc,
+            "owned": svc in owned,
+            "count": len(ids),
+            "pct": round(len(ids) / len(covered) * 100, 1) if covered else 0.0,
+            "titles": sorted(id_to_title[aid] for aid in ids),
+        })
+    ranked_all.sort(key=lambda r: (-r["count"], r["service"]))
+
+    # Swap/consolidation suggestion: an un-owned service whose total coverage
+    # alone matches or beats the current owned combination's total coverage —
+    # driven directly by ranked_all above, per #255's own scope note ("not a
+    # separate computation"). Guarded on `owned` being non-empty: with nothing
+    # owned there's no existing combination to "swap out" of, just a plain
+    # recommendation the full ranked list below already covers; and on
+    # count > 0 so two services that both cover nothing don't produce a
+    # meaningless 0-beats-0 suggestion.
+    swap_candidates = []
+    if owned:
+        swap_candidates = sorted(
+            (r for r in ranked_all if not r["owned"] and r["count"] > 0 and r["count"] >= owned_total_covered),
+            key=lambda r: (-r["count"], r["service"]),
+        )
+
+    return {
+        "universe_size": len(universe),
+        "uncovered_titles": uncovered_titles,
+        "owned": sorted(owned),
+        "owned_total_covered": owned_total_covered,
+        "minimal_combination": minimal_combination,
+        "marginal": marginal,
+        "ranked_all": ranked_all,
+        "swap_candidates": swap_candidates,
+    }
+
+
 @app.get("/streaming", response_class=HTMLResponse)
 def streaming_page(request: Request):
     user, denied = _require_user(request)
@@ -3736,6 +3901,7 @@ def streaming_page(request: Request):
 
     coverage = _compute_streaming_coverage(user["id"])
     calendar = _compute_streaming_calendar(user["id"])
+    setcover = _compute_streaming_setcover(user["id"])
 
     return templates.TemplateResponse(
         request,
@@ -3749,6 +3915,13 @@ def streaming_page(request: Request):
             "last_synced": coverage["last_synced"],
             "calendar_months": calendar["months"],
             "calendar_services": calendar["services"],
+            "sc_universe_size": setcover["universe_size"],
+            "sc_uncovered_titles": setcover["uncovered_titles"],
+            "sc_owned_total_covered": setcover["owned_total_covered"],
+            "sc_minimal_combination": setcover["minimal_combination"],
+            "sc_marginal": setcover["marginal"],
+            "sc_ranked_all": setcover["ranked_all"],
+            "sc_swap_candidates": setcover["swap_candidates"],
         },
     )
 

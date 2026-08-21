@@ -52,6 +52,9 @@
         <a href="/upcoming" class="nav-link{% if current_path == '/upcoming' %} active{% endif %}">{{ t('nav_upcoming') }}</a>
         <a href="/queue" class="nav-link{% if current_path == '/queue' %} active{% endif %}">{{ t('nav_queue') }}</a>
         <a href="/recommendations" class="nav-link{% if current_path == '/recommendations' %} active{% endif %}">{{ t('nav_recommended') }}</a>
+        {# Issue #255 — dedicated top-level nav entry; previously only reachable via
+           a link buried in Settings, despite being meant as a primary page. #}
+        <a href="/streaming" class="nav-link{% if current_path == '/streaming' %} active{% endif %}">{{ t('nav_streaming') }}</a>
         <a href="/stats" class="nav-link{% if current_path == '/stats' %} active{% endif %}">{{ t('nav_stats') }}</a>
       </div>
       <form class="nav-search-form" action="/search" method="get">

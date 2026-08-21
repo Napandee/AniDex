@@ -3,6 +3,7 @@
   "nav_upcoming": "Próximos",
   "nav_queue": "Cola",
   "nav_recommended": "Recomendados",
+  "nav_streaming": "Streaming",
   "nav_stats": "Estadísticas",
   "nav_search_placeholder": "Buscar…",
   "nav_settings_title": "Ajustes",
@@ -696,6 +697,35 @@
   "streaming_owned_title": "Servicios que tienes",
   "streaming_owned_empty": "Todavía no has indicado qué servicios de streaming tienes.",
   "streaming_owned_manage_link": "Gestionar en Ajustes →",
+
+  "streaming_universe_title": "Tu universo de cobertura",
+  "streaming_universe_desc": "Todos los títulos en Viendo, Planeando, o con un episodio aún por emitirse que estés siguiendo (Completado excluido) — el conjunto completo con el que se mide tu cobertura.",
+  "streaming_universe_count_label": "Títulos en este universo",
+
+  "streaming_minimal_title": "Mínimo de servicios para conservarlo todo",
+  "streaming_minimal_desc": "La combinación más pequeña de servicios que ya tienes y que conserva el acceso a todo lo alcanzable (set-cover voraz, no garantizado globalmente óptimo).",
+  "streaming_minimal_none_owned": "Todavía no has indicado qué servicios de streaming tienes — mira Ajustes.",
+  "streaming_minimal_coverage_label": "Cubre",
+  "streaming_minimal_fully_uncovered": "Ninguno de tus servicios cubre nada de tu universo de cobertura.",
+
+  "streaming_uncovered_title": "No disponible en ningún sitio que conozcamos",
+  "streaming_uncovered_desc": "Estos títulos no están en ningún servicio de streaming reconocido según los datos de AniList — ningún servicio, tengas o no, los desbloquearía.",
+  "streaming_uncovered_empty": "Todos los títulos de tu universo de cobertura están en al menos un servicio de streaming reconocido.",
+
+  "streaming_marginal_title": "Lo que cada servicio que tienes cubre de forma única",
+  "streaming_marginal_desc": "Para cada servicio que tienes, los títulos solo alcanzables a través de ese — lo que perderías si lo cancelaras.",
+  "streaming_marginal_none_owned": "Indica qué servicios de streaming tienes en Ajustes para ver esto.",
+  "streaming_marginal_zero_unique": "Nada único aquí — todo lo que cubre también está en otro servicio que tienes.",
+
+  "streaming_swap_title": "Considera cambiar",
+  "streaming_swap_desc": "Un servicio que no tienes cuya cobertura por sí sola iguala o supera lo que tus servicios cubren juntos.",
+  "streaming_swap_none": "Ningún servicio que no tengas iguala o supera lo que tus servicios ya cubren juntos.",
+  "streaming_swap_line": "{service} por sí solo cubre {count} — tanto como, o más que, tus {owned_count} servicio(s) juntos ({owned_total}).",
+
+  "streaming_full_ranked_title": "Todos los servicios de streaming, clasificados",
+  "streaming_full_ranked_desc": "Todos los servicios reconocidos, tengas o no, clasificados por cobertura de tu universo — sin recorte.",
+  "streaming_full_ranked_empty_universe": "Tu universo de cobertura está vacío — todavía no hay nada en Viendo, Planeando, o emitiéndose pronto.",
+  "streaming_full_ranked_zero_titles": "No cubre nada de tu universo de cobertura.",
 
   "streaming_ranked_title": "Si añadieras…",
   "streaming_ranked_empty_no_owned": "Indica qué servicios de streaming ya tienes en Ajustes para ver una cobertura personalizada.",

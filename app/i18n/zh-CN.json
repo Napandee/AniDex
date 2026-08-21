@@ -3,6 +3,7 @@
   "nav_upcoming": "即将播出",
   "nav_queue": "队列",
   "nav_recommended": "推荐",
+  "nav_streaming": "流媒体",
   "nav_stats": "统计",
   "nav_search_placeholder": "搜索…",
   "nav_settings_title": "设置",
@@ -696,6 +697,35 @@
   "streaming_owned_title": "你拥有的服务",
   "streaming_owned_empty": "你还没有设置自己拥有哪些流媒体服务。",
   "streaming_owned_manage_link": "前往设置管理 →",
+
+  "streaming_universe_title": "你的覆盖范围",
+  "streaming_universe_desc": "所有“观看中”“计划中”的作品，或你正在追踪且仍有未播出剧集的作品（不含“已完成”）— 这是计算覆盖率所依据的完整集合。",
+  "streaming_universe_count_label": "此范围内的作品数",
+
+  "streaming_minimal_title": "保留一切所需的最少服务",
+  "streaming_minimal_desc": "在你已拥有的服务中，能够保留对所有可触及内容访问权的最小组合（贪心集合覆盖算法，不保证全局最优）。",
+  "streaming_minimal_none_owned": "你还没有设置自己拥有哪些流媒体服务 — 请查看设置。",
+  "streaming_minimal_coverage_label": "覆盖",
+  "streaming_minimal_fully_uncovered": "你拥有的服务未覆盖你覆盖范围内的任何内容。",
+
+  "streaming_uncovered_title": "我们所知范围内均不可观看",
+  "streaming_uncovered_desc": "根据 AniList 的数据，这些作品不在任何已识别的流媒体服务上 — 无论你是否拥有该服务，都无法解锁它们。",
+  "streaming_uncovered_empty": "你覆盖范围内的每部作品至少在一项已识别的流媒体服务上可用。",
+
+  "streaming_marginal_title": "你拥有的每项服务独家覆盖的内容",
+  "streaming_marginal_desc": "对于你拥有的每项服务，仅能通过该服务观看的作品 — 也就是取消它后你会失去的内容。",
+  "streaming_marginal_none_owned": "请在设置中填写你已拥有的流媒体服务，以查看此内容。",
+  "streaming_marginal_zero_unique": "这里没有独家内容 — 它覆盖的作品在你的其他服务上也能看到。",
+
+  "streaming_swap_title": "考虑更换",
+  "streaming_swap_desc": "一项你未拥有的服务，其单独覆盖率达到或超过你已拥有服务的合计覆盖率。",
+  "streaming_swap_none": "没有未拥有的服务能达到或超过你已拥有服务的合计覆盖率。",
+  "streaming_swap_line": "{service} 单独就能覆盖 {count} 部 — 达到或超过你 {owned_count} 项已拥有服务合计的覆盖量（{owned_total}）。",
+
+  "streaming_full_ranked_title": "所有流媒体服务排名",
+  "streaming_full_ranked_desc": "所有已识别的服务（无论你是否拥有），按对你覆盖范围的覆盖率排序 — 不设门槛。",
+  "streaming_full_ranked_empty_universe": "你的覆盖范围目前为空 — “观看中”“计划中”或即将播出的内容还没有。",
+  "streaming_full_ranked_zero_titles": "该服务未覆盖你覆盖范围内的任何内容。",
 
   "streaming_ranked_title": "如果你添加…",
   "streaming_ranked_empty_no_owned": "请在设置中填写你已拥有的流媒体服务，以查看个性化的覆盖情况。",
