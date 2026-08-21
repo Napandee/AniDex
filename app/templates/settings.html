@@ -225,7 +225,7 @@
             <span class="status-chip status-chip--cred-{{ cred_status.anilist }}">{{ t('cred_status_' + cred_status.anilist) }}</span>
             <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="cred-card-body help-disclosure-panel{{ ' open' if al_expanded else '' }}" id="cred-body-anilist"><div>
+          <div class="cred-card-body help-disclosure-panel{{ ' open' if al_expanded else '' }}" id="cred-body-anilist"><div><div>
             {% if saved == 'credentials_anilist' %}<p class="settings-success">{{ t('sync_credentials_saved_anilist') }}</p>{% endif %}
             {% if cred_status.anilist == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
 
@@ -251,14 +251,14 @@
                 <svg class="cred-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                 {{ t('cred_guide_toggle') }}
               </button>
-              <div class="cred-guide help-disclosure-panel open" id="cred-guide-anilist"><div>
+              <div class="cred-guide help-disclosure-panel open" id="cred-guide-anilist"><div><div>
                 <ol class="cred-guide-steps">
                   <li>{{ t('cred_guide_anilist_step1') }}</li>
                   <li>{{ t('cred_guide_anilist_step2') }}</li>
                   <li>{{ t('cred_guide_anilist_step3') }}</li>
                   <li>{{ t('cred_guide_anilist_step4') }}</li>
                 </ol>
-              </div></div>
+              </div></div></div>
 
               <div class="cred-form-actions">
                 <button type="button" class="btn-test" data-cred-test="anilist" data-cred-fields="anilist_username,anilist_token">{{ t('cred_test_btn') }}</button>
@@ -266,7 +266,7 @@
                 <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
               </div>
             </form>
-          </div></div>
+          </div></div></div>
         </div>
 
         {# ── Crunchyroll — optional, collapsed by default ────────────────── #}
@@ -277,7 +277,7 @@
             <span class="status-chip status-chip--cred-{{ cred_status.crunchyroll }}">{{ t('cred_status_' + cred_status.crunchyroll) }}</span>
             <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="cred-card-body help-disclosure-panel{{ ' open' if cr_expanded else '' }}" id="cred-body-crunchyroll"><div>
+          <div class="cred-card-body help-disclosure-panel{{ ' open' if cr_expanded else '' }}" id="cred-body-crunchyroll"><div><div>
             {% if saved == 'credentials_crunchyroll' %}<p class="settings-success">{{ t('sync_credentials_saved_crunchyroll') }}</p>{% endif %}
             {% if cred_status.crunchyroll == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
 
@@ -297,14 +297,14 @@
                 <svg class="cred-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                 {{ t('cred_guide_toggle') }}
               </button>
-              <div class="cred-guide help-disclosure-panel" id="cred-guide-crunchyroll"><div>
+              <div class="cred-guide help-disclosure-panel" id="cred-guide-crunchyroll"><div><div>
                 <ol class="cred-guide-steps">
                   <li>{{ t('cred_guide_cr_step1') }}</li>
                   <li>{{ t('cred_guide_cr_step2') }}</li>
                   <li>{{ t('cred_guide_cr_step3') }}</li>
                   <li>{{ t('cred_guide_cr_step4') }}</li>
                 </ol>
-              </div></div>
+              </div></div></div>
 
               <div class="cred-form-actions">
                 <button type="button" class="btn-test" data-cred-test="crunchyroll" data-cred-fields="cr_etp_rt">{{ t('cred_test_btn') }}</button>
@@ -312,7 +312,7 @@
                 <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
               </div>
             </form>
-          </div></div>
+          </div></div></div>
         </div>
 
         {# ── Netflix — optional, collapsed by default ─────────────────────── #}
@@ -323,7 +323,7 @@
             <span class="status-chip status-chip--cred-{{ cred_status.netflix }}">{{ t('cred_status_' + cred_status.netflix) }}</span>
             <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="cred-card-body help-disclosure-panel{{ ' open' if nf_expanded else '' }}" id="cred-body-netflix"><div>
+          <div class="cred-card-body help-disclosure-panel{{ ' open' if nf_expanded else '' }}" id="cred-body-netflix"><div><div>
             {% if saved == 'credentials_netflix' %}<p class="settings-success">{{ t('sync_credentials_saved_netflix') }}</p>{% endif %}
             {% if cred_status.netflix == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
 
@@ -348,14 +348,14 @@
                 <svg class="cred-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                 {{ t('cred_guide_toggle_plural') }}
               </button>
-              <div class="cred-guide help-disclosure-panel" id="cred-guide-netflix"><div>
+              <div class="cred-guide help-disclosure-panel" id="cred-guide-netflix"><div><div>
                 <ol class="cred-guide-steps">
                   <li>{{ t('cred_guide_netflix_step1') }}</li>
                   <li>{{ t('cred_guide_netflix_step2') }}</li>
                   <li>{{ t('cred_guide_netflix_step3') }}</li>
                   <li>{{ t('cred_guide_netflix_step4') }}</li>
                 </ol>
-              </div></div>
+              </div></div></div>
 
               <div class="cred-form-actions">
                 <button type="button" class="btn-test" data-cred-test="netflix" data-cred-fields="netflix_cookie_header,netflix_profile_guid">{{ t('cred_test_btn') }}</button>
@@ -363,7 +363,7 @@
                 <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
               </div>
             </form>
-          </div></div>
+          </div></div></div>
         </div>
 
       </div>

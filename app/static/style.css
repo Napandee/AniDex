@@ -1269,8 +1269,18 @@ main {
 .cred-chevron { margin-left: auto; flex-shrink: 0; color: var(--t7); transition: transform 0.15s ease; }
 .cred-card-header[aria-expanded="true"] .cred-chevron { transform: rotate(180deg); }
 
-.cred-card-body { border-top: 1px solid var(--border-subtle); }
-.cred-card-body > div { padding: 1rem 1rem 1.1rem; display: flex; flex-direction: column; gap: 1rem; }
+/* The border and padding/flex layout below must live on a div NESTED inside
+   the .help-disclosure-panel > div clip host (not on that clip host itself,
+   and not on .cred-card-body — the grid container whose row track the 0fr/1fr
+   trick collapses to zero). A collapsing grid/flex item's own padding and
+   border always contribute to its size regardless of overflow:hidden — only
+   its *content* gets zeroed via the automatic-minimum-size mechanism — so
+   putting padding directly on the clip host leaves a slice of it (and
+   whatever peeks through in that slice) visible even while "collapsed" (#268).
+   .help-disclosure-panel-body already gets this right by living one level
+   deeper than its clip host; this mirrors that. */
+.cred-card-body.open { border-top: 1px solid var(--border-subtle); }
+.cred-card-body > div > div { padding: 1rem 1rem 1.1rem; display: flex; flex-direction: column; gap: 1rem; }
 
 .cred-attention-note {
   font-size: 0.8rem;
@@ -1298,7 +1308,10 @@ main {
 .cred-guide-toggle:hover { text-decoration: underline; }
 .cred-guide-toggle .cred-chevron { margin-left: 0; }
 .cred-guide-toggle[aria-expanded="true"] .cred-chevron { transform: rotate(180deg); }
-.cred-guide > div {
+/* Same clip-host-must-stay-bare rule as .cred-card-body above — nested one
+   level deeper so the collapsed guide sub-panel doesn't bleed its background/
+   border/first-line text through either (#268). */
+.cred-guide > div > div {
   background: var(--bg-inset);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
