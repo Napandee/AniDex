@@ -3215,10 +3215,16 @@ _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
 
 
 @app.get("/upcoming", response_class=HTMLResponse)
-def upcoming(request: Request):
+def upcoming(request: Request, week_offset: int = 0):
     user, denied = _require_user(request)
     if denied:
         return denied
+
+    # airing_schedule_cache only ever holds not-yet-aired rows (rows are deleted the
+    # moment an episode airs — see stats.html's comment on the same table), so a week
+    # before the current one can never have anything to show. Clamp rather than let
+    # Prev walk into a guaranteed-empty grid.
+    week_offset = max(0, week_offset)
 
     tz_name = config.get(user["id"], "timezone")
     try:
@@ -3276,23 +3282,40 @@ def upcoming(request: Request):
             entry["group"] = f"In {weeks} week{'s' if weeks > 1 else ''}"
         entries.append(entry)
 
-    # Weekly Mon-Sun broadcast-calendar grid — groups the same entries by
-    # broadcast day of week (local time), reusing airing_schedule_cache data
-    # already fetched above. No change to how that data is synced/cached.
+    # Weekly Mon-Sun broadcast-calendar grid — bounded to exactly one real calendar
+    # week (issue #256), reusing the same `entries` already built above. No change to
+    # how airing_schedule_cache itself is synced/cached, and no change to `entries` /
+    # the List view that consumes it.
+    today_local = now.astimezone(tz).date()
+    monday_this_week = today_local - timedelta(days=today_local.weekday())
+    week_start = monday_this_week + timedelta(weeks=week_offset)
+    week_end = week_start + timedelta(days=7)  # exclusive — next Monday
+
+    weekday_names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
     week_grid = [
-        {"name": name, "entries": []}
-        for name in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+        {
+            "name": name,
+            "date": week_start + timedelta(days=idx),
+            "entries": [],
+            "is_today": (week_start + timedelta(days=idx)) == today_local,
+        }
+        for idx, name in enumerate(weekday_names)
     ]
     for entry in entries:
-        week_grid[entry["airing_local"].weekday()]["entries"].append(entry)
-    today_weekday = now.astimezone(tz).weekday()
-    for idx, day in enumerate(week_grid):
-        day["is_today"] = idx == today_weekday
+        entry_date = entry["airing_local"].date()
+        if week_start <= entry_date < week_end:
+            week_grid[entry_date.weekday()]["entries"].append(entry)
 
     return templates.TemplateResponse(
         request,
         "upcoming.html",
-        {"entries": entries, "week_grid": week_grid},
+        {
+            "entries": entries,
+            "week_grid": week_grid,
+            "week_offset": week_offset,
+            "week_start": week_start,
+            "week_end_inclusive": week_end - timedelta(days=1),
+        },
     )
 
 

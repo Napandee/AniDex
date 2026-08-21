@@ -274,6 +274,10 @@
   "upcoming_view_list_btn": "List",
   "upcoming_view_grid_btn": "Weekly grid",
   "upcoming_grid_empty": "Nothing airing",
+  "upcoming_grid_nav_label": "Week navigation",
+  "upcoming_grid_prev_btn": "Prev",
+  "upcoming_grid_next_btn": "Next",
+  "upcoming_grid_today_btn": "Today",
   "upcoming_empty": "No upcoming episodes — nothing currently airing in your list.",
 
   "title_queue": "Watch Queue — Anime Tracker",

@@ -59,21 +59,33 @@
     </ul>
   </div>
 
-  <div id="upcoming-grid-view" class="upcoming-grid" hidden>
-    {% for day in week_grid %}
-    <div class="upcoming-grid-day{% if day.is_today %} is-today{% endif %}">
-      <h3 class="upcoming-grid-day-header">{{ day.name }}</h3>
-      {% if day.entries %}
-      <ul class="upcoming-list upcoming-grid-day-list">
-        {% for e in day.entries %}
-          {{ entry_card(e) }}
-        {% endfor %}
-      </ul>
+  <div id="upcoming-grid-view" hidden>
+    <div class="upcoming-grid-nav" role="group" aria-label="{{ t('upcoming_grid_nav_label') }}">
+      {% if week_offset > 0 %}
+      <a href="/upcoming?week_offset={{ week_offset - 1 }}" class="filter-btn upcoming-grid-nav-btn">&larr; {{ t('upcoming_grid_prev_btn') }}</a>
       {% else %}
-      <p class="upcoming-grid-empty">{{ t('upcoming_grid_empty') }}</p>
+      <span class="filter-btn upcoming-grid-nav-btn is-disabled" aria-disabled="true">&larr; {{ t('upcoming_grid_prev_btn') }}</span>
       {% endif %}
+      <span class="upcoming-grid-week-label">{{ week_start.strftime('%b %d') }} &ndash; {{ week_end_inclusive.strftime('%b %d, %Y') }}</span>
+      <a href="/upcoming" class="filter-btn upcoming-grid-nav-btn{% if week_offset == 0 %} active{% endif %}">{{ t('upcoming_grid_today_btn') }}</a>
+      <a href="/upcoming?week_offset={{ week_offset + 1 }}" class="filter-btn upcoming-grid-nav-btn">{{ t('upcoming_grid_next_btn') }} &rarr;</a>
     </div>
-    {% endfor %}
+    <div class="upcoming-grid">
+      {% for day in week_grid %}
+      <div class="upcoming-grid-day{% if day.is_today %} is-today{% endif %}">
+        <h3 class="upcoming-grid-day-header">{{ day.name }}, {{ day.date.strftime('%b %d') }}</h3>
+        {% if day.entries %}
+        <ul class="upcoming-list upcoming-grid-day-list">
+          {% for e in day.entries %}
+            {{ entry_card(e) }}
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="upcoming-grid-empty">{{ t('upcoming_grid_empty') }}</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
   </div>
 {% else %}
 <p class="empty">{{ t('upcoming_empty') }}</p>
