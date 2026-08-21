@@ -206,7 +206,7 @@
 
     {# ── Credentials (#188 — three independent collapsible cards, replacing the
        old flat password-field list) ─────────────────────────────────────── #}
-    {% set al_expanded = true %}
+    {% set al_expanded = (cred_status.anilist == 'needs_attention') or (saved == 'credentials_anilist') %}
     {% set cr_expanded = (cred_status.crunchyroll == 'needs_attention') or (saved == 'credentials_crunchyroll') %}
     {% set nf_expanded = (cred_status.netflix == 'needs_attention') or (saved == 'credentials_netflix') %}
     <div class="settings-section settings-section--first">
@@ -589,7 +589,7 @@
 
           <div class="form-field form-field--checkbox">
             <label class="form-checkbox-label">
-              <input type="checkbox" name="telegram_enabled" {% if settings.telegram_enabled != 'false' %}checked{% endif %}>
+              <input type="checkbox" name="telegram_enabled" {% if settings.telegram_enabled == 'true' %}checked{% endif %}>
               {{ t('notif_telegram_enable') }}
             </label>
           </div>
@@ -620,7 +620,7 @@
 
           <div class="form-field form-field--checkbox">
             <label class="form-checkbox-label">
-              <input type="checkbox" name="discord_enabled" {% if settings.discord_enabled != 'false' %}checked{% endif %}>
+              <input type="checkbox" name="discord_enabled" {% if settings.discord_enabled == 'true' %}checked{% endif %}>
               {{ t('notif_discord_enable') }}
             </label>
           </div>
@@ -642,7 +642,7 @@
 
           <div class="form-field form-field--checkbox">
             <label class="form-checkbox-label">
-              <input type="checkbox" name="ntfy_enabled" {% if settings.ntfy_enabled != 'false' %}checked{% endif %}>
+              <input type="checkbox" name="ntfy_enabled" {% if settings.ntfy_enabled == 'true' %}checked{% endif %}>
               {{ t('notif_ntfy_enable') }}
             </label>
           </div>
