@@ -35,7 +35,21 @@
   <p class="page-sub">{{ t('upcoming_page_sub') }}</p>
 </div>
 
-{% if entries %}
+{% if date_filter %}
+  <div class="upcoming-day-header">
+    <a href="/upcoming?month_offset={{ month_offset }}" class="filter-btn upcoming-grid-nav-btn">&larr; {{ t('upcoming_day_back_btn') }}</a>
+    <h2 class="upcoming-group">{{ date_filter.strftime('%A, %d %B %Y') }}</h2>
+  </div>
+  {% if day_entries %}
+  <ul class="upcoming-list">
+    {% for e in day_entries %}
+      {{ entry_card(e) }}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">{{ t('upcoming_day_empty') }}</p>
+  {% endif %}
+{% elif entries %}
   <div class="library-toolbar">
     <div class="toolbar-right">
       <div class="view-toggle-group" role="group" aria-label="{{ t('upcoming_view_group_label') }}">
@@ -108,7 +122,7 @@
         {% for day in week %}
         <div class="upcoming-month-cell{% if not day.in_month %} is-blank{% endif %}{% if day.is_today %} is-today{% endif %}">
           {% if day.in_month %}
-          <div class="upcoming-month-date">{{ day.date.day }}</div>
+          <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-date">{{ day.date.day }}</a>
           {% for e in day.entries %}
           <div class="upcoming-month-chip" title="{{ e.title_english or e.title_romaji }} — {{ t('upcoming_month_chip_ep', num=e.episode) }}">
             <span class="upcoming-month-chip-dot"></span>
@@ -116,7 +130,7 @@
           </div>
           {% endfor %}
           {% if day.overflow > 0 %}
-          <div class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</div>
+          <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-overflow">{{ t('upcoming_month_overflow', num=day.overflow) }}</a>
           {% endif %}
           {% endif %}
         </div>

@@ -287,6 +287,8 @@
   "upcoming_month_chip_ep": "एप {num}",
   "upcoming_month_overflow": "+{num} और",
   "upcoming_empty": "कोई आगामी एपिसोड नहीं — आपकी सूची में फ़िलहाल कुछ भी प्रसारित नहीं हो रहा।",
+  "upcoming_day_back_btn": "महीने पर वापस जाएं",
+  "upcoming_day_empty": "इस दिन कुछ भी प्रसारित नहीं हो रहा।",
 
   "title_queue": "वॉच कतार — Anime Tracker",
   "queue_page_title": "वॉच कतार",
