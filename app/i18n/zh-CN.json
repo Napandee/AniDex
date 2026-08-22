@@ -287,6 +287,7 @@
   "upcoming_month_today_btn": "本月",
   "upcoming_month_chip_ep": "第{num}集",
   "upcoming_month_overflow": "还有{num}项",
+  "upcoming_filler_badge": "填充集",
   "upcoming_empty": "没有即将播出的剧集——你的列表中当前没有正在播出的作品。",
   "upcoming_day_back_btn": "返回月视图",
   "upcoming_day_empty": "这一天没有播出。",
