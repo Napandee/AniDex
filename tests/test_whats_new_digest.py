@@ -19,9 +19,12 @@ Covers the acceptance-criteria scenarios from issue #235:
   1. A brand-new user (digest_last_seen_at IS NULL) gets no digest on their first
      page view — just a baseline watermark — so existing/new accounts never get their
      entire history dumped into one banner.
-  2. New episodes aired (for WATCHING/REPEATING library entries only) since the
-     watermark are included; episodes that aired before the watermark, or for
-     COMPLETED/DROPPED/PLANNING entries, are not.
+  2. New episodes aired since the watermark are included for WATCHING/PLANNING
+     library entries (matching _check_airing_episodes' own status filter — the
+     hourly job that populates notified_episodes, which this digest reads from
+     instead of airing_schedule_cache; see _build_whats_new_digest's docstring for
+     why), and excluded for COMPLETED/DROPPED entries or if notified before the
+     watermark.
   3. New non-dismissed, non-snoozed recommendations since the watermark are counted
      and the top titles surfaced; dismissed/snoozed/pre-existing ones are excluded.
   4. Sync activity (full_sync/force_full_resync only — not 'recommender', which would
@@ -84,7 +87,7 @@ def _clean_tables(pg_conn):
     with pg_conn.cursor() as cur:
         cur.execute("DELETE FROM sync_log")
         cur.execute("DELETE FROM recommendation_scores")
-        cur.execute("DELETE FROM airing_schedule_cache")
+        cur.execute("DELETE FROM notified_episodes")
         cur.execute("DELETE FROM library_entries")
         cur.execute("DELETE FROM anime")
         cur.execute("DELETE FROM users")
@@ -127,12 +130,18 @@ def _insert_library_entry(pg_conn, user_id, anime_id, status):
         )
 
 
-def _insert_airing(pg_conn, anime_id, episode, airing_at):
+def _insert_notified_episode(pg_conn, user_id, anime_id, episode, notified_at):
+    """Seeds notified_episodes directly with an explicit notified_at, standing in for
+    what the real hourly job (_check_airing_episodes) would have written the moment it
+    detected the episode airing — this is the digest's actual data source (see
+    _build_whats_new_digest's docstring for why not airing_schedule_cache, which is
+    deleted+reinserted hourly and essentially never holds a past-dated row in
+    production, unlike this table)."""
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO airing_schedule_cache (anime_id, episode, airing_at) VALUES (%s, %s, %s) "
-            "ON CONFLICT (anime_id, episode) DO UPDATE SET airing_at = EXCLUDED.airing_at",
-            (anime_id, episode, airing_at),
+            "INSERT INTO notified_episodes (user_id, anime_id, episode, notified_at) VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (user_id, anime_id, episode) DO UPDATE SET notified_at = EXCLUDED.notified_at",
+            (user_id, anime_id, episode, notified_at),
         )
 
 
@@ -170,7 +179,7 @@ def test_new_episode_for_watching_show_included(pg_conn, app_module):
     _insert_user(pg_conn, USER_ID)
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, YESTERDAY)
 
     digest = app_module._build_whats_new_digest(USER_ID, LAST_WEEK)
 
@@ -182,11 +191,27 @@ def test_new_episode_for_watching_show_included(pg_conn, app_module):
     assert ep["latest_episode"] == 5
 
 
+def test_new_episode_for_planning_show_included(pg_conn, app_module):
+    # PLANNING is in scope too, matching _check_airing_episodes' own status filter
+    # (#256/#257's Upcoming view already treats PLANNING episodes as relevant, not
+    # just WATCHING).
+    _insert_user(pg_conn, USER_ID)
+    _insert_anime(pg_conn, ANIME_A, "Frieren")
+    _insert_library_entry(pg_conn, USER_ID, ANIME_A, "PLANNING")
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 1, YESTERDAY)
+
+    digest = app_module._build_whats_new_digest(USER_ID, LAST_WEEK)
+
+    assert digest is not None
+    assert len(digest["episodes"]) == 1
+    assert digest["episodes"][0]["title"] == "Frieren"
+
+
 def test_episode_before_watermark_excluded(pg_conn, app_module):
     _insert_user(pg_conn, USER_ID)
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, LAST_WEEK - timedelta(days=1))  # before the watermark
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, LAST_WEEK - timedelta(days=1))  # before the watermark
 
     digest = app_module._build_whats_new_digest(USER_ID, LAST_WEEK)
     assert digest is None
@@ -196,7 +221,7 @@ def test_episode_for_completed_show_excluded(pg_conn, app_module):
     _insert_user(pg_conn, USER_ID)
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "COMPLETED")
-    _insert_airing(pg_conn, ANIME_A, 5, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, YESTERDAY)
 
     digest = app_module._build_whats_new_digest(USER_ID, LAST_WEEK)
     assert digest is None
@@ -206,8 +231,8 @@ def test_multiple_new_episodes_same_show_aggregated(pg_conn, app_module):
     _insert_user(pg_conn, USER_ID)
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, LAST_WEEK + timedelta(days=1))
-    _insert_airing(pg_conn, ANIME_A, 6, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, LAST_WEEK + timedelta(days=1))
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 6, YESTERDAY)
 
     digest = app_module._build_whats_new_digest(USER_ID, LAST_WEEK)
 
@@ -288,7 +313,7 @@ def test_bootstrap_new_user_gets_no_digest_but_records_watermark(pg_conn, app_mo
     _insert_user(pg_conn, USER_ID, digest_last_seen_at=None)
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, YESTERDAY)
 
     class FakeSession(dict):
         pass
@@ -309,7 +334,7 @@ def test_impersonation_skips_digest_entirely(pg_conn, app_module):
     _insert_user(pg_conn, USER_ID, digest_last_seen_at=LAST_WEEK)
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, YESTERDAY)
 
     class FakeSession(dict):
         pass
@@ -350,7 +375,7 @@ def test_digest_shows_once_per_session_via_real_login(pg_conn, app_module, clien
         )
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, YESTERDAY)
 
     resp = client.post(
         "/auth/login",
@@ -385,7 +410,7 @@ def test_digest_never_calls_the_push_notify_dispatcher(pg_conn, app_module, clie
         )
     _insert_anime(pg_conn, ANIME_A, "Frieren")
     _insert_library_entry(pg_conn, USER_ID, ANIME_A, "WATCHING")
-    _insert_airing(pg_conn, ANIME_A, 5, YESTERDAY)
+    _insert_notified_episode(pg_conn, USER_ID, ANIME_A, 5, YESTERDAY)
 
     client.post(
         "/auth/login",

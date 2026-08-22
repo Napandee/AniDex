@@ -1300,24 +1300,46 @@ def _build_whats_new_digest(user_id: int, since: datetime) -> dict | None:
     """Issue #235 — the actual "what's new since your last visit" content, computed
     for everything that happened for this user strictly after `since`. Deliberately
     passive/summary-shaped, not a re-delivery of anything the per-event dispatcher
-    (#51, app/notify.py) already pushed: new episodes aired for Watching/Repeating
+    (#51, app/notify.py) already pushed: new episodes aired for Watching/Planning
     shows, new (non-dismissed, non-snoozed) recommendations, and recent sync
     activity. Returns None when there's genuinely nothing new to show, so callers
     never render an empty banner.
+
+    Episodes-aired data source, deliberately NOT airing_schedule_cache: that table
+    only ever holds *not-yet-aired* rows for RELEASING anime — its AniList query
+    uses notYetAired: true, and scripts/sync_airing_schedule.py deletes+reinserts
+    it on every hourly refresh, so a row with airing_at in the past only exists in
+    the brief window before the next refresh cleans it up (same quirk
+    _compute_streaming_calendar's own docstring documents). Querying it here with
+    `airing_at <= now()` would return real rows almost never in production, even
+    though the digest content is exactly right conceptually.
+
+    Instead this joins notified_episodes — the table the existing hourly job,
+    _check_airing_episodes, already populates (unconditionally, independent of
+    whether notify() actually had a channel configured) every time it detects a
+    newly-aired episode for a WATCHING/PLANNING library entry. It's reliable,
+    per-user, timestamped, and — unlike airing_schedule_cache — never deleted, so
+    it's the right source for "what aired since I was last here." Status scope
+    matches _check_airing_episodes' own filter (WATCHING, PLANNING) rather than
+    reusing library.html's WATCHING/REPEATING tab grouping: notified_episodes is
+    only ever written for those two statuses in the first place (a REPEATING-status
+    filter here would just silently match nothing, since the hourly job never
+    inserts a row for one), and PLANNING belongs in scope too — #256/#257's
+    Upcoming view already treats PLANNING as "episodes airing that this user cares
+    about," not just WATCHING.
     """
     episodes = db.fetchall(
         """
         SELECT a.id AS anime_id, a.title_english, a.title_romaji,
-               COUNT(*) AS episodes_aired, MAX(sched.episode) AS latest_episode
-        FROM airing_schedule_cache sched
-        JOIN library_entries le ON le.anime_id = sched.anime_id
-        JOIN anime a ON a.id = sched.anime_id
-        WHERE le.user_id = %s
-          AND le.status IN ('WATCHING', 'REPEATING')
-          AND sched.airing_at > %s
-          AND sched.airing_at <= now()
+               COUNT(*) AS episodes_aired, MAX(ne.episode) AS latest_episode
+        FROM notified_episodes ne
+        JOIN library_entries le ON le.anime_id = ne.anime_id AND le.user_id = ne.user_id
+        JOIN anime a ON a.id = ne.anime_id
+        WHERE ne.user_id = %s
+          AND ne.notified_at > %s
+          AND le.status IN ('WATCHING', 'PLANNING')
         GROUP BY a.id, a.title_english, a.title_romaji
-        ORDER BY MAX(sched.airing_at) DESC
+        ORDER BY MAX(ne.notified_at) DESC
         """,
         (user_id, since),
     )
