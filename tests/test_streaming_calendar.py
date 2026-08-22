@@ -152,6 +152,24 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def _next_month_start(d: datetime) -> datetime:
+    """First moment of the calendar month after d's month — used to construct a
+    date guaranteed to land exactly one calendar-month gap from `d`, regardless
+    of what day of the month the suite happens to run on (issue #290: a flat
+    `timedelta(days=N)` offset from "now" doesn't reliably stay within one month
+    gap — whether it lands one or two months out depends on the current day of
+    month and the lengths of the months being crossed, e.g. `now +
+    timedelta(days=40)` lands two months out when `now` is late August, since
+    August + September together already exceed 40 days from most late-August
+    starting points)."""
+    year, month = d.year, d.month
+    if month == 12:
+        year, month = year + 1, 1
+    else:
+        month += 1
+    return datetime(year, month, 1, tzinfo=d.tzinfo)
+
+
 # ── 1 & 6. Subscribe-side crediting, month bucketing, horizon clipping ─────────
 
 def test_uncovered_title_credits_every_carrying_service_in_its_airing_month(pg_conn, app_module, _seeded_user):
@@ -237,9 +255,12 @@ def test_releasing_title_with_future_episode_credits_current_month(pg_conn, app_
     now = _now()
     _insert_anime(pg_conn, 1, sites=["Netflix"], status="RELEASING")
     _insert_entry(pg_conn, 1, "WATCHING", progress=8)
-    # Next episode lands well into next month — simulating "already aired this
-    # month's episode, cache only has the future one left."
-    next_month_ish = now + timedelta(days=40)
+    # Next episode lands early in next month — simulating "already aired this
+    # month's episode, cache only has the future one left." Anchored to the
+    # actual start of next month (not a flat day-count from `now`) so this stays
+    # within quirk 1's one-month-gap threshold regardless of what day of the
+    # month the suite runs on (issue #290).
+    next_month_ish = _next_month_start(now) + timedelta(days=5)
     _insert_airing(pg_conn, 1, 9, next_month_ish)
 
     calendar = app_module._compute_streaming_calendar(USER_ID)
