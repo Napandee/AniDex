@@ -23,4 +23,17 @@ os.environ.setdefault("ANILIST_USERNAME", "test-user")
 # guaranteed to run first.
 os.environ.setdefault("ANILIST_MOCK", "1")
 
+# app.config fails loudly at import time if SETTINGS_ENCRYPTION_KEY is missing
+# (issue #310 — no safe random fallback, since a key that changes on restart would
+# make already-encrypted data permanently unreadable). Generate a fixed dummy key
+# once here, before any test module imports app.config/app.main, so the whole
+# suite gets a valid Fernet key without needing a real one. Tests that specifically
+# exercise the "missing/invalid key" failure path override this via monkeypatch +
+# a fresh subprocess/reimport, since app.config only evaluates the env var once at
+# import time.
+if "SETTINGS_ENCRYPTION_KEY" not in os.environ:
+    from cryptography.fernet import Fernet
+
+    os.environ["SETTINGS_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
