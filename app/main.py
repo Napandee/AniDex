@@ -263,6 +263,57 @@ def _check_streaming_availability(user_id: int) -> None:
             )
 
 
+def _notify_if_planning_uncovered(user_id: int, anime_id: int) -> None:
+    """Issue #287: alert when a title just moved TO Planning isn't covered by any
+    streaming service the user owns (`user_streaming_services`, added by #284).
+
+    Event-driven, not a scan: every call site below only invokes this once, right
+    after a write it just made transitioned a row's status to 'PLANNING' from
+    something else (or created a brand-new Planning row) — the caller is
+    responsible for that "did this write actually change something" check, so this
+    function itself never needs a notified-once ledger table the way
+    notified_episodes/planning_availability_state do for their own poll-and-diff
+    checks. Per the issue's explicit out-of-scope note, there is deliberately no
+    retroactive scan of the existing Planning list — this only ever fires from a
+    live status-change write path.
+
+    Silently does nothing if the title has no known streaming availability at all
+    (STREAMING_SITES ∩ external_links is empty) — there's nothing to name as an
+    alternative, and issue #229's separate "gained availability" check already
+    covers a title that later picks up its first streaming link.
+    """
+    row = db.fetchone(
+        "SELECT title_english, title_romaji, external_links FROM anime WHERE id = %s",
+        (anime_id,),
+    )
+    if not row:
+        return
+
+    available_on = {
+        lnk.get("site") for lnk in (row["external_links"] or [])
+        if lnk.get("site") in STREAMING_SITES
+    }
+    if not available_on:
+        return
+
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+    if available_on & owned:
+        return  # covered by at least one service the user already owns
+
+    title = row["title_english"] or row["title_romaji"]
+    services = ", ".join(sorted(available_on))
+    notify(
+        user_id,
+        "📺 Not on your services",
+        f"{title} was added to Planning, but it isn't covered by any streaming "
+        f"service you own. It's available on: {services}.",
+    )
+
+
 def _users_with_sync_credentials() -> list[dict]:
     """Users who've configured an AniList token — eligible for scheduled sync."""
     return db.fetchall(
@@ -7192,6 +7243,16 @@ def _set_favorite(user_id: int, anime_id: int, favorite: bool) -> None:
 def _apply_status_change(user, anime_id: int, status: str) -> str | None:
     """Push status to AniList (unless mocked) and upsert library_entries.
     Returns an error message on failure, None on success."""
+    # Issue #287 — captured before the upsert below so the post-write check can tell
+    # a genuine transition INTO Planning (this row's prior status, if any, wasn't
+    # already PLANNING) apart from a no-op re-post of the same status, which must
+    # never re-fire the notification.
+    prev = db.fetchone(
+        "SELECT status FROM library_entries WHERE user_id = %s AND anime_id = %s",
+        (user["id"], anime_id),
+    )
+    prev_status = prev["status"] if prev else None
+
     anilist_status = STATUS_TO_ANILIST.get(status, status)
 
     if not ANILIST_MOCK:
@@ -7230,6 +7291,13 @@ def _apply_status_change(user, anime_id: int, status: str) -> str | None:
         "DELETE FROM status_sync_outbox WHERE user_id = %s AND anime_id = %s",
         (user["id"], anime_id),
     )
+
+    if status == "PLANNING" and prev_status != "PLANNING":
+        try:
+            _notify_if_planning_uncovered(user["id"], anime_id)
+        except Exception as e:
+            log.error("Planning-coverage notification failed for user %s anime %s: %s", user["id"], anime_id, e)
+
     return None
 
 
@@ -7268,6 +7336,16 @@ async def bulk_set_status(request: Request):
     if not anime_ids or not all(isinstance(i, int) for i in anime_ids):
         return JSONResponse({"error": "anime_ids required"}, status_code=400)
 
+    # Issue #287 — same "was this row already PLANNING" guard _apply_status_change
+    # uses for the single-card endpoint, captured up front here since this endpoint
+    # writes many rows in one request.
+    prev_statuses = {
+        r["anime_id"]: r["status"] for r in db.fetchall(
+            "SELECT anime_id, status FROM library_entries WHERE user_id = %s AND anime_id = ANY(%s)",
+            (user["id"], anime_ids),
+        )
+    }
+
     with db.get_conn() as conn:
         with conn.cursor() as cur:
             for anime_id in anime_ids:
@@ -7296,6 +7374,15 @@ async def bulk_set_status(request: Request):
         conn.commit()
 
     outbox.wake()
+
+    if status == "PLANNING":
+        for anime_id in anime_ids:
+            if prev_statuses.get(anime_id) != "PLANNING":
+                try:
+                    _notify_if_planning_uncovered(user["id"], anime_id)
+                except Exception as e:
+                    log.error("Planning-coverage notification failed for user %s anime %s: %s", user["id"], anime_id, e)
+
     return JSONResponse({"ok": True, "count": len(anime_ids)})
 
 
@@ -7615,6 +7702,15 @@ async def add_anime(anime_id: int, request: Request):
     if status not in VALID_STATUSES:
         return JSONResponse({"error": "invalid status"}, status_code=400)
 
+    # Issue #287 — same "was this row already PLANNING" guard as the other two
+    # status-writing endpoints; re-adding an already-tracked title at the same
+    # status must not re-fire the notification.
+    prev = db.fetchone(
+        "SELECT status FROM library_entries WHERE user_id = %s AND anime_id = %s",
+        (user["id"], anime_id),
+    )
+    prev_status = prev["status"] if prev else None
+
     token = _get_anilist_token(user["id"])
     if not token:
         return JSONResponse({"error": "AniList token not configured"}, status_code=500)
@@ -7682,6 +7778,12 @@ async def add_anime(anime_id: int, request: Request):
         """,
         (user["id"], anime_id, entry_id, status),
     )
+
+    if status == "PLANNING" and prev_status != "PLANNING":
+        try:
+            _notify_if_planning_uncovered(user["id"], anime_id)
+        except Exception as e:
+            log.error("Planning-coverage notification failed for user %s anime %s: %s", user["id"], anime_id, e)
 
     return JSONResponse({
         "ok": True,
