@@ -74,24 +74,29 @@
             </td>
             <td>
               <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save">{{ t('admin_reset_password_btn') }}</button>
               </form>
               {% if u.totp_enabled %}
               <form method="post" action="/admin/users/{{ u.id }}/disable-2fa" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_disable_2fa_confirm', email=u.email) }}');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save btn-warning">{{ t('admin_disable_2fa_btn') }}</button>
               </form>
               {% endif %}
               {% if u.is_active %}
               {% if u.id != nav_user.id %}
               <form method="post" action="/admin/users/{{ u.id }}/impersonate" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_impersonate_confirm', email=u.email) }}');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save">{{ t('admin_impersonate_btn') }}</button>
               </form>
               <form method="post" action="/admin/users/{{ u.id }}/deactivate" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_deactivate_confirm', email=u.email) }}');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save btn-warning">{{ t('admin_deactivate_btn') }}</button>
               </form>
               {% endif %}
               {% else %}
               <form method="post" action="/admin/users/{{ u.id }}/reactivate" class="admin-inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save">{{ t('admin_reactivate_btn') }}</button>
               </form>
               {% endif %}
@@ -113,6 +118,7 @@
       {% if saved == 'invite_resent' %}<p class="settings-success">{{ t('admin_invite_resent_msg') }}</p>{% endif %}
       {% if saved == 'invite_revoked' %}<p class="settings-success">{{ t('admin_invite_revoked_msg') }}</p>{% endif %}
       <form method="post" action="/admin/invites" class="settings-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field" style="max-width:320px;">
           <input class="form-input" type="email" name="email" placeholder="{{ t('email_placeholder') }}" required>
         </div>
@@ -146,10 +152,12 @@
             <td>
               {% if i.status in ('expired', 'revoked') %}
               <form method="post" action="/admin/invites/{{ i.id }}/resend" class="admin-inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save">{{ t('admin_invite_resend_btn') }}</button>
               </form>
               {% elif i.status == 'pending' %}
               <form method="post" action="/admin/invites/{{ i.id }}/revoke" class="admin-inline-form" onsubmit="return confirm('{{ t('admin_invite_revoke_confirm', email=i.email) }}');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save btn-warning">{{ t('admin_invite_revoke_btn') }}</button>
               </form>
               {% endif %}
@@ -184,6 +192,7 @@
       {% if saved == 'schedule' %}<p class="settings-success">{{ t('admin_schedule_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/schedule">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field">
           <label class="form-label" for="sync_daily_time">
             {{ t('admin_daily_sync_label') }}
@@ -231,6 +240,7 @@
         </p>
       </div></div>
       <form method="post" action="/admin/privacy-defaults" class="settings-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field">
           <label class="form-label" for="default_hidden_tags">{{ t('admin_default_hidden_tags_label') }}</label>
           <input class="form-input" type="text" id="default_hidden_tags" name="default_hidden_tags"
@@ -253,6 +263,7 @@
           {% if google_status.configured %}<span class="status-ok">{{ t('admin_oauth_configured', id=google_status.client_id) }}</span>{% else %}<span class="status-empty">{{ t('admin_oauth_not_configured') }}</span>{% endif %}
         </h2>
         <form method="post" action="/admin/oauth-settings" class="settings-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="provider" value="google">
           <div class="form-field">
             <label class="form-label" for="google_client_id">{{ t('admin_client_id_label') }}</label>
@@ -275,6 +286,7 @@
           {% if discord_status.configured %}<span class="status-ok">{{ t('admin_oauth_configured', id=discord_status.client_id) }}</span>{% else %}<span class="status-empty">{{ t('admin_oauth_not_configured') }}</span>{% endif %}
         </h2>
         <form method="post" action="/admin/oauth-settings" class="settings-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="provider" value="discord">
           <div class="form-field">
             <label class="form-label" for="discord_client_id">{{ t('admin_client_id_label') }}</label>

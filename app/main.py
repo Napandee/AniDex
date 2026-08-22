@@ -24,7 +24,7 @@ import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -35,7 +35,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server
+from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server, csrf
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -926,7 +926,82 @@ def _upsert_anime_row(media: dict) -> None:
             json.dumps(relations),
         ),
     )
-app = FastAPI()
+# ── CSRF protection (issue #312) ─────────────────────────────────────────────
+#
+# Registered below as a global FastAPI dependency (app = FastAPI(dependencies=...))
+# rather than a per-route Depends() or a hand-added check at the top of each route
+# function (the pattern _require_user/_require_admin use) — this app already has 50+
+# POST/PATCH/DELETE routes, and a global dependency is the one approach where a
+# future route can't simply forget to opt in. See app/csrf.py's module docstring for
+# where the token itself lives (the existing signed-cookie session, not a new table
+# or migration) and why.
+#
+# Defined here, above `app = FastAPI(...)`, because Depends(_csrf_protect) has to be
+# a real, already-defined callable at the moment the FastAPI(...) constructor call
+# below evaluates its `dependencies=` argument — everything this function touches
+# (Request, HTTPException, the csrf module) is already available at this point in
+# the file.
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+
+async def _csrf_protect(request: Request) -> None:
+    """Rejects any state-changing request (anything not in _CSRF_SAFE_METHODS)
+    whose CSRF token doesn't match this session's — a missing, stale, or plain
+    wrong token all fail the same way, a 403.
+
+    Runs during FastAPI's dependency-solving phase — well inside the ASGI
+    middleware stack, so SessionMiddleware has already decoded request.session
+    from the incoming cookie by the time this executes; the ordering headache
+    that would come from trying to do this as raw ASGI/BaseHTTPMiddleware
+    (needing to sit *inside* SessionMiddleware in the wrap order just to read
+    request.session before the route runs) simply doesn't apply to a dependency.
+
+    Body access is deliberately narrow: for a Form()/File()-typed route, FastAPI's
+    own request handler already reads+caches the parsed form body *before*
+    solve_dependencies runs (see fastapi.routing.get_request_handler: `if
+    is_body_form: body = await request.form()` happens ahead of dependency
+    solving), so this function's own `await request.form()` call below never
+    double-reads the ASGI body stream — Starlette caches FormData on the Request
+    the first time it's parsed and simply returns that cache on every subsequent
+    call. For a JSON-body route this never touches the body at all (a JSON caller
+    must supply the header instead — script.js's global fetch() patch does this
+    automatically, see static/script.js), so it can never race or collide with a
+    route's own `await request.json()` call either.
+
+    Applies to every route on this FastAPI app's own router — NOT to the two
+    app.mount()'d sub-apps (StaticFiles at /static, mcp_server.asgi_app at /mcp):
+    `dependencies=` at the FastAPI-constructor level only threads through
+    add_api_route()'s own Dependant tree, never a separately-mounted ASGI app.
+    That already gives /mcp the exemption issue #312 calls for (bearer-PAT auth,
+    not cookie/session-based — CSRF doesn't apply there) with no special-casing
+    needed here.
+
+    No path-based exemption list: the one thing issue #312 flags as possibly
+    needing one — the OAuth callback routes, which already have their own
+    CSRF-equivalent protection via the OAuth `state` parameter (issue #313) —
+    turns out not to need it. They're GET routes (a provider redirects the
+    user's browser back with a 302; it never POSTs), so the safe-method skip
+    below already excludes them the same as any other GET in this app. Verified
+    with `grep -n "@app.post|@app.put|@app.patch|@app.delete" app/main.py`
+    (extended regex) before writing this: zero hits under /auth/callback or
+    /auth/link-callback.
+    """
+    if request.method in _CSRF_SAFE_METHODS:
+        return
+
+    supplied = request.headers.get(csrf.HEADER_NAME)
+    if not supplied:
+        content_type = request.headers.get("content-type", "")
+        if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+            form = await request.form()
+            field_value = form.get(csrf.FORM_FIELD)
+            supplied = field_value if isinstance(field_value, str) else None
+
+    if not csrf.token_is_valid(request.session, supplied):
+        raise HTTPException(status_code=403, detail="Missing or invalid CSRF token")
+
+
+app = FastAPI(dependencies=[Depends(_csrf_protect)])
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Issue #207 — MCP server, mounted as a route prefix of this same app rather than a
 # separate process/container. See app/mcp_server.py's module docstring for the full
@@ -1356,9 +1431,18 @@ def get_current_user(request: Request) -> dict | None:
 
     if user is None:
         pending_2fa = request.session.get(_PENDING_2FA_SESSION_KEY)
+        # Issue #312 — same reasoning as pending_2fa above: without preserving this
+        # across the clear, every anonymous request (which always lands here, since
+        # there's no "sid" to resolve yet) would silently mint a brand-new CSRF
+        # token, invalidating whatever token was embedded in any page rendered a
+        # moment earlier in another tab — a real "open two /auth/login tabs" or
+        # "reload the login page twice" break, not a hypothetical one.
+        existing_csrf_token = request.session.get(csrf.SESSION_KEY)
         request.session.clear()
         if pending_2fa is not None:
             request.session[_PENDING_2FA_SESSION_KEY] = pending_2fa
+        if existing_csrf_token is not None:
+            request.session[csrf.SESSION_KEY] = existing_csrf_token
 
     request.state._cached_user = user
     request.state._cached_impersonation = impersonation
@@ -1551,6 +1635,11 @@ def _nav_context(request: Request) -> dict:
         "current_language": locale,
         "nav_theme": theme,
         "i18n_json": i18n_json,
+        # Issue #312 — available on every templated response so a form can embed
+        # it as a hidden field (see the csrf_token input added to every
+        # <form method="post"> template) and base.html can expose it to
+        # script.js's fetch()-header patch via a <meta> tag.
+        "csrf_token": csrf.get_or_create_token(request.session),
     }
 
 

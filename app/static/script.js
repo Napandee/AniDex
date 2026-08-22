@@ -21,6 +21,53 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ── CSRF token header injection (#312) ──────────────────────────────────────
+// This app's ~50 fetch()-based state-changing call sites (bulk edit, star
+// ratings, progress steppers, tag editing, collections, sync triggers, etc. —
+// spread across this file AND several templates' own inline <script> blocks,
+// e.g. library.html, recommendations.html, queue.html, settings.html, stats.html)
+// all need to send the CSRF token backend/app/main.py's global _csrf_protect
+// dependency checks. Patching window.fetch once, here, covers every one of them
+// automatically — including future call sites — instead of hand-editing every
+// individual fetch() call and risking missing one (the exact "silently break
+// bulk edit/rating/progress" regression issue #312 explicitly warns about).
+//
+// Safe to do from this deferred script even though several templates define
+// their OWN inline (non-deferred) <script> blocks further down the page: those
+// inline scripts only ever *define* functions and attach click/submit
+// listeners when they run — the fetch() calls inside them don't actually
+// execute until a user interacts with the page, by which point this deferred
+// script (and this patch) has already run. Order of script *execution* doesn't
+// matter here, only order of `fetch` actually being *invoked*.
+//
+// The token itself comes from a <meta name="csrf-token"> tag base.html renders
+// into every page's <head> from the same per-session token app/csrf.py hands
+// out (see _nav_context) — re-read on every call rather than cached once, since
+// it's cheap and this way a hidden-field-based full-page-reload flow (e.g. a
+// plain <form> POST that then reloads and re-renders a fresh token into that
+// meta tag) can never leave this patch attaching a stale value.
+(function () {
+  const CSRF_HEADER = 'X-CSRF-Token';
+  const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = function (input, init) {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const token = meta && meta.content;
+    const requestMethod = (input instanceof Request) ? input.method : undefined;
+    const method = ((init && init.method) || requestMethod || 'GET').toUpperCase();
+
+    if (token && UNSAFE_METHODS.has(method)) {
+      const baseHeaders = (init && init.headers) || (input instanceof Request ? input.headers : undefined);
+      const headers = new Headers(baseHeaders);
+      headers.set(CSRF_HEADER, token);
+      init = Object.assign({}, init, { headers });
+    }
+
+    return originalFetch(input, init);
+  };
+})();
+
 // ── i18n lookup (#147) ───────────────────────────────────────────────────────
 // window.I18N is set inline in base.html's <head>, before this deferred script
 // runs — the full key->string map for the request's locale, English-fallback

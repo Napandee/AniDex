@@ -17,6 +17,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
+  <!-- Issue #312 — CSRF token, read by script.js's global fetch() patch and
+       attached as the X-CSRF-Token header on every state-changing request. Not a
+       hidden form field: this one has to be readable by JS from any page, not
+       just inside a specific <form>. Re-rendered fresh on every page load from
+       the same per-session token every <form method="post">'s own hidden
+       csrf_token field carries — see app/csrf.py and _nav_context. -->
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <!-- v=68 — bumped for #307's search-result card-click-to-notes fix
        (.search-card-link). See the superseded
        v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/v=66/v=67
@@ -28,15 +35,13 @@
        before merging — another parallel PR may have already claimed v=68. -->
   <link rel="stylesheet" href="/static/style.css?v=68">
   <script>window.I18N = {{ i18n_json|safe }};</script>
-  <!-- v=28 — same #257/PR #275 gap as style.css above: the month-toggle
-       click-handler wiring shipped in script.js without bumping this value,
-       so a cached script.js left the new Month button with no listener
-       attached client-side. Bump this on every script.js change too, same
-       reasoning as style.css's v= comment. #236 adds the AniDexWrapupReveal
-       module + its auto-init pass. #301 adds the .btn-skip-filler click
-       handler. Re-check against origin/main right before merging — #300/#302
-       are in flight concurrently and may also touch this file. -->
-  <script src="/static/script.js?v=28" defer></script>
+  <!-- v=29 — bumped for #312's global fetch() CSRF-header patch. See the
+       superseded v=28 comment for why this needs bumping on every script.js
+       change in this repo: several parallel branches land JS independently and a
+       stale cache-bust value silently serves an old script.js to a browser that
+       already cached the previous version. Re-check this against origin/main
+       right before merging — another parallel PR may have already claimed v=29. -->
+  <script src="/static/script.js?v=29" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% if nav_impersonation %}
@@ -45,6 +50,7 @@
       {{ t('impersonation_banner_text', user_email=nav_user.email, admin_email=nav_impersonation.admin_email, expires_at=nav_impersonation.expires_at.strftime('%H:%M UTC')) }}
     </span>
     <form method="post" action="/admin/impersonate/stop" class="impersonation-stop-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="impersonation-stop-btn">{{ t('impersonation_stop_btn') }}</button>
     </form>
   </div>
@@ -123,6 +129,7 @@
         </a>
         {% endif %}
         <form method="post" action="/auth/logout" class="logout-fab-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="logout-fab" title="{{ t('nav_logout_title') }}" aria-label="{{ t('nav_logout_title') }}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
