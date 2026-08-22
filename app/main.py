@@ -1861,7 +1861,7 @@ def auth_login_2fa_submit(request: Request, code: str = Form(...)):
         )
 
     code = code.strip()
-    valid = bool(code) and pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1)
+    valid = bool(code) and pyotp.TOTP(config.decrypt_secret(user["totp_secret"])).verify(code, valid_window=1)
     if not valid and code:
         # Falls back to a one-time recovery code (issue #83's lost-authenticator path)
         # — only tried if the TOTP check itself failed, so a valid 6-digit code is
@@ -5464,7 +5464,7 @@ def settings_2fa_setup_confirm(request: Request, code: str = Form(...)):
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE users SET totp_secret = %s, totp_enabled = true, totp_enabled_at = now() WHERE id = %s",
-                (secret, user["id"]),
+                (config.encrypt_secret(secret), user["id"]),
             )
             for rc in recovery_codes:
                 cur.execute(
