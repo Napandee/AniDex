@@ -371,6 +371,18 @@
   "notes_rewatch_placeholder": "今回違っていた点…",
   "notes_rewatch_save_btn": "再視聴 #{num} のノートを保存",
 
+  "notes_filler_heading": "フィラー回",
+  "notes_filler_no_match": "AniFillerPediaでまだ調査されていません。",
+  "notes_filler_matched_empty": "AniFillerPediaで一致しましたが、まだ調査済みのエピソードがありません。",
+  "notes_filler_count_canon": "本編 {n}話",
+  "notes_filler_count_filler": "フィラー {n}話",
+  "notes_filler_count_mixed": "混合 {n}話",
+  "notes_filler_researched_hint": "これまでに調査済みの{n}話に基づく情報です — 全話を網羅しているとは限りません。",
+  "notes_filler_show_filler": "フィラー回を表示（{n}話）",
+  "notes_filler_show_mixed": "混合回を表示（{n}話）",
+  "notes_filler_citation_fallback": "AniFillerPediaで出典を見る",
+  "notes_filler_source_link": "AniFillerPedia ↗",
+
   "relation_prequel": "前編",
   "relation_sequel": "続編",
   "relation_parent": "本編",

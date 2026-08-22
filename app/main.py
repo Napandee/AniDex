@@ -3091,6 +3091,103 @@ async def snooze(anime_id: int, request: Request):
     return JSONResponse({"ok": True})
 
 
+def _group_consecutive_episodes(episodes: list[dict]) -> list[dict]:
+    """Collapse a status-homogeneous, episode_number-ascending list of
+    filler_episode_cache rows into consecutive runs (e.g. episodes 12,13,14,15
+    -> one range "12-15"), per issue #300's acceptance criteria ("expandable
+    filler/mixed episode-number lists, ranges where consecutive"). Each
+    returned group carries a `label` for display plus one representative
+    episode's citation_url/citation_description/status_note (the first
+    episode in the run that actually has one, falling back to the run's first
+    episode) for the tooltip-on-expand — different episodes in the same run
+    can in principle carry different citations, but showing one representative
+    source per collapsed range is the reasonable trade-off for a compact
+    display; the full episode list is still on the group if a caller ever
+    needs it."""
+    groups: list[dict] = []
+    for ep in episodes:
+        if groups and ep["episode_number"] == groups[-1]["end"] + 1:
+            groups[-1]["end"] = ep["episode_number"]
+            groups[-1]["episodes"].append(ep)
+        else:
+            groups.append({"start": ep["episode_number"], "end": ep["episode_number"], "episodes": [ep]})
+
+    for g in groups:
+        g["label"] = str(g["start"]) if g["start"] == g["end"] else f"{g['start']}-{g['end']}"
+        rep = next(
+            (e for e in g["episodes"] if e.get("citation_url") or e.get("citation_description")),
+            g["episodes"][0],
+        )
+        g["citation_url"] = rep.get("citation_url")
+        g["citation_description"] = rep.get("citation_description")
+        g["status_note"] = rep.get("status_note")
+    return groups
+
+
+def _get_filler_data(anime_id: int) -> dict | None:
+    """Filler/canon episode breakdown for the notes page (issue #300), sourced
+    from #299's three-table cache (filler_episode_cache / filler_sync_state /
+    filler_data_license — see schema.sql for the full design rationale).
+
+    Returns None when filler_sync_state has no row at all for this anime —
+    the sync job has never even attempted this title, which the caller renders
+    as no section at all (not even an empty state), per #300's scope. This is
+    distinct from every other outcome below, which the sync job HAS attempted
+    and so are all worth surfacing:
+      - "no_match": a row exists but afp_series_id IS NULL — AniFillerPedia has
+        no series matching this title (yet). Calm "not researched" state.
+      - "matched_empty": afp_series_id is set (a real AniFillerPedia series
+        match) but filler_episode_cache has zero rows for it — matched, but
+        nobody's researched any of its episodes on AniFillerPedia's side yet.
+        Also a calm "not researched" state, worded slightly differently since
+        we do at least know which AniFillerPedia series this is.
+      - "matched": real episode data exists. Counts + consecutive-range
+        groups per status, ready for the template's disclosure widgets."""
+    sync_state = db.fetchone(
+        "SELECT afp_series_id, last_checked_at FROM filler_sync_state WHERE anime_id = %s",
+        (anime_id,),
+    )
+    if not sync_state:
+        return None
+
+    if sync_state["afp_series_id"] is None:
+        return {"state": "no_match", "last_checked_at": sync_state["last_checked_at"]}
+
+    rows = db.fetchall(
+        """
+        SELECT episode_number, status, status_note, citation_url, citation_description
+        FROM filler_episode_cache
+        WHERE anime_id = %s
+        ORDER BY episode_number
+        """,
+        (anime_id,),
+    )
+    if not rows:
+        return {"state": "matched_empty", "last_checked_at": sync_state["last_checked_at"]}
+
+    by_status: dict[str, list[dict]] = {"canon": [], "filler": [], "mixed": []}
+    for r in rows:
+        by_status[r["status"]].append(dict(r))
+
+    return {
+        "state": "matched",
+        "last_checked_at": sync_state["last_checked_at"],
+        "counts": {k: len(v) for k, v in by_status.items()},
+        "total_researched": len(rows),
+        "groups": {k: _group_consecutive_episodes(v) for k, v in by_status.items()},
+    }
+
+
+def _get_filler_license() -> dict | None:
+    """Cached CC BY-NC-SA attribution text for AniFillerPedia (#299's GET
+    /license snapshot) — no live call needed per page render. None only if
+    #299's sync has literally never run once against the singleton row."""
+    row = db.fetchone(
+        "SELECT license_name, attribution_notice FROM filler_data_license WHERE id = 1"
+    )
+    return dict(row) if row else None
+
+
 def _also_watching(anime_id: int, viewer_user_id: int, genres: list[str] | None) -> list[dict]:
     """Other same-instance users who have this anime in their library, respecting
     #26's privacy controls — see app/privacy.py. Static/on-demand only, computed
@@ -3142,6 +3239,9 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
 
     also_watching = _also_watching(anime_id, user["id"], anime["genres"] if anime else [])
 
+    filler = _get_filler_data(anime_id) if anime else None
+    filler_license = _get_filler_license() if filler else None
+
     trailer = None
     if anime and anime["trailer_yt_id"]:
         vid = anime["trailer_yt_id"]
@@ -3170,7 +3270,8 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
         "notes.html",
         {"anime": anime, "notes": notes, "back": back,
          "trailer": trailer, "related": related, "also_watching": also_watching,
-         "rewatch_notes": rewatch_notes, "mood_tags": MOOD_TAGS},
+         "rewatch_notes": rewatch_notes, "mood_tags": MOOD_TAGS,
+         "filler": filler, "filler_license": filler_license},
     )
 
 

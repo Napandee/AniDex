@@ -371,6 +371,18 @@
   "notes_rewatch_placeholder": "Algo distinto esta vez…",
   "notes_rewatch_save_btn": "Guardar nota del rewatch n.º {num}",
 
+  "notes_filler_heading": "Episodios de relleno",
+  "notes_filler_no_match": "Todavía no investigado en AniFillerPedia.",
+  "notes_filler_matched_empty": "Coincide en AniFillerPedia, pero aún no se ha investigado ningún episodio.",
+  "notes_filler_count_canon": "{n} canon",
+  "notes_filler_count_filler": "{n} relleno",
+  "notes_filler_count_mixed": "{n} mixto",
+  "notes_filler_researched_hint": "Basado en {n} episodio(s) investigados hasta ahora — puede que no cubra toda la serie.",
+  "notes_filler_show_filler": "Mostrar episodios de relleno ({n})",
+  "notes_filler_show_mixed": "Mostrar episodios mixtos ({n})",
+  "notes_filler_citation_fallback": "Ver fuente en AniFillerPedia",
+  "notes_filler_source_link": "AniFillerPedia ↗",
+
   "relation_prequel": "Precuela",
   "relation_sequel": "Secuela",
   "relation_parent": "Principal",
