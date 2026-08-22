@@ -1513,6 +1513,8 @@ body.auth-page main {
 .auth-links { margin-top: 1.25rem; font-size: 0.82rem; color: var(--t6); text-align: center; }
 .auth-links a { color: var(--pill-info-text); text-decoration: none; }
 
+.auth-note { margin-top: 0.9rem; font-size: 0.78rem; color: var(--t8); text-align: center; line-height: 1.4; }
+
 /* ── Two-factor authentication (issue #83) ──────────────────────────────── */
 .twofa-qr-wrap { display: flex; justify-content: center; margin: 1.25rem 0; }
 .twofa-qr-wrap img {
