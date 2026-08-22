@@ -20,6 +20,7 @@
     <div class="twofa-secret-key">{{ secret }}</div>
 
     <form method="post" action="/settings/2fa/setup">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-field">
         <label class="form-label" for="code">{{ t('twofa_setup_code_label') }}</label>
         <input class="form-input" type="text" id="code" name="code"

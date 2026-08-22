@@ -154,6 +154,7 @@
   {% endif %}
 
   <form method="post" action="/anime/{{ anime.id }}/notes" class="notes-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="back" value="{{ back }}">
 
     <div class="form-field">

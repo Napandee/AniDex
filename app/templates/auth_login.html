@@ -10,6 +10,7 @@
   {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
 
   <form method="post" action="/auth/login" class="auth-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="form-field">
       <label class="form-label" for="email">{{ t('email_label') }}</label>
       <input class="form-input" type="email" id="email" name="email" placeholder="{{ t('email_placeholder') }}" required autofocus>

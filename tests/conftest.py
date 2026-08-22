@@ -37,3 +37,113 @@ if "SETTINGS_ENCRYPTION_KEY" not in os.environ:
     os.environ["SETTINGS_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+# ── CSRF-transparent TestClient (issue #312) ────────────────────────────────
+#
+# Issue #312 added a global CSRF-token requirement on every state-changing route
+# (app/main.py's _csrf_protect dependency). Close to 200 existing tests across
+# this suite drive the app through `starlette.testclient.TestClient` instances
+# built by ~20+ near-identical, independently-defined `client`/`app_module`
+# fixtures scattered across individual test files (no single shared fixture to
+# patch instead) — each one calling client.post/put/patch/delete(...) the way a
+# real browser's fetch()/<form> would, but with no CSRF token attached, since
+# none of that test code existed with CSRF in mind.
+#
+# Fixing this by hand-editing every one of those call sites (or every
+# _register_and_login/_login helper) would be enormous and easy to get
+# partially wrong. Instead, this monkeypatches TestClient.request itself, once,
+# here — since `.post()`/`.put()`/`.patch()`/`.delete()`/`.get()` all funnel
+# through `self.request(...)` internally (httpx.Client's own implementation),
+# patching this one method transparently covers literally every TestClient
+# instance created anywhere in the suite, regardless of which file's fixture
+# constructed it or which convenience method a test calls.
+#
+# What it does, for any unsafe-method (POST/PUT/PATCH/DELETE) call: lazily mints
+# one fixed per-client token, splices it directly into the client's signed
+# "session" cookie (merging with — never clobbering — whatever's already in
+# there: "sid", pending_2fa_user_id, etc.) using the SAME encoding
+# SessionMiddleware itself uses, then attaches that same token as the
+# X-CSRF-Token header on the request. The session's secret key is read straight
+# off the already-registered SessionMiddleware instance
+# (app.user_middleware / Middleware(...).kwargs["secret_key"]) rather than
+# assumed to be some fixed string — this suite's many per-file app_module
+# fixtures set SESSION_SECRET_KEY to different values (or don't set it at all,
+# falling back to app.main's own random-per-process key), and since app.main is
+# only ever really imported once per pytest process (module caching), whichever
+# value won that race is the one that's actually live — introspecting it
+# directly is the only way this works unconditionally.
+#
+# This deliberately does NOT touch real HTTP at all to bootstrap the token (no
+# extra GET request) — an early version of this tried seeding the token via a
+# real `GET /auth/login` first, but that route calls _no_users_exist() (a real
+# DB query) before rendering, which risked colliding with the narrow,
+# call-order-sensitive db.fetchone/db.fetchall mocks several existing tests
+# already rely on for unrelated reasons. Constructing the cookie value directly
+# sidesteps that entirely — zero extra requests, zero DB touches.
+#
+# A test that specifically wants to exercise the real, unprotected/rejected
+# path (issue #312's own acceptance criterion: "a real live test... confirm
+# it's rejected") can pass `skip_csrf_autoinject=True` to bypass this and drive
+# the real, undoctored flow — see tests/test_csrf_protection.py, which is
+# exactly what verifies this app's actual CSRF protection is real and not just
+# assumed-away by this fixture.
+import base64
+import json
+
+import httpx
+from itsdangerous import TimestampSigner
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.testclient import TestClient
+
+_CSRF_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_REAL_TESTCLIENT_REQUEST = TestClient.request
+
+
+def _session_secret_key(asgi_app):
+    """The secret_key this app's already-registered SessionMiddleware instance
+    was actually constructed with — see the module comment above for why this
+    can't just be a hardcoded guess. None if the app has no SessionMiddleware
+    at all (shouldn't happen for any real app_module fixture in this suite)."""
+    for mw in getattr(asgi_app, "user_middleware", []):
+        if mw.cls is SessionMiddleware:
+            return mw.kwargs.get("secret_key")
+    return None
+
+
+def _csrf_autoinject_request(self, method, url, **kwargs):
+    if kwargs.pop("skip_csrf_autoinject", False):
+        return _REAL_TESTCLIENT_REQUEST(self, method, url, **kwargs)
+
+    if method.upper() in _CSRF_UNSAFE_METHODS:
+        secret_key = _session_secret_key(getattr(self, "app", None))
+        if secret_key is not None:
+            token = getattr(self, "_csrf_test_token", None)
+            if token is None:
+                token = "test-suite-csrf-token"
+                self._csrf_test_token = token
+                signer = TimestampSigner(str(secret_key))
+                session_dict = {}
+                existing_raw = self.cookies.get("session")
+                if existing_raw:
+                    try:
+                        unsigned = signer.unsign(existing_raw.encode("utf-8"), max_age=None)
+                        session_dict = json.loads(base64.b64decode(unsigned))
+                    except Exception:
+                        # Garbage/foreign-signature cookie (e.g. a test that
+                        # deliberately seeded an invalid one) — start fresh
+                        # rather than propagating an unrelated failure into
+                        # every unsafe-method call this client ever makes.
+                        session_dict = {}
+                session_dict["csrf_token"] = token
+                payload = base64.b64encode(json.dumps(session_dict).encode("utf-8"))
+                self.cookies.set("session", signer.sign(payload).decode("utf-8"))
+
+            headers = httpx.Headers(kwargs.get("headers"))
+            if "x-csrf-token" not in headers:
+                headers["X-CSRF-Token"] = token
+                kwargs["headers"] = headers
+
+    return _REAL_TESTCLIENT_REQUEST(self, method, url, **kwargs)
+
+
+TestClient.request = _csrf_autoinject_request

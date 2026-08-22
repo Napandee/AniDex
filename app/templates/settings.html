@@ -37,6 +37,7 @@
       </div>
       {% if password_error %}<p class="settings-error">{{ password_error }}</p>{% endif %}
       <form method="post" action="/settings/password" class="password-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input class="form-input" type="password" name="password" minlength="8" required
                placeholder="{% if account.has_password %}{{ t('account_password_placeholder_change') }}{% else %}{{ t('account_password_placeholder_set') }}{% endif %}">
         <button type="submit" class="btn-save">{% if account.has_password %}{{ t('account_password_btn_change') }}{% else %}{{ t('account_password_btn_set') }}{% endif %}</button>
@@ -47,6 +48,7 @@
         {% if account.google_linked %}
         <span class="linked-account-status linked-account-status--on">{{ t('account_status_linked') }}</span>
         <form method="post" action="/settings/unlink/google" class="linked-account-action">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn-unlink">{{ t('account_btn_disconnect') }}</button>
         </form>
         {% elif oauth_google_configured %}
@@ -61,6 +63,7 @@
         {% if account.discord_linked %}
         <span class="linked-account-status linked-account-status--on">{{ t('account_status_linked') }}</span>
         <form method="post" action="/settings/unlink/discord" class="linked-account-action">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit" class="btn-unlink">{{ t('account_btn_disconnect') }}</button>
         </form>
         {% elif oauth_discord_configured %}
@@ -89,6 +92,7 @@
 
       {% if account.totp_enabled %}
       <form method="post" action="/settings/2fa/disable" class="password-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input class="form-input" type="password" name="password" required autocomplete="current-password"
                placeholder="{{ t('twofa_disable_password_placeholder') }}">
         <button type="submit" class="btn-unlink">{{ t('twofa_disable_btn') }}</button>
@@ -130,6 +134,7 @@
             <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}</td>
             <td>
               <form method="post" action="/settings/sessions/{{ s.id }}/revoke">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-unlink">{% if s.is_current %}{{ t('account_sessions_revoke_current_btn') }}{% else %}{{ t('account_sessions_revoke_btn') }}{% endif %}</button>
               </form>
             </td>
@@ -155,6 +160,7 @@
       {% if saved == 'display' %}<p class="settings-success">{{ t('settings_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/display">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field">
           <label class="form-label" for="timezone">
             {{ t('settings_timezone_label') }}
@@ -230,6 +236,7 @@
             {% if cred_status.anilist == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
 
             <form method="post" action="/settings/credentials/anilist" class="cred-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label class="form-label" for="anilist_username">{{ t('sync_anilist_username_label') }}</label>
                 <input class="form-input" type="text" id="anilist_username" name="anilist_username"
@@ -282,6 +289,7 @@
             {% if cred_status.crunchyroll == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
 
             <form method="post" action="/settings/credentials/crunchyroll" class="cred-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label class="form-label" for="cr_etp_rt">
                   {{ t('sync_cr_token_label') }}
@@ -328,6 +336,7 @@
             {% if cred_status.netflix == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
 
             <form method="post" action="/settings/credentials/netflix" class="cred-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label class="form-label" for="netflix_cookie_header">{{ t('sync_netflix_cookie_label') }}</label>
                 <input class="form-input form-input--secret" type="password" id="netflix_cookie_header"
@@ -411,6 +420,7 @@
       {% if saved == 'netflix_csv_import' %}<p class="settings-success">{{ t('sync_csv_import_success') }}</p>{% endif %}
 
       <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field">
           <label class="form-label" for="netflix_csv">{{ t('sync_csv_field_label') }}</label>
           <input class="form-input" type="file" id="netflix_csv" name="netflix_csv" accept=".csv,text/csv" required>
@@ -454,6 +464,7 @@
             <td><a href="https://anilist.co/anime/{{ ov.anilist_id }}" target="_blank" rel="noopener">{{ ov.anilist_id }}</a></td>
             <td>
               <form method="post" action="/settings/cr-overrides/{{ ov.id }}/delete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-unlink">{{ t('sync_cr_overrides_delete_btn') }}</button>
               </form>
             </td>
@@ -467,6 +478,7 @@
       {% endif %}
 
       <form method="post" action="/settings/cr-overrides">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field">
           <label class="form-label" for="cr_override_series_title">{{ t('sync_cr_overrides_field_title') }}</label>
           <input class="form-input" type="text" id="cr_override_series_title" name="series_title" required autocomplete="off">
@@ -504,6 +516,7 @@
       {% if saved == 'streaming_services' %}<p class="settings-success">{{ t('streaming_services_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/streaming-services">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="streaming-services-grid">
           {% for s in all_streaming_services %}
           <label class="form-checkbox-label streaming-service-checkbox">
@@ -584,6 +597,7 @@
       {% if saved == 'notifications' %}<p class="settings-success">{{ t('notif_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/notifications">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="settings-subsection">
           <h3 class="settings-subsection-title">{{ t('notif_telegram_subtitle') }}</h3>
 
@@ -701,6 +715,7 @@
       {% if saved == 'privacy' %}<p class="settings-success">{{ t('settings_saved') }}</p>{% endif %}
 
       <form method="post" action="/settings/privacy">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-field">
           <label class="form-label" for="hidden_tags">
             {{ t('privacy_hidden_tags_label') }}
@@ -735,6 +750,7 @@
       {% if saved == 'token_revoked' %}<p class="settings-success">{{ t('pat_revoked_msg') }}</p>{% endif %}
 
       <form method="post" action="/settings/tokens" class="password-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input class="form-input" type="text" name="name" maxlength="200" required
                placeholder="{{ t('pat_name_placeholder') }}">
         <select class="form-input" name="scope">
@@ -766,6 +782,7 @@
             <td>{{ tok.last_used_at.strftime('%Y-%m-%d %H:%M') if tok.last_used_at else t('pat_never_used') }}</td>
             <td>
               <form method="post" action="/settings/tokens/{{ tok.id }}/revoke">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-unlink">{{ t('pat_revoke_btn') }}</button>
               </form>
             </td>
