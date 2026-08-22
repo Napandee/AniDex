@@ -16,10 +16,14 @@
       {% for e in entries %}
       <div class="card">
         {% if e.cover_image_url %}
-        <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+        <a href="/anime/{{ e.id }}/notes?back={{ e.status }}" class="search-card-link">
+          <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+        </a>
         {% endif %}
         <div class="card-body">
-          <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
+          <a href="/anime/{{ e.id }}/notes?back={{ e.status }}" class="search-card-link">
+            <h2 class="title">{{ e.title_english or e.title_romaji }}</h2>
+          </a>
           {% if e.title_english and e.title_english != e.title_romaji %}
           <p class="title-sub">{{ e.title_romaji }}</p>
           {% endif %}
