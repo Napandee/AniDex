@@ -29,6 +29,7 @@
   "register_title": "खाता बनाएँ",
   "password_placeholder_min8": "कम से कम 8 अक्षर",
   "register_submit": "खाता बनाएँ",
+  "register_cr_netflix_optional_note": "शुरुआत करने के लिए केवल AniList ही काफ़ी है। Crunchyroll और Netflix क्रेडेंशियल वैकल्पिक हैं — इन्हें आप बाद में कभी भी Settings से जोड़ सकते हैं, या पूरी तरह छोड़ भी सकते हैं।",
   "already_have_account": "पहले से खाता है?",
 
   "reset_password_title": "नया पासवर्ड सेट करें",

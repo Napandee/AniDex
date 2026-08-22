@@ -29,6 +29,7 @@
   "register_title": "アカウント作成",
   "password_placeholder_min8": "8文字以上",
   "register_submit": "アカウントを作成",
+  "register_cr_netflix_optional_note": "始めるにはAniListだけで十分です。CrunchyrollとNetflixの認証情報は任意で、後から設定でいつでも追加できますし、追加しなくても構いません。",
   "already_have_account": "すでにアカウントをお持ちですか？",
 
   "reset_password_title": "新しいパスワードを設定",

@@ -29,6 +29,7 @@
   "register_title": "创建账户",
   "password_placeholder_min8": "至少8个字符",
   "register_submit": "创建账户",
+  "register_cr_netflix_optional_note": "只需 AniList 即可开始使用。Crunchyroll 和 Netflix 凭据是可选的——你可以随时在“设置”中添加，也可以完全不添加。",
   "already_have_account": "已经有账户了？",
 
   "reset_password_title": "设置新密码",

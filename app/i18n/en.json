@@ -29,6 +29,7 @@
   "register_title": "Create account",
   "password_placeholder_min8": "min 8 characters",
   "register_submit": "Create account",
+  "register_cr_netflix_optional_note": "AniList is all you need to get started. Crunchyroll and Netflix credentials are optional — you can add them anytime from Settings, or skip them entirely.",
   "already_have_account": "Already have an account?",
 
   "reset_password_title": "Set a new password",
