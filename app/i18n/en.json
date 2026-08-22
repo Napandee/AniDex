@@ -758,6 +758,14 @@
   "streaming_titles_singular": "{count} title",
   "streaming_titles_plural": "{count} titles",
 
+  "streaming_genre_title": "Coverage by your top-rated genres",
+  "streaming_genre_desc": "Your top genres by average rating (Completed titles only), and how much of each is still covered by which service across your Watching/Planning/Upcoming list.",
+  "streaming_genre_empty": "Not enough rated titles yet to break coverage down by genre — rate a few more Completed titles to unlock this.",
+  "streaming_genre_top_badge": "Top genre",
+  "streaming_genre_avg_score_label": "Avg score",
+  "streaming_genre_min_titles_note": "Only genres with at least {count} rated titles are shown.",
+  "streaming_genre_no_coverage": "Nothing from this genre is currently in your Watching/Planning/Upcoming list.",
+
   "streaming_footprint_title": "Historical footprint (Completed / Dropped)",
   "streaming_footprint_desc": "Informational only — doesn't affect the ranking above.",
   "streaming_footprint_empty": "No Completed or Dropped titles with streaming links yet.",

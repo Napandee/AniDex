@@ -758,6 +758,14 @@
   "streaming_titles_singular": "{count} 部作品",
   "streaming_titles_plural": "{count} 部作品",
 
+  "streaming_genre_title": "按你评分最高的类型划分的覆盖情况",
+  "streaming_genre_desc": "按平均评分排列的你的顶级类型（仅限已完成作品），以及每个类型在你的观看中/计划中/即将上映列表里目前由哪些平台覆盖的比例。",
+  "streaming_genre_empty": "已评分作品还不够多，无法按类型细分覆盖情况——再给几部已完成作品评分即可解锁此功能。",
+  "streaming_genre_top_badge": "最佳类型",
+  "streaming_genre_avg_score_label": "平均评分",
+  "streaming_genre_min_titles_note": "仅显示至少有 {count} 部已评分作品的类型。",
+  "streaming_genre_no_coverage": "该类型目前没有作品出现在你的观看中/计划中/即将上映列表里。",
+
   "streaming_footprint_title": "历史足迹（已完成 / 已弃坑）",
   "streaming_footprint_desc": "仅供参考 — 不影响上方的排名。",
   "streaming_footprint_empty": "目前还没有带流媒体链接的已完成或已弃坑作品。",

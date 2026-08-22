@@ -758,6 +758,14 @@
   "streaming_titles_singular": "{count}作品",
   "streaming_titles_plural": "{count}作品",
 
+  "streaming_genre_title": "評価の高いジャンル別カバレッジ",
+  "streaming_genre_desc": "平均評価が高いジャンル（完了済み作品のみ）と、視聴中・計画中・放送予定リストにおける各ジャンルのサービス別カバー状況。",
+  "streaming_genre_empty": "ジャンル別に内訳を表示するには評価済み作品がまだ足りません。完了済み作品をもう少し評価してみてください。",
+  "streaming_genre_top_badge": "トップジャンル",
+  "streaming_genre_avg_score_label": "平均評価",
+  "streaming_genre_min_titles_note": "評価済み作品が{count}本以上あるジャンルのみ表示しています。",
+  "streaming_genre_no_coverage": "このジャンルの作品は現在、視聴中・計画中・放送予定リストにありません。",
+
   "streaming_footprint_title": "過去の実績（完了 / 中断）",
   "streaming_footprint_desc": "参考情報のみ — 上記のランキングには影響しません。",
   "streaming_footprint_empty": "配信リンクのある完了済み・中断した作品はまだありません。",

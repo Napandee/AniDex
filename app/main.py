@@ -4008,7 +4008,7 @@ def _streaming_universe(user_id: int) -> list[dict]:
     rows = db.fetchall(
         """
         SELECT le.anime_id AS id, a.title_english, a.title_romaji, a.external_links,
-               le.status, a.episodes, le.progress
+               le.status, a.episodes, le.progress, a.genres
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         WHERE le.user_id = %s
@@ -4040,6 +4040,9 @@ def _streaming_universe(user_id: int) -> list[dict]:
             # reinvented so the two read-models handle an unknown
             # anime.episodes total identically.
             "remaining": _episodes_remaining(row["progress"], row["episodes"]),
+            # #286: carried through so _compute_streaming_genre_affinity can
+            # restrict this same universe per-genre without a second query.
+            "genres": row["genres"] or [],
         })
     return universe
 
@@ -4295,6 +4298,138 @@ def _compute_streaming_cancel_candidates(user_id: int) -> dict:
     }
 
 
+# ── Genre affinity coverage (issue #286) ─────────────────────────────────────
+# #286's own Scope section required verifying `anime.genres` actually supports a
+# meaningful per-genre breakdown before committing to building this. Verification
+# (2026-08-22, against prod): `genres` is AniList's own fixed genre taxonomy — a
+# DISTINCT scan of every value on prod returned exactly 18 canonical values
+# (Action, Adventure, Comedy, Drama, Ecchi, Fantasy, Horror, Mahou Shoujo, Mecha,
+# Music, Mystery, Psychological, Romance, Sci-Fi, Slice of Life, Sports,
+# Supernatural, Thriller) with zero casing/format drift — Title Case throughout,
+# no near-duplicates. Populated on 1286/1288 anime rows (99.8%), averaging ~3-4
+# genres per title. It's coarse rather than micro-granular (no "Isekai"/"Shounen"
+# splits — those live in `tags`, not `genres`), but that's the exact same
+# coarseness /stats' existing "top_genre" and taste-drift chart already treat as
+# a meaningful signal off this identical column — not a new bar. Confirmed
+# viable; proceeding to step 2 rather than closing as not-viable.
+#
+# "Top genre" here means top-RATED (what #286 actually asks to correlate against
+# library_entries.score), not top-watched (that's /stats' existing top_genre,
+# ranked by frequency) — average score per genre across COMPLETED, scored
+# entries only, gated by the same MIN_TITLES-before-a-genre-counts-as-signal
+# rule _compute_studio_loyalty (#223, STUDIO_LOYALTY_MIN_TITLES) already
+# established for an identical one-off-title-isn't-a-signal tradeoff. Not a
+# reference to that constant directly — it's defined later in this file (near
+# /stats) than this streaming-cluster code, so importing here would hit a
+# NameError at module load; same value (3), same reasoning, kept as its own
+# constant instead.
+GENRE_AFFINITY_MIN_TITLES = 3
+
+
+def _compute_streaming_genre_affinity(user_id: int) -> dict | None:
+    """Correlates episode-weighted coverage (#285) against a user's top-RATED
+    genres for the /streaming page (#286). Returns None when there's no scored
+    COMPLETED genre clearing the MIN_TITLES gate yet — same "hide the section
+    entirely" pattern _compute_studio_loyalty/_compute_drop_patterns use, rather
+    than rendering an empty/noisy chart."""
+    genre_rows = db.fetchall(
+        """
+        SELECT
+            genre_elem AS genre,
+            COUNT(*) AS title_count,
+            COUNT(*) FILTER (WHERE le.score IS NOT NULL AND le.score > 0) AS scored_count,
+            AVG(le.score) FILTER (WHERE le.score IS NOT NULL AND le.score > 0) AS avg_score
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id,
+             jsonb_array_elements_text(a.genres) AS genre_elem
+        WHERE le.user_id = %s AND le.status = 'COMPLETED'
+        GROUP BY genre_elem
+        """,
+        (user_id,),
+    )
+    if not genre_rows:
+        return None
+
+    qualifying = []
+    excluded_low_volume = 0
+    excluded_unscored = 0
+    for row in genre_rows:
+        title_count = int(row["title_count"])
+        scored_count = int(row["scored_count"])
+        if title_count < GENRE_AFFINITY_MIN_TITLES:
+            excluded_low_volume += 1
+            continue
+        if scored_count == 0:
+            excluded_unscored += 1
+            continue
+        qualifying.append({
+            "genre": row["genre"],
+            "title_count": title_count,
+            "scored_count": scored_count,
+            "avg_score": round(float(row["avg_score"]), 2),
+        })
+
+    if not qualifying:
+        return None
+
+    qualifying.sort(key=lambda g: (-g["avg_score"], -g["title_count"], g["genre"]))
+
+    # Coverage side: the same Watching/Planning/Upcoming universe #255/#284/#285
+    # already use (via _streaming_universe, which now also carries a.genres —
+    # see #286's edit to that function), restricted per-genre and
+    # episode-weighted the same way _compute_streaming_setcover's ranked_all is.
+    # A genre that clears the rating-side gate but has nothing left in that
+    # universe (e.g. every title carrying it is already Completed) has no
+    # coverage question left to answer, so it's dropped here too rather than
+    # shown with an empty services list.
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+    universe = _streaming_universe(user_id)
+
+    genres_out = []
+    for g in qualifying:
+        genre_titles = [t for t in universe if g["genre"] in t["genres"]]
+        total_episodes = sum(t["remaining"] for t in genre_titles)
+        if total_episodes == 0:
+            continue
+
+        services_out = []
+        for svc in sorted(STREAMING_SITES):
+            episodes = sum(t["remaining"] for t in genre_titles if svc in t["sites"])
+            if episodes == 0:
+                continue
+            services_out.append({
+                "service": svc,
+                "owned": svc in owned,
+                "episodes": episodes,
+                "pct": round(episodes / total_episodes * 100, 1),
+            })
+        services_out.sort(key=lambda s: (-s["episodes"], s["service"]))
+
+        genres_out.append({
+            "genre": g["genre"],
+            "avg_score": g["avg_score"],
+            "title_count": g["title_count"],
+            "universe_title_count": len(genre_titles),
+            "total_episodes": total_episodes,
+            "services": services_out,
+        })
+
+    if not genres_out:
+        return None
+
+    return {
+        "genres": genres_out,
+        "min_titles": GENRE_AFFINITY_MIN_TITLES,
+        "total_genres": len(genre_rows),
+        "excluded_low_volume": excluded_low_volume,
+        "excluded_unscored": excluded_unscored,
+    }
+
+
 @app.get("/streaming", response_class=HTMLResponse)
 def streaming_page(request: Request):
     user, denied = _require_user(request)
@@ -4305,6 +4440,7 @@ def streaming_page(request: Request):
     calendar = _compute_streaming_calendar(user["id"])
     setcover = _compute_streaming_setcover(user["id"])
     cancel = _compute_streaming_cancel_candidates(user["id"])
+    genre_affinity = _compute_streaming_genre_affinity(user["id"])  # issue #286
 
     return templates.TemplateResponse(
         request,
@@ -4329,6 +4465,7 @@ def streaming_page(request: Request):
             "cancel_total_titles": cancel["total_titles"],
             "cancel_total_episodes_remaining": cancel["total_episodes_remaining"],
             "cancel_candidates": cancel["candidates"],
+            "genre_affinity": genre_affinity,
         },
     )
 
