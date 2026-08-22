@@ -14,6 +14,7 @@
         <div class="upcoming-episode">
           {{ t('upcoming_episode_label', num=e.episode) }}
           {% if e.episodes %}{{ t('upcoming_episode_of', total=e.episodes) }}{% endif %}
+          {% if e.is_filler %}<span class="filler-badge">{{ t('upcoming_filler_badge') }}</span>{% endif %}
         </div>
         <div class="upcoming-time">
           {{ e.airing_local.strftime('%a %d %b, %H:%M') }} {{ e.tz_abbr }}
@@ -128,8 +129,8 @@
         <a href="/upcoming?date={{ day.date.isoformat() }}&amp;month_offset={{ month_offset }}" class="upcoming-month-cell{% if day.is_today %} is-today{% endif %}">
           <span class="upcoming-month-date">{{ day.date.day }}</span>
           {% for e in day.entries %}
-          <div class="upcoming-month-chip" title="{{ e.title_english or e.title_romaji }} — {{ t('upcoming_month_chip_ep', num=e.episode) }}">
-            <span class="upcoming-month-chip-dot"></span>
+          <div class="upcoming-month-chip" title="{{ e.title_english or e.title_romaji }} — {{ t('upcoming_month_chip_ep', num=e.episode) }}{% if e.is_filler %} — {{ t('upcoming_filler_badge') }}{% endif %}">
+            <span class="upcoming-month-chip-dot{% if e.is_filler %} upcoming-month-chip-dot--filler{% endif %}"></span>
             <span class="upcoming-month-chip-text">{{ e.title_english or e.title_romaji }} · {{ t('upcoming_month_chip_ep', num=e.episode) }}</span>
           </div>
           {% endfor %}

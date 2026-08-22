@@ -2128,6 +2128,12 @@ a.upcoming-month-cell:focus-visible { outline: 2px solid var(--accent); outline-
   background: var(--accent);
 }
 
+/* Filler-episode signal (issue #302, reading #299's filler_episode_cache) — only
+   a known 'filler' status gets a visible treatment; canon/mixed/unknown keep the
+   default dot color so this stays one clear signal, not a second color meaning
+   something subtly different. */
+.upcoming-month-chip-dot--filler { background: var(--pill-warning-text-strong); }
+
 .upcoming-month-chip-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3211,6 +3217,18 @@ a.drop-tag-chip-link:focus-visible {
   border: 1px solid var(--pill-violet-border);
   border-radius: 999px;
   color: var(--pill-violet-text);
+}
+
+/* ── Filler-episode badge (issue #302) ───────────────────────────────────────── */
+.filler-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  margin-left: 0.4rem;
+  background: var(--pill-warning-bg);
+  border: 1px solid var(--pill-warning-border);
+  border-radius: 999px;
+  color: var(--pill-warning-text);
 }
 
 /* ── AniList icon link ───────────────────────────────────────────────────────── */

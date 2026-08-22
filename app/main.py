@@ -3534,6 +3534,29 @@ def upcoming(
             entry["group"] = f"In {weeks} week{'s' if weeks > 1 else ''}"
         entries.append(entry)
 
+    # Filler-episode tag (issue #302, reading #299's filler_episode_cache). Per
+    # #302's acceptance criteria, only a known 'filler' status gets a visible
+    # treatment — 'canon', 'mixed', and "no cache row at all" (unknown) all render
+    # identically to today, so this only needs a lookup set of the (anime_id,
+    # episode) pairs that are actually 'filler', not the full status per entry.
+    # A single ANY(%s)-scoped query (matching this file's existing ANY(%s)
+    # pattern, e.g. the airing_schedule_cache widen query below) avoids one query
+    # per entry.
+    filler_anime_ids = list({e["id"] for e in entries})
+    filler_pairs = set()
+    if filler_anime_ids:
+        filler_rows = db.fetchall(
+            """
+            SELECT anime_id, episode_number
+            FROM filler_episode_cache
+            WHERE anime_id = ANY(%s) AND status = 'filler'
+            """,
+            (filler_anime_ids,),
+        )
+        filler_pairs = {(r["anime_id"], r["episode_number"]) for r in filler_rows}
+    for entry in entries:
+        entry["is_filler"] = (entry["id"], entry["episode"]) in filler_pairs
+
     # Day-filtered list view (issue #277) — clicking a day cell or its "+N more"
     # overflow text in the month grid links here via `?date=YYYY-MM-DD`, reusing
     # the same `entries` list (and the same entry-card markup) rather than a
