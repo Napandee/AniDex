@@ -69,6 +69,7 @@ jobs:
           docker run -d --name anidex-smoke --network host \
             -e DATABASE_URL="postgresql://anidex_test:anidex_test@localhost:5432/anidex_test" \
             -e SESSION_SECRET_KEY="ci-smoke-test-key" \
+            -e SETTINGS_ENCRYPTION_KEY="MJ9Jy26ApKWYaavzvVpYqIB8LcPSRs_hXn7PIsyC6fk=" \
             anidex:pr-test
 
           ok=""
