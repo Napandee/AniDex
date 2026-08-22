@@ -2267,6 +2267,45 @@ a.drop-tag-chip-link:focus-visible {
 .wrapup-living-link a { font-size: 0.8rem; color: var(--accent); text-decoration: none; }
 .wrapup-living-link a:hover { text-decoration: underline; }
 
+/* ── Stats: yearly wrap-up sequential reveal (issue #236) ───────────────────
+   Lightweight CSS scroll-reveal, per the issue's own scope decision — cheap
+   end, not a fuller slide-through experience. `.wrapup-reveal-step` elements
+   sit at full opacity by default (the plain static grid, no-JS-safe); adding
+   `.wrapup-reveal-pending` to their container hides them, and script.js's
+   AniDexWrapupReveal.play() then staggers `.wrapup-revealed` back onto each
+   step in turn. The 3-class selector below beats the 2-class pending rule on
+   specificity regardless of source order, so a step that's already been
+   revealed stays visible even while its container still carries the pending
+   class during the tail of the sequence. */
+.wrapup-replay-btn {
+  padding: 0.3rem 0.7rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--t2);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.wrapup-replay-btn:hover { border-color: var(--accent); color: var(--accent); }
+.wrapup-replay-btn[hidden] { display: none; }
+
+.wrapped-page .wrapup-replay-btn { margin-bottom: 1rem; }
+
+.wrapup-reveal-step {
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.wrapup-reveal-pending .wrapup-reveal-step {
+  opacity: 0;
+  transform: translateY(14px);
+}
+.wrapup-reveal-pending .wrapup-reveal-step.wrapup-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wrapup-reveal-step { transition: none; }
+}
+
 /* ── "Your year so far" living page (issue #196) ─────────────────────────── */
 .wrapped-page .page-header { margin-bottom: 1rem; }
 .wrapped-pace-card {

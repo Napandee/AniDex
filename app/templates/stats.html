@@ -62,6 +62,10 @@
     <div class="wrapup-header">
       <h2 class="chart-title">Year in anime</h2>
       <div class="wrapup-controls">
+        {# Issue #236 — replays the sequential reveal (auto-played the first time a
+           given year is viewed, see loadWrapup below) on demand. Hidden until the
+           first successful, non-empty load, same gate as wrapup-body/wrapup-extras. #}
+        <button type="button" class="wrapup-replay-btn" id="wrapup-replay" hidden>{{ t('stats_wrapup_replay_btn') }}</button>
         <select id="wrapup-year" aria-label="Year"></select>
         <select id="wrapup-season" aria-label="Season (optional)">
           <option value="">All seasons</option>
@@ -77,10 +81,10 @@
        year-comparison browsing. #}
     <p class="wrapup-living-link"><a href="/stats/wrapped">{{ t('stats_wrapped_link') }}</a></p>
     <div class="wrapup-body" id="wrapup-body">
-      <div class="wrapup-stat"><span class="stat-num" id="wrapup-completed">—</span><span class="stat-label">Completed</span></div>
-      <div class="wrapup-stat"><span class="stat-num" id="wrapup-watchtime">—</span><span class="stat-label">Watch time</span></div>
-      <div class="wrapup-stat"><span class="stat-num" id="wrapup-genre">—</span><span class="stat-label">Top genre</span></div>
-      <div class="wrapup-stat"><span class="stat-num" id="wrapup-rate">—</span><span class="stat-label">Completion rate</span></div>
+      <div class="wrapup-stat wrapup-reveal-step"><span class="stat-num" id="wrapup-completed">—</span><span class="stat-label">Completed</span></div>
+      <div class="wrapup-stat wrapup-reveal-step"><span class="stat-num" id="wrapup-watchtime">—</span><span class="stat-label">Watch time</span></div>
+      <div class="wrapup-stat wrapup-reveal-step"><span class="stat-num" id="wrapup-genre">—</span><span class="stat-label">Top genre</span></div>
+      <div class="wrapup-stat wrapup-reveal-step"><span class="stat-num" id="wrapup-rate">—</span><span class="stat-label">Completion rate</span></div>
     </div>
     <p class="wrapup-empty" id="wrapup-empty" hidden>Nothing completed for this year yet.</p>
 
@@ -89,15 +93,15 @@
          finish_date, not a.season_year/a.season like the four stats above. -->
     <div class="wrapup-extras" id="wrapup-extras">
       <div class="wrapped-detail-grid">
-        <div class="wrapped-detail">
+        <div class="wrapped-detail wrapup-reveal-step">
           <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_binge') }}</h3>
           <p id="wrapup-binge">—</p>
         </div>
-        <div class="wrapped-detail">
+        <div class="wrapped-detail wrapup-reveal-step">
           <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_planning_completed') }}</h3>
           <p id="wrapup-planning-completed">—</p>
         </div>
-        <div class="wrapped-detail wrapped-detail--wide">
+        <div class="wrapped-detail wrapped-detail--wide wrapup-reveal-step">
           <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_score_shift') }}</h3>
           <canvas id="chart-wrapup-shift" height="120"></canvas>
           <p class="wrapup-empty" id="wrapup-no-prior-year" hidden>{{ t('stats_wrapped_no_prior_year') }}</p>
@@ -800,6 +804,16 @@
 
     let shiftChart = null;
 
+    // Issue #236 — sequential reveal. Reveal-step elements are the wrapup-body/
+    // wrapup-extras children themselves (they stay in the DOM across a year/season
+    // switch, only their text/chart content is replaced), so they're queried once
+    // here rather than per loadWrapup() call. AniDexWrapupReveal.init() (script.js)
+    // is safe to call again on every load — it only binds the replay button's
+    // click listener once and just updates which year it replays.
+    const wrapupCard = document.getElementById('wrapup-card');
+    const replayBtn = document.getElementById('wrapup-replay');
+    const revealSteps = Array.from(wrapupCard.querySelectorAll('.wrapup-reveal-step'));
+
     async function loadWrapup() {
       const y = yearSelect.value;
       const s = seasonSelect.value;
@@ -814,6 +828,7 @@
         body.hidden = true;
         extras.hidden = true;
         empty.hidden = false;
+        if (replayBtn) replayBtn.hidden = true;
         return;
       }
       body.hidden = false;
@@ -826,6 +841,13 @@
       document.getElementById('wrapup-genre').textContent = wrap.top_genre || '—';
       document.getElementById('wrapup-rate').textContent =
         wrap.totals.completion_rate != null ? `${wrap.totals.completion_rate}%` : '—';
+
+      // Issue #236 — auto-play the sequential reveal the first time this year is
+      // viewed (per-year, localStorage-tracked; see AniDexWrapupReveal in
+      // script.js), then just show the replay button. Placed before the
+      // extrasData early-return below so the body's 4 stats still get their
+      // reveal even on the (shouldn't-happen) extras-missing path.
+      window.AniDexWrapupReveal.init(wrapupCard, revealSteps, { scope: 'card', year: y, replayBtn });
 
       // Issue #193's three additions — completion-year (finish_date) scoped, driven
       // by this same `y` selector value. Absent (null) if the backend somehow didn't

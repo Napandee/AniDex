@@ -1449,3 +1449,81 @@ document.querySelectorAll('.btn-add-planning').forEach(btn => {
     }
   });
 }());
+
+// ── Yearly wrap-up sequential reveal (issue #236) ───────────────────────────
+// Lightweight CSS-driven "scroll-reveal" pacing (per the issue's own explicit
+// scope decision — cheap end, not a fuller slide-through experience) layered
+// over the wrap-up's own already-rendered stat tiles/details (`.wrapup-reveal-
+// step` elements). No new backend data: this only staggers CSS classes on DOM
+// nodes that already exist, either server-rendered directly (wrapped.html) or
+// already populated into the DOM by stats.html's #wrapup-card fetch.
+//
+// Auto-plays the first time a user views a given year's wrap-up, tracked
+// client-side only via localStorage (`wrapupRevealSeen:<scope>:<year>` — scope
+// keeps /stats's #wrapup-card and /stats/wrapped's own reveal independent, per
+// the issue's own reasoning: #196's page is always the current calendar year,
+// while #wrapup-card's year picker can revisit any past year), then settles
+// into the plain static grid. A "Show reveal" button replays it on demand
+// afterward — see init() below for the shared wire-up both call sites use.
+window.AniDexWrapupReveal = (function () {
+  function seenKey(scope, year) {
+    return `wrapupRevealSeen:${scope}:${year}`;
+  }
+  function hasSeen(scope, year) {
+    try { return localStorage.getItem(seenKey(scope, year)) === '1'; }
+    catch { return true; } // fail safe: an unreadable store must never force a repeat auto-play
+  }
+  function markSeen(scope, year) {
+    try { localStorage.setItem(seenKey(scope, year), '1'); } catch { /* no-op */ }
+  }
+
+  function play(container, steps, { stagger = 200, tail = 450 } = {}) {
+    if (!container || !steps.length) return;
+    steps.forEach(el => el.classList.remove('wrapup-revealed'));
+    container.classList.add('wrapup-reveal-pending');
+    // Force a layout flush so the "pending" (opacity:0) state actually paints
+    // before the first step's "revealed" class transitions in — otherwise the
+    // browser can coalesce both class changes into a single frame and the fade
+    // never visibly happens.
+    void container.offsetWidth;
+    steps.forEach((el, i) => {
+      setTimeout(() => el.classList.add('wrapup-revealed'), i * stagger);
+    });
+    setTimeout(() => container.classList.remove('wrapup-reveal-pending'), steps.length * stagger + tail);
+  }
+
+  // Wires a container's replay button (idempotent — safe to call again for the
+  // same container/button, e.g. stats.html re-invoking this on every year/season
+  // switch; the click listener is only ever attached once per button) and
+  // auto-plays the reveal if this scope/year combination hasn't been seen yet.
+  function init(container, steps, { scope, year, replayBtn } = {}) {
+    if (!container || !steps.length || year == null) return;
+    if (replayBtn) {
+      replayBtn.hidden = false;
+      if (!replayBtn.dataset.wrapupRevealBound) {
+        replayBtn.dataset.wrapupRevealBound = '1';
+        replayBtn.addEventListener('click', () => play(container, steps));
+      }
+    }
+    if (!hasSeen(scope, year)) {
+      markSeen(scope, year);
+      play(container, steps);
+    }
+  }
+
+  return { hasSeen, markSeen, play, init };
+})();
+
+// Auto-init any server-rendered reveal container already in the DOM at load
+// time (wrapped.html's #wrapped-reveal, marked up via data-wrapup-reveal-*
+// attributes) — stats.html's #wrapup-card is populated by its own async fetch
+// instead and calls AniDexWrapupReveal.init() itself once data loads.
+document.querySelectorAll('[data-wrapup-reveal-year]').forEach(el => {
+  const scope = el.dataset.wrapupRevealScope || 'default';
+  const year = el.dataset.wrapupRevealYear;
+  const steps = Array.from(el.querySelectorAll('.wrapup-reveal-step'));
+  const replayBtn = el.dataset.wrapupRevealReplayBtn
+    ? document.getElementById(el.dataset.wrapupRevealReplayBtn)
+    : null;
+  window.AniDexWrapupReveal.init(el, steps, { scope, year, replayBtn });
+});

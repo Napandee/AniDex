@@ -17,22 +17,23 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=60 — bumped for #281's whole-day-tile-clickable CSS. See the
-       superseded v=51/v=54/v=56/v=57/v=58/v=59 comments for why this needs
-       bumping on every style.css change in this repo: several parallel
+  <!-- v=62 — bumped for #236's yearly wrap-up sequential-reveal CSS. See the
+       superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61 comments for why this
+       needs bumping on every style.css change in this repo: several parallel
        branches land CSS independently and a stale cache-bust value silently
        serves an old stylesheet to a browser that already cached the previous
        version — v=57 itself only exists because #275 skipped this exact
        step. Re-check this against origin/main right before merging — another
-       parallel PR may have already claimed v=60. -->
-  <link rel="stylesheet" href="/static/style.css?v=61">
+       parallel PR may have already claimed v=62. -->
+  <link rel="stylesheet" href="/static/style.css?v=62">
   <script>window.I18N = {{ i18n_json|safe }};</script>
-  <!-- v=26 — same #257/PR #275 gap as style.css above: the month-toggle
+  <!-- v=27 — same #257/PR #275 gap as style.css above: the month-toggle
        click-handler wiring shipped in script.js without bumping this value,
        so a cached script.js left the new Month button with no listener
        attached client-side. Bump this on every script.js change too, same
-       reasoning as style.css's v= comment. -->
-  <script src="/static/script.js?v=26" defer></script>
+       reasoning as style.css's v= comment. #236 adds the AniDexWrapupReveal
+       module + its auto-init pass. -->
+  <script src="/static/script.js?v=27" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% if nav_impersonation %}
