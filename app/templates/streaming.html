@@ -19,343 +19,392 @@
     </span>
   </p>
 
-  {# ── Services you own (read-only here — edited from Settings) ─────────────── #}
-  <div class="settings-section settings-section--first">
-    <h2 class="settings-section-title">{{ t('streaming_owned_title') }}</h2>
-    {% if owned_services %}
-    <div class="genre-list streaming-owned-list">
-      {% for s in owned_services %}<span class="genre">{{ s }}</span>{% endfor %}
-    </div>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_owned_empty') }}</p>
-    {% endif %}
-    <p class="streaming-manage-link"><a href="/settings?tab=sync">{{ t('streaming_owned_manage_link') }}</a></p>
-  </div>
-
-  {# ── Set-cover recommendation (issue #255, v3) ──────────────────────────────
-     Coverage universe = Watching + Planning + Upcoming (Completed excluded), see
-     _compute_streaming_setcover's docstring in app/main.py. Deliberately placed
-     ahead of #182's per-service marginal-value ranking below — this is the
-     sharper "what do I actually need" answer #22's brainstorm originally deferred. #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_universe_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_universe_desc') }}</p>
-    <p class="streaming-summary-line">
-      <span class="streaming-summary-item">
-        {{ t('streaming_universe_count_label') }}:
-        <strong>{% if sc_universe_size == 1 %}{{ t('streaming_titles_singular', count=sc_universe_size) }}{% else %}{{ t('streaming_titles_plural', count=sc_universe_size) }}{% endif %}</strong>
-      </span>
+  {# ── At-a-glance summary (issue #270) ──────────────────────────────────────
+     Synthesized server-side in _compute_streaming_atglance from data the
+     set-cover and cancel-candidates read-models below already compute — see
+     that function's docstring in app/main.py for how each clause degrades. #}
+  <div class="streaming-glance-card">
+    <p class="streaming-glance-line">
+      {% if not glance_has_owned %}
+      {{ t('streaming_glance_no_setup') }}
+      {% elif glance_total_episodes == 0 %}
+      {{ t('streaming_glance_empty_universe') }}
+      {% elif glance_fully_covered %}
+      {{ t('streaming_glance_fully_covered', covered=glance_covered_episodes) }}
+      {% else %}
+      {{ t('streaming_glance_coverage', owned_count=glance_owned_count, pct=glance_coverage_pct, covered=glance_covered_episodes, total=glance_total_episodes) }}
+      {% endif %}
+      {% if glance_cancel_service %}
+      {{ t('streaming_glance_cancel', service=glance_cancel_service) }}
+      {% endif %}
+      {% if glance_swap_service %}
+      {{ t('streaming_glance_swap', service=glance_swap_service, episodes=glance_swap_episodes) }}
+      {% endif %}
     </p>
   </div>
 
-  {# ── Minimal owned-combination recommendation ───────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_minimal_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_minimal_desc') }}</p>
+  {# ── Your Setup (stays expanded — the primary actionable group) ─────────────── #}
+  <div class="streaming-group">
+    <h2 class="streaming-group-eyebrow">{{ t('streaming_group_your_setup_label') }}</h2>
 
-    {% if not owned_services %}
-    <p class="settings-section-desc">{{ t('streaming_minimal_none_owned') }}</p>
-    {% elif sc_minimal_combination %}
-    <div class="genre-list streaming-owned-list">
-      {% for s in sc_minimal_combination %}<span class="genre">{{ s }}</span>{% endfor %}
+    {# ── Services you own (read-only here — edited from Settings) ─────────────── #}
+    <div class="settings-section settings-section--first">
+      <h2 class="settings-section-title">{{ t('streaming_owned_title') }}</h2>
+      {% if owned_services %}
+      <div class="genre-list streaming-owned-list">
+        {% for s in owned_services %}<span class="genre">{{ s }}</span>{% endfor %}
+      </div>
+      {% else %}
+      <p class="settings-section-desc">{{ t('streaming_owned_empty') }}</p>
+      {% endif %}
+      <p class="streaming-manage-link"><a href="/settings?tab=sync">{{ t('streaming_owned_manage_link') }}</a></p>
     </div>
-    <p class="streaming-summary-line">
-      <span class="streaming-summary-item">
-        {{ t('streaming_minimal_coverage_label') }}:
-        <strong>{% if sc_owned_total_covered_episodes == 1 %}{{ t('streaming_episodes_singular', count=sc_owned_total_covered_episodes) }}{% else %}{{ t('streaming_episodes_plural', count=sc_owned_total_covered_episodes) }}{% endif %}</strong>
-        ({% if sc_owned_total_covered == 1 %}{{ t('streaming_titles_singular', count=sc_owned_total_covered) }}{% else %}{{ t('streaming_titles_plural', count=sc_owned_total_covered) }}{% endif %})
-      </span>
-    </p>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_minimal_fully_uncovered') }}</p>
-    {% endif %}
+
+    {# ── Minimal owned-combination recommendation ───────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('streaming_minimal_title') }}</h2>
+      <p class="settings-section-desc">{{ t('streaming_minimal_desc') }}</p>
+
+      {% if not owned_services %}
+      <p class="settings-section-desc">{{ t('streaming_minimal_none_owned') }}</p>
+      {% elif sc_minimal_combination %}
+      <div class="genre-list streaming-owned-list">
+        {% for s in sc_minimal_combination %}<span class="genre">{{ s }}</span>{% endfor %}
+      </div>
+      <p class="streaming-summary-line">
+        <span class="streaming-summary-item">
+          {{ t('streaming_minimal_coverage_label') }}:
+          <strong>{% if sc_owned_total_covered_episodes == 1 %}{{ t('streaming_episodes_singular', count=sc_owned_total_covered_episodes) }}{% else %}{{ t('streaming_episodes_plural', count=sc_owned_total_covered_episodes) }}{% endif %}</strong>
+          ({% if sc_owned_total_covered == 1 %}{{ t('streaming_titles_singular', count=sc_owned_total_covered) }}{% else %}{{ t('streaming_titles_plural', count=sc_owned_total_covered) }}{% endif %})
+        </span>
+      </p>
+      {% else %}
+      <p class="settings-section-desc">{{ t('streaming_minimal_fully_uncovered') }}</p>
+      {% endif %}
+    </div>
   </div>
 
-  {# ── Honest "not available anywhere we know of" bucket — never silently omitted #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_uncovered_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_uncovered_desc') }}</p>
-    {% if sc_uncovered_titles %}
-    <details class="streaming-title-details">
-      <summary>{% if sc_uncovered_titles | length == 1 %}{{ t('streaming_titles_singular', count=sc_uncovered_titles | length) }}{% else %}{{ t('streaming_titles_plural', count=sc_uncovered_titles | length) }}{% endif %}</summary>
-      <div class="drop-tag-cloud">
-        {% for t in sc_uncovered_titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
+  {# ── Recommendations (collapsed) — cancel candidates, swap, marginal ────────── #}
+  <div class="streaming-group">
+    <details class="streaming-title-details streaming-group-details">
+      <summary>
+        <span class="streaming-group-eyebrow">{{ t('streaming_group_recommendations_label') }}</span>
+        <span class="streaming-group-summary-text">
+          {% if not owned_services %}
+          {{ t('streaming_group_recommendations_summary_no_owned') }}
+          {% else %}
+          {{ t('streaming_group_recommendations_summary', cancel_count=(cancel_candidates | selectattr('fully_redundant') | list | length), swap_count=(sc_swap_candidates | length)) }}
+          {% endif %}
+        </span>
+      </summary>
+      <div class="streaming-group-body">
+
+        {# ── Cancel candidates (issue #284, inverse framing of #255/#182) ───────────────
+           Distinct from the "unique contribution" section below: this one is scoped to
+           the actual Watching/Planning list (not the broader Upcoming-inclusive
+           set-cover universe) and reports a percentage plus an explicit "safe to
+           cancel" signal, sorted safest-to-cancel (lowest impact) first. #}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_cancel_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_cancel_desc') }}</p>
+          {% if not owned_services %}
+          <p class="settings-section-desc">{{ t('streaming_cancel_none_owned') }}</p>
+          {% else %}
+          <p class="streaming-summary-line">
+            <span class="streaming-summary-item">
+              {{ t('streaming_cancel_total_label') }}:
+              <strong>{% if cancel_total_episodes_remaining == 1 %}{{ t('streaming_episodes_singular', count=cancel_total_episodes_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=cancel_total_episodes_remaining) }}{% endif %}</strong>
+              ({% if cancel_total_titles == 1 %}{{ t('streaming_titles_singular', count=cancel_total_titles) }}{% else %}{{ t('streaming_titles_plural', count=cancel_total_titles) }}{% endif %})
+            </span>
+          </p>
+          <div class="streaming-marginal-list">
+            {% for c in cancel_candidates %}
+            <details class="streaming-title-details">
+              <summary>
+                <span class="streaming-rank-label">{{ c.service }}</span>
+                {% if c.fully_redundant %}<span class="streaming-calendar-owned-badge">{{ t('streaming_cancel_safe_badge') }}</span>{% endif %}
+                — {{ c.episodes_pct }}% ({% if c.episodes == 1 %}{{ t('streaming_episodes_singular', count=c.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=c.episodes) }}{% endif %}, {% if c.count == 1 %}{{ t('streaming_titles_singular', count=c.count) }}{% else %}{{ t('streaming_titles_plural', count=c.count) }}{% endif %})
+              </summary>
+              {% if c.titles %}
+              <div class="drop-tag-cloud">
+                {% for t in c.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
+              </div>
+              {% else %}
+              <p class="settings-section-desc">{{ t('streaming_cancel_zero_impact') }}</p>
+              {% endif %}
+            </details>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
+        {# ── Swap/consolidation suggestion ───────────────────────────────────────────── #}
+        {% if owned_services %}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_swap_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_swap_desc') }}</p>
+          {% if sc_swap_candidates %}
+          <ul class="streaming-swap-list">
+            {% for s in sc_swap_candidates %}
+            {# #285: headline is now episodes-remaining (s.episodes / sc_owned_total_covered_episodes)
+               fed into the existing sentence's number placeholders; title count kept as a
+               secondary detail appended after it rather than reworking the translated
+               string itself across all 5 locales. #}
+            <li>
+              {{ t('streaming_swap_line', service=s.service, count=s.episodes, owned_count=owned_services | length, owned_total=sc_owned_total_covered_episodes) }}
+              ({% if s.count == 1 %}{{ t('streaming_titles_singular', count=s.count) }}{% else %}{{ t('streaming_titles_plural', count=s.count) }}{% endif %})
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="settings-section-desc">{{ t('streaming_swap_none') }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {# ── Per-owned-service unique/marginal contribution ─────────────────────────── #}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_marginal_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_marginal_desc') }}</p>
+          {% if not owned_services %}
+          <p class="settings-section-desc">{{ t('streaming_marginal_none_owned') }}</p>
+          {% else %}
+          <div class="streaming-marginal-list">
+            {% for m in sc_marginal %}
+            <details class="streaming-title-details">
+              <summary>
+                <span class="streaming-rank-label">{{ m.service }}</span>
+                — {% if m.episodes == 1 %}{{ t('streaming_episodes_singular', count=m.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=m.episodes) }}{% endif %} ({% if m.count == 1 %}{{ t('streaming_titles_singular', count=m.count) }}{% else %}{{ t('streaming_titles_plural', count=m.count) }}{% endif %})
+              </summary>
+              {% if m.titles %}
+              <div class="drop-tag-cloud">
+                {% for t in m.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
+              </div>
+              {% else %}
+              <p class="settings-section-desc">{{ t('streaming_marginal_zero_unique') }}</p>
+              {% endif %}
+            </details>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+
       </div>
     </details>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_uncovered_empty') }}</p>
-    {% endif %}
   </div>
 
-  {# ── Per-owned-service unique/marginal contribution ─────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_marginal_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_marginal_desc') }}</p>
-    {% if not owned_services %}
-    <p class="settings-section-desc">{{ t('streaming_marginal_none_owned') }}</p>
-    {% else %}
-    <div class="streaming-marginal-list">
-      {% for m in sc_marginal %}
-      <details class="streaming-title-details">
-        <summary>
-          <span class="streaming-rank-label">{{ m.service }}</span>
-          — {% if m.episodes == 1 %}{{ t('streaming_episodes_singular', count=m.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=m.episodes) }}{% endif %} ({% if m.count == 1 %}{{ t('streaming_titles_singular', count=m.count) }}{% else %}{{ t('streaming_titles_plural', count=m.count) }}{% endif %})
-        </summary>
-        {% if m.titles %}
-        <div class="drop-tag-cloud">
-          {% for t in m.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
-        </div>
-        {% else %}
-        <p class="settings-section-desc">{{ t('streaming_marginal_zero_unique') }}</p>
-        {% endif %}
-      </details>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </div>
-
-  {# ── Cancel candidates (issue #284, inverse framing of #255/#182) ───────────────
-     Distinct from the "unique contribution" section above: this one is scoped to
-     the actual Watching/Planning list (not the broader Upcoming-inclusive
-     set-cover universe) and reports a percentage plus an explicit "safe to
-     cancel" signal, sorted safest-to-cancel (lowest impact) first. #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_cancel_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_cancel_desc') }}</p>
-    {% if not owned_services %}
-    <p class="settings-section-desc">{{ t('streaming_cancel_none_owned') }}</p>
-    {% else %}
-    <p class="streaming-summary-line">
-      <span class="streaming-summary-item">
-        {{ t('streaming_cancel_total_label') }}:
-        <strong>{% if cancel_total_episodes_remaining == 1 %}{{ t('streaming_episodes_singular', count=cancel_total_episodes_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=cancel_total_episodes_remaining) }}{% endif %}</strong>
-        ({% if cancel_total_titles == 1 %}{{ t('streaming_titles_singular', count=cancel_total_titles) }}{% else %}{{ t('streaming_titles_plural', count=cancel_total_titles) }}{% endif %})
-      </span>
-    </p>
-    <div class="streaming-marginal-list">
-      {% for c in cancel_candidates %}
-      <details class="streaming-title-details">
-        <summary>
-          <span class="streaming-rank-label">{{ c.service }}</span>
-          {% if c.fully_redundant %}<span class="streaming-calendar-owned-badge">{{ t('streaming_cancel_safe_badge') }}</span>{% endif %}
-          — {{ c.episodes_pct }}% ({% if c.episodes == 1 %}{{ t('streaming_episodes_singular', count=c.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=c.episodes) }}{% endif %}, {% if c.count == 1 %}{{ t('streaming_titles_singular', count=c.count) }}{% else %}{{ t('streaming_titles_plural', count=c.count) }}{% endif %})
-        </summary>
-        {% if c.titles %}
-        <div class="drop-tag-cloud">
-          {% for t in c.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
-        </div>
-        {% else %}
-        <p class="settings-section-desc">{{ t('streaming_cancel_zero_impact') }}</p>
-        {% endif %}
-      </details>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </div>
-
-  {# ── Swap/consolidation suggestion ───────────────────────────────────────────── #}
-  {% if owned_services %}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_swap_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_swap_desc') }}</p>
-    {% if sc_swap_candidates %}
-    <ul class="streaming-swap-list">
-      {% for s in sc_swap_candidates %}
-      {# #285: headline is now episodes-remaining (s.episodes / sc_owned_total_covered_episodes)
-         fed into the existing sentence's number placeholders; title count kept as a
-         secondary detail appended after it rather than reworking the translated
-         string itself across all 5 locales. #}
-      <li>
-        {{ t('streaming_swap_line', service=s.service, count=s.episodes, owned_count=owned_services | length, owned_total=sc_owned_total_covered_episodes) }}
-        ({% if s.count == 1 %}{{ t('streaming_titles_singular', count=s.count) }}{% else %}{{ t('streaming_titles_plural', count=s.count) }}{% endif %})
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_swap_none') }}</p>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {# ── Full ranked list of every allowlisted service — no coverage threshold ──── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_full_ranked_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_full_ranked_desc') }}</p>
-    {% if sc_universe_size == 0 %}
-    <p class="settings-section-desc">{{ t('streaming_full_ranked_empty_universe') }}</p>
-    {% endif %}
-    <div class="streaming-marginal-list">
-      {% for r in sc_ranked_all %}
-      <details class="streaming-title-details">
-        <summary>
-          <span class="streaming-rank-label">{{ r.service }}</span>
-          {% if r.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
-          — {{ r.episodes_pct }}% ({% if r.episodes == 1 %}{{ t('streaming_episodes_singular', count=r.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=r.episodes) }}{% endif %} · {% if r.count == 1 %}{{ t('streaming_titles_singular', count=r.count) }}{% else %}{{ t('streaming_titles_plural', count=r.count) }}{% endif %})
-        </summary>
-        {% if r.titles %}
-        <div class="drop-tag-cloud">
-          {% for t in r.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
-        </div>
-        {% else %}
-        <p class="settings-section-desc">{{ t('streaming_full_ranked_zero_titles') }}</p>
-        {% endif %}
-      </details>
-      {% endfor %}
-    </div>
-  </div>
-
-  {# ── Genre affinity coverage (issue #286) ────────────────────────────────────
-     Correlates episode-weighted coverage (#285) against the user's top-RATED
-     genres (library_entries.score x anime.genres, COMPLETED-only, gated by
-     GENRE_AFFINITY_MIN_TITLES) — a distinct question from every section above,
-     which only ever ranks services, never genres. Hidden entirely (not an
-     empty state) when _compute_streaming_genre_affinity returns None. #}
-  {% if genre_affinity %}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_genre_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_genre_desc') }}</p>
-    <p class="settings-section-desc">{{ t('streaming_genre_min_titles_note', count=genre_affinity.min_titles) }}</p>
-    <div class="streaming-marginal-list">
-      {% for g in genre_affinity.genres %}
-      <details class="streaming-title-details"{% if loop.first %} open{% endif %}>
-        <summary>
-          <span class="streaming-rank-label">{{ g.genre }}</span>
-          {% if loop.first %}<span class="streaming-calendar-owned-badge">{{ t('streaming_genre_top_badge') }}</span>{% endif %}
-          — {{ t('streaming_genre_avg_score_label') }} {{ g.avg_score }} ({% if g.title_count == 1 %}{{ t('streaming_titles_singular', count=g.title_count) }}{% else %}{{ t('streaming_titles_plural', count=g.title_count) }}{% endif %})
-        </summary>
-        {% if g.services %}
-        <div class="drop-rate-list streaming-rank-list">
-          {% set max_episodes = g.services[0].episodes %}
-          {% for s in g.services %}
-          <div class="drop-rate-row streaming-rank-row">
-            <span class="drop-rate-label streaming-rank-label">
-              {{ s.service }}
-              {% if s.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
-            </span>
-            <div class="drop-rate-bar-track">
-              <span class="drop-rate-bar-fill streaming-rank-bar-fill"
-                    style="width: {{ ((s.episodes / max_episodes * 100) if max_episodes else 0) | round(1) }}%"></span>
-            </div>
-            <span class="drop-rate-pct streaming-rank-value">
-              {{ s.pct }}%
-              <span class="drop-rate-n">· {% if s.episodes == 1 %}{{ t('streaming_episodes_singular', count=s.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=s.episodes) }}{% endif %}</span>
-            </span>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <p class="settings-section-desc">{{ t('streaming_genre_no_coverage') }}</p>
-        {% endif %}
-      </details>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
-  {# ── Marginal-value ranking (the core of #182) ─────────────────────────────── #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_ranked_title') }}</h2>
-
-    {% if ranked %}
-    {% set max_episodes = ranked[0].episodes %}
-    <div class="drop-rate-list streaming-rank-list">
-      {% for r in ranked %}
-      <div class="drop-rate-row streaming-rank-row">
-        <span class="drop-rate-label streaming-rank-label">{{ r.service }}</span>
-        <div class="drop-rate-bar-track">
-          <span class="drop-rate-bar-fill streaming-rank-bar-fill"
-                style="width: {{ ((r.episodes / max_episodes * 100) if max_episodes else 0) | round(1) }}%"></span>
-        </div>
-        <span class="drop-rate-pct streaming-rank-value">
-          {% if r.episodes == 1 %}{{ t('streaming_episodes_singular', count=r.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=r.episodes) }}{% endif %}
-          <span class="drop-rate-n">· {% if r.titles == 1 %}{{ t('streaming_titles_singular', count=r.titles) }}{% else %}{{ t('streaming_titles_plural', count=r.titles) }}{% endif %}</span>
+  {# ── Explore Coverage (collapsed) — full ranked list, genre affinity,
+       uncovered bucket, coverage universe ────────────────────────────────────── #}
+  <div class="streaming-group">
+    <details class="streaming-title-details streaming-group-details">
+      <summary>
+        <span class="streaming-group-eyebrow">{{ t('streaming_group_explore_label') }}</span>
+        <span class="streaming-group-summary-text">
+          {{ t('streaming_group_explore_summary', ranked_count=(sc_ranked_all | length), uncovered_count=(sc_uncovered_titles | length)) }}
         </span>
-      </div>
-      {% endfor %}
-    </div>
-    {% elif not owned_services %}
-    <p class="settings-section-desc">{{ t('streaming_ranked_empty_no_owned') }}</p>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_ranked_empty_covered') }}</p>
-    {% endif %}
+      </summary>
+      <div class="streaming-group-body">
 
-    {% if owned_services %}
-    <p class="streaming-summary-line">
-      <span class="streaming-summary-item">
-        {{ t('streaming_already_covered_label') }}:
-        <strong>{% if already_covered_remaining == 1 %}{{ t('streaming_episodes_singular', count=already_covered_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=already_covered_remaining) }}{% endif %}</strong>
-      </span>
-      <span class="streaming-summary-item">
-        {{ t('streaming_backlog_remaining_label') }}:
-        <strong>{% if total_backlog_remaining == 1 %}{{ t('streaming_episodes_singular', count=total_backlog_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=total_backlog_remaining) }}{% endif %}</strong>
-      </span>
-    </p>
-    {% endif %}
-  </div>
-
-  {# ── 12-month subscribe/cancel calendar (issue #228, v2 of #182) ───────────── #}
-  <div class="settings-section" id="calendar">
-    <h2 class="settings-section-title">{{ t('streaming_calendar_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_calendar_sub') }}</p>
-
-    {% if calendar_services %}
-    <div class="streaming-calendar-wrap">
-      <table class="streaming-calendar-table">
-        <thead>
-          <tr>
-            <th class="streaming-calendar-service-col"></th>
-            {% for m in calendar_months %}
-            <th class="streaming-calendar-month-col" data-month="{{ m }}"></th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for s in calendar_services %}
-          <tr>
-            <td class="streaming-calendar-service-cell">
-              <span class="streaming-calendar-service-name">{{ s.service }}</span>
-              {% if s.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
-              {% if s.tba_titles %}
-              <span class="streaming-calendar-tba" title="{{ s.tba_titles | join(', ') }}">{% if s.tba_titles | length == 1 %}{{ t('streaming_calendar_tba_singular', count=s.tba_titles | length) }}{% else %}{{ t('streaming_calendar_tba_plural', count=s.tba_titles | length) }}{% endif %}</span>
+        {# ── Full ranked list of every allowlisted service — no coverage threshold ──── #}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_full_ranked_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_full_ranked_desc') }}</p>
+          {% if sc_universe_size == 0 %}
+          <p class="settings-section-desc">{{ t('streaming_full_ranked_empty_universe') }}</p>
+          {% endif %}
+          <div class="streaming-marginal-list">
+            {% for r in sc_ranked_all %}
+            <details class="streaming-title-details">
+              <summary>
+                <span class="streaming-rank-label">{{ r.service }}</span>
+                {% if r.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
+                — {{ r.episodes_pct }}% ({% if r.episodes == 1 %}{{ t('streaming_episodes_singular', count=r.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=r.episodes) }}{% endif %} · {% if r.count == 1 %}{{ t('streaming_titles_singular', count=r.count) }}{% else %}{{ t('streaming_titles_plural', count=r.count) }}{% endif %})
+              </summary>
+              {% if r.titles %}
+              <div class="drop-tag-cloud">
+                {% for t in r.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
+              </div>
+              {% else %}
+              <p class="settings-section-desc">{{ t('streaming_full_ranked_zero_titles') }}</p>
               {% endif %}
-            </td>
-            {% for cell in s.months %}
-            <td class="streaming-calendar-cell{% if cell.needed %} streaming-calendar-cell--needed{% endif %}"
-                {% if cell.needed %}title="{% if cell.episodes == 1 %}{{ t('streaming_episodes_singular', count=cell.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=cell.episodes) }}{% endif %} · {% if cell.titles == 1 %}{{ t('streaming_titles_singular', count=cell.titles) }}{% else %}{{ t('streaming_titles_plural', count=cell.titles) }}{% endif %}"{% endif %}>
-            </td>
+            </details>
             {% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p class="streaming-calendar-legend">
-      <span class="streaming-calendar-legend-swatch streaming-calendar-legend-swatch--needed"></span>{{ t('streaming_calendar_legend_needed') }}
-      <span class="streaming-calendar-legend-swatch"></span>{{ t('streaming_calendar_legend_idle') }}
-      <span class="streaming-calendar-owned-badge streaming-calendar-owned-badge--legend">{{ t('streaming_calendar_owned_badge') }}</span>{{ t('streaming_calendar_legend_owned') }}
-    </p>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_calendar_empty') }}</p>
-    {% endif %}
+          </div>
+        </div>
+
+        {# ── Genre affinity coverage (issue #286) ────────────────────────────────────
+           Correlates episode-weighted coverage (#285) against the user's top-RATED
+           genres (library_entries.score x anime.genres, COMPLETED-only, gated by
+           GENRE_AFFINITY_MIN_TITLES) — a distinct question from every section above,
+           which only ever ranks services, never genres. Hidden entirely (not an
+           empty state) when _compute_streaming_genre_affinity returns None. #}
+        {% if genre_affinity %}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_genre_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_genre_desc') }}</p>
+          <p class="settings-section-desc">{{ t('streaming_genre_min_titles_note', count=genre_affinity.min_titles) }}</p>
+          <div class="streaming-marginal-list">
+            {% for g in genre_affinity.genres %}
+            <details class="streaming-title-details"{% if loop.first %} open{% endif %}>
+              <summary>
+                <span class="streaming-rank-label">{{ g.genre }}</span>
+                {% if loop.first %}<span class="streaming-calendar-owned-badge">{{ t('streaming_genre_top_badge') }}</span>{% endif %}
+                — {{ t('streaming_genre_avg_score_label') }} {{ g.avg_score }} ({% if g.title_count == 1 %}{{ t('streaming_titles_singular', count=g.title_count) }}{% else %}{{ t('streaming_titles_plural', count=g.title_count) }}{% endif %})
+              </summary>
+              {% if g.services %}
+              <div class="drop-rate-list streaming-rank-list">
+                {% set max_episodes = g.services[0].episodes %}
+                {% for s in g.services %}
+                <div class="drop-rate-row streaming-rank-row">
+                  <span class="drop-rate-label streaming-rank-label">
+                    {{ s.service }}
+                    {% if s.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
+                  </span>
+                  <div class="drop-rate-bar-track">
+                    <span class="drop-rate-bar-fill streaming-rank-bar-fill"
+                          style="width: {{ ((s.episodes / max_episodes * 100) if max_episodes else 0) | round(1) }}%"></span>
+                  </div>
+                  <span class="drop-rate-pct streaming-rank-value">
+                    {{ s.pct }}%
+                    <span class="drop-rate-n">· {% if s.episodes == 1 %}{{ t('streaming_episodes_singular', count=s.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=s.episodes) }}{% endif %}</span>
+                  </span>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <p class="settings-section-desc">{{ t('streaming_genre_no_coverage') }}</p>
+              {% endif %}
+            </details>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {# ── Honest "not available anywhere we know of" bucket — never silently omitted #}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_uncovered_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_uncovered_desc') }}</p>
+          {% if sc_uncovered_titles %}
+          <details class="streaming-title-details">
+            <summary>{% if sc_uncovered_titles | length == 1 %}{{ t('streaming_titles_singular', count=sc_uncovered_titles | length) }}{% else %}{{ t('streaming_titles_plural', count=sc_uncovered_titles | length) }}{% endif %}</summary>
+            <div class="drop-tag-cloud">
+              {% for t in sc_uncovered_titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
+            </div>
+          </details>
+          {% else %}
+          <p class="settings-section-desc">{{ t('streaming_uncovered_empty') }}</p>
+          {% endif %}
+        </div>
+
+        {# ── Set-cover recommendation (issue #255, v3) ──────────────────────────────
+           Coverage universe = Watching + Planning + Upcoming (Completed excluded), see
+           _compute_streaming_setcover's docstring in app/main.py. #}
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_universe_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_universe_desc') }}</p>
+          <p class="streaming-summary-line">
+            <span class="streaming-summary-item">
+              {{ t('streaming_universe_count_label') }}:
+              <strong>{% if sc_universe_size == 1 %}{{ t('streaming_titles_singular', count=sc_universe_size) }}{% else %}{{ t('streaming_titles_plural', count=sc_universe_size) }}{% endif %}</strong>
+            </span>
+          </p>
+        </div>
+
+      </div>
+    </details>
   </div>
 
-  {# ── Historical footprint (Completed/Dropped) — secondary, separate, never
-       blended into the ranking above. Included in v1: see the PR description for
-       why (cheap once the main query exists — same rows, same STREAMING_SITES
-       filter, just a different status bucket and a title-count instead of an
-       episodes-remaining tally). #}
-  <div class="settings-section">
-    <h2 class="settings-section-title">{{ t('streaming_footprint_title') }}</h2>
-    <p class="settings-section-desc">{{ t('streaming_footprint_desc') }}</p>
-    {% if footprint %}
-    <div class="drop-tag-cloud">
-      {% for f in footprint %}
-      <span class="drop-tag-chip">{{ f.service }} — {% if f.titles == 1 %}{{ t('streaming_titles_singular', count=f.titles) }}{% else %}{{ t('streaming_titles_plural', count=f.titles) }}{% endif %}</span>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="settings-section-desc">{{ t('streaming_footprint_empty') }}</p>
-    {% endif %}
+  {# ── Timing (collapsed) — 12-month subscribe/cancel calendar (issue #228) ────── #}
+  <div class="streaming-group">
+    <details class="streaming-title-details streaming-group-details">
+      <summary>
+        <span class="streaming-group-eyebrow">{{ t('streaming_group_timing_label') }}</span>
+        <span class="streaming-group-summary-text">
+          {% if calendar_services %}
+          {{ t('streaming_group_timing_summary', count=(calendar_services | length)) }}
+          {% else %}
+          {{ t('streaming_group_timing_summary_empty') }}
+          {% endif %}
+        </span>
+      </summary>
+      <div class="streaming-group-body">
+        <div class="settings-section" id="calendar">
+          <h2 class="settings-section-title">{{ t('streaming_calendar_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_calendar_sub') }}</p>
+
+          {% if calendar_services %}
+          <div class="streaming-calendar-wrap">
+            <table class="streaming-calendar-table">
+              <thead>
+                <tr>
+                  <th class="streaming-calendar-service-col"></th>
+                  {% for m in calendar_months %}
+                  <th class="streaming-calendar-month-col" data-month="{{ m }}"></th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in calendar_services %}
+                <tr>
+                  <td class="streaming-calendar-service-cell">
+                    <span class="streaming-calendar-service-name">{{ s.service }}</span>
+                    {% if s.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
+                    {% if s.tba_titles %}
+                    <span class="streaming-calendar-tba" title="{{ s.tba_titles | join(', ') }}">{% if s.tba_titles | length == 1 %}{{ t('streaming_calendar_tba_singular', count=s.tba_titles | length) }}{% else %}{{ t('streaming_calendar_tba_plural', count=s.tba_titles | length) }}{% endif %}</span>
+                    {% endif %}
+                  </td>
+                  {% for cell in s.months %}
+                  <td class="streaming-calendar-cell{% if cell.needed %} streaming-calendar-cell--needed{% endif %}"
+                      {% if cell.needed %}title="{% if cell.episodes == 1 %}{{ t('streaming_episodes_singular', count=cell.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=cell.episodes) }}{% endif %} · {% if cell.titles == 1 %}{{ t('streaming_titles_singular', count=cell.titles) }}{% else %}{{ t('streaming_titles_plural', count=cell.titles) }}{% endif %}"{% endif %}>
+                  </td>
+                  {% endfor %}
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="streaming-calendar-legend">
+            <span class="streaming-calendar-legend-swatch streaming-calendar-legend-swatch--needed"></span>{{ t('streaming_calendar_legend_needed') }}
+            <span class="streaming-calendar-legend-swatch"></span>{{ t('streaming_calendar_legend_idle') }}
+            <span class="streaming-calendar-owned-badge streaming-calendar-owned-badge--legend">{{ t('streaming_calendar_owned_badge') }}</span>{{ t('streaming_calendar_legend_owned') }}
+          </p>
+          {% else %}
+          <p class="settings-section-desc">{{ t('streaming_calendar_empty') }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </details>
+  </div>
+
+  {# ── History (collapsed) — Historical footprint (Completed/Dropped) ──────────── #}
+  <div class="streaming-group">
+    <details class="streaming-title-details streaming-group-details">
+      <summary>
+        <span class="streaming-group-eyebrow">{{ t('streaming_group_history_label') }}</span>
+        <span class="streaming-group-summary-text">
+          {% if footprint %}
+          {{ t('streaming_group_history_summary', count=(footprint | sum(attribute='titles'))) }}
+          {% else %}
+          {{ t('streaming_group_history_summary_empty') }}
+          {% endif %}
+        </span>
+      </summary>
+      <div class="streaming-group-body">
+        <div class="settings-section">
+          <h2 class="settings-section-title">{{ t('streaming_footprint_title') }}</h2>
+          <p class="settings-section-desc">{{ t('streaming_footprint_desc') }}</p>
+          {% if footprint %}
+          <div class="drop-tag-cloud">
+            {% for f in footprint %}
+            <span class="drop-tag-chip">{{ f.service }} — {% if f.titles == 1 %}{{ t('streaming_titles_singular', count=f.titles) }}{% else %}{{ t('streaming_titles_plural', count=f.titles) }}{% endif %}</span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="settings-section-desc">{{ t('streaming_footprint_empty') }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </details>
   </div>
 
 </div>

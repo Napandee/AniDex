@@ -4181,6 +4181,12 @@ def _compute_streaming_setcover(user_id: int) -> dict:
     owned_coverable_ids = {t["id"] for t in covered if t["sites"] & owned}
     owned_total_covered = len(owned_coverable_ids)
     owned_total_covered_episodes = sum(id_to_remaining[aid] for aid in owned_coverable_ids)
+    # #270: denominator for the at-a-glance summary's coverage % — every episode
+    # remaining across the WHOLE universe (covered + uncovered_titles), not just
+    # the covered subset, since a title on no recognized service at all still
+    # counts against "how much of your list is covered." Reuses `universe`
+    # (already fetched above), no new query.
+    total_universe_episodes = sum(t["remaining"] for t in universe)
 
     # #285 out of scope: the set-cover algorithm's shape is unchanged — it still
     # selects the minimal combination by title coverage, not episode weight.
@@ -4249,6 +4255,7 @@ def _compute_streaming_setcover(user_id: int) -> dict:
         "owned": sorted(owned),
         "owned_total_covered": owned_total_covered,
         "owned_total_covered_episodes": owned_total_covered_episodes,
+        "total_universe_episodes": total_universe_episodes,
         "minimal_combination": minimal_combination,
         "marginal": marginal,
         "ranked_all": ranked_all,
@@ -4481,6 +4488,61 @@ def _compute_streaming_genre_affinity(user_id: int) -> dict | None:
     }
 
 
+# ── At-a-glance summary (issue #270) ─────────────────────────────────────────
+# Synthesizes /streaming's top-of-page summary card from data _compute_streaming_
+# setcover() and _compute_streaming_cancel_candidates() already computed for their
+# own sections below — no new queries, just composition. Returns numeric/string
+# fields for the template to assemble into 1-3 sentences via its own i18n keys
+# (not a pre-formatted English string here) so each clause stays independently
+# localizable and can be omitted without leaving a broken/empty fragment behind.
+#
+# Three independent clauses, each degrading on its own:
+#   1. Coverage: "no owned services" (has_owned False) and "empty universe"
+#      (total_episodes 0, avoids a division by zero) both take priority over the
+#      normal X%-of-list sentence; `fully_covered` swaps in a distinct "already
+#      covering everything" sentence instead of a literal "100%" (#270 acceptance
+#      criterion).
+#   2. Cancel: only set when the safest candidate is actually `fully_redundant`
+#      — "safe to cancel" said about a service that isn't would be actively
+#      wrong, not just unhelpful.
+#   3. Swap: reuses setcover's `swap_candidates` (its top entry = the best
+#      un-owned alternative, per #270's own implementation guidance) but is
+#      deliberately suppressed once `fully_covered` is True — "adding a service
+#      would help" makes no sense once there's nothing left to add for, which is
+#      exactly the already-100%-covered case #270's acceptance criteria calls
+#      out by name.
+def _compute_streaming_atglance(setcover: dict, cancel: dict) -> dict:
+    owned = setcover["owned"]
+    total_episodes = setcover["total_universe_episodes"]
+    covered_episodes = setcover["owned_total_covered_episodes"]
+    coverage_pct = round(covered_episodes / total_episodes * 100, 1) if total_episodes else 0.0
+    fully_covered = total_episodes > 0 and covered_episodes >= total_episodes
+
+    cancel_service = None
+    top_cancel = cancel["candidates"][0] if cancel["candidates"] else None
+    if top_cancel and top_cancel["fully_redundant"]:
+        cancel_service = top_cancel["service"]
+
+    swap_service = None
+    swap_episodes = None
+    if not fully_covered and setcover["swap_candidates"]:
+        top_swap = setcover["swap_candidates"][0]
+        swap_service = top_swap["service"]
+        swap_episodes = top_swap["episodes"]
+
+    return {
+        "has_owned": bool(owned),
+        "owned_count": len(owned),
+        "total_episodes": total_episodes,
+        "covered_episodes": covered_episodes,
+        "coverage_pct": coverage_pct,
+        "fully_covered": fully_covered,
+        "cancel_service": cancel_service,
+        "swap_service": swap_service,
+        "swap_episodes": swap_episodes,
+    }
+
+
 @app.get("/streaming", response_class=HTMLResponse)
 def streaming_page(request: Request):
     user, denied = _require_user(request)
@@ -4492,16 +4554,14 @@ def streaming_page(request: Request):
     setcover = _compute_streaming_setcover(user["id"])
     cancel = _compute_streaming_cancel_candidates(user["id"])
     genre_affinity = _compute_streaming_genre_affinity(user["id"])  # issue #286
+    atglance = _compute_streaming_atglance(setcover, cancel)  # issue #270
 
     return templates.TemplateResponse(
         request,
         "streaming.html",
         {
             "owned_services": coverage["owned"],
-            "ranked": coverage["ranked"],
             "footprint": coverage["footprint"],
-            "total_backlog_remaining": coverage["total_backlog_remaining"],
-            "already_covered_remaining": coverage["already_covered_remaining"],
             "last_synced": coverage["last_synced"],
             "calendar_months": calendar["months"],
             "calendar_services": calendar["services"],
@@ -4517,6 +4577,15 @@ def streaming_page(request: Request):
             "cancel_total_episodes_remaining": cancel["total_episodes_remaining"],
             "cancel_candidates": cancel["candidates"],
             "genre_affinity": genre_affinity,
+            "glance_has_owned": atglance["has_owned"],
+            "glance_owned_count": atglance["owned_count"],
+            "glance_total_episodes": atglance["total_episodes"],
+            "glance_covered_episodes": atglance["covered_episodes"],
+            "glance_coverage_pct": atglance["coverage_pct"],
+            "glance_fully_covered": atglance["fully_covered"],
+            "glance_cancel_service": atglance["cancel_service"],
+            "glance_swap_service": atglance["swap_service"],
+            "glance_swap_episodes": atglance["swap_episodes"],
         },
     )
 

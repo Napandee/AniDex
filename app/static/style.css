@@ -2654,6 +2654,48 @@ a.drop-tag-chip-link:focus-visible {
 .streaming-swap-list { margin: 0.5rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--t3); }
 .streaming-swap-list li { margin-bottom: 0.3rem; }
 
+/* ── At-a-glance summary + grouped progressive disclosure (issue #270) ────── */
+
+.streaming-glance-card {
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.75rem;
+}
+.streaming-glance-line { margin: 0; font-size: 0.92rem; line-height: 1.6; color: var(--t2); }
+
+.streaming-group { margin-top: 1.75rem; }
+.streaming-group:first-of-type { margin-top: 0; }
+
+.streaming-group-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--t6);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.6rem;
+}
+
+.streaming-group-details.streaming-title-details { padding: 0.9rem 1.1rem; }
+.streaming-group-details summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+}
+.streaming-group-details .streaming-group-eyebrow { margin: 0; }
+.streaming-group-summary-text { font-size: 0.82rem; color: var(--t6); }
+
+.streaming-group-body { margin-top: 1.1rem; display: flex; flex-direction: column; gap: 1.5rem; }
+.streaming-group-body .settings-section { margin: 0; border-top: none; padding-top: 0; max-width: none; }
+.streaming-group-body .settings-section + .settings-section {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  margin-top: 0;
+}
+
 /* ── Recommendations ─────────────────────────────────────────────────────── */
 
 .page-header { margin-bottom: 2rem; }
