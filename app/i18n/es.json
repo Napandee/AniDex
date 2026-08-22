@@ -799,5 +799,15 @@
   "js_collection_save_failed": "No se pudo guardar la colección.",
   "js_collection_rename_failed": "No se pudo renombrar.",
   "js_collection_delete_failed": "No se pudo eliminar.",
-  "js_collection_delete_confirm": "¿Eliminar la colección \"{name}\"? Esta acción no se puede deshacer."
+  "js_collection_delete_confirm": "¿Eliminar la colección \"{name}\"? Esta acción no se puede deshacer.",
+
+  "whats_new_title": "Novedades desde tu última visita",
+  "whats_new_episodes_one": "1 episodio nuevo emitido de {title}",
+  "whats_new_episodes_many": "{count} episodios nuevos emitidos de {title} (ahora en el Ep {latest})",
+  "whats_new_episodes_more": "+{count} series más con episodios nuevos",
+  "whats_new_recommendations": "{count} recomendaciones nuevas — incluyendo {titles}",
+  "whats_new_recommendations_and_more": "{count} recomendaciones nuevas — incluyendo {titles}, y {more} más",
+  "whats_new_sync_ok": "{runs} sincronización(es) actualizaron {entries} entradas",
+  "whats_new_sync_had_error": "{runs} sincronización(es), incluyendo una que necesita atención",
+  "whats_new_dismiss": "Descartar"
 }

@@ -799,5 +799,15 @@
   "js_collection_save_failed": "コレクションの保存に失敗しました。",
   "js_collection_rename_failed": "名前の変更に失敗しました。",
   "js_collection_delete_failed": "削除に失敗しました。",
-  "js_collection_delete_confirm": "「{name}」コレクションを削除しますか？元に戻せません。"
+  "js_collection_delete_confirm": "「{name}」コレクションを削除しますか？元に戻せません。",
+
+  "whats_new_title": "前回の訪問からの新着情報",
+  "whats_new_episodes_one": "{title} の新しいエピソードが1話配信されました",
+  "whats_new_episodes_many": "{title} の新しいエピソードが{count}話配信されました（第{latest}話まで）",
+  "whats_new_episodes_more": "他にも新しいエピソードがある作品が{count}件あります",
+  "whats_new_recommendations": "新しいおすすめが{count}件 — {titles} など",
+  "whats_new_recommendations_and_more": "新しいおすすめが{count}件 — {titles} など、他{more}件",
+  "whats_new_sync_ok": "{runs}回の同期で{entries}件のエントリーが更新されました",
+  "whats_new_sync_had_error": "{runs}回の同期のうち、対応が必要なものがあります",
+  "whats_new_dismiss": "閉じる"
 }

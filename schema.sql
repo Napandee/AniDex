@@ -38,6 +38,18 @@ CREATE TABLE users (
     totp_enabled_at       TIMESTAMPTZ,
     totp_failed_attempts  INTEGER NOT NULL DEFAULT 0,   -- separate from failed_login_attempts (see column comment on that one) — this is the TOTP-code guess budget, not the password guess budget; a password reset never clears this one
     totp_locked_until     TIMESTAMPTZ,
+    digest_last_seen_at   TIMESTAMPTZ,                  -- issue #235 — "what's new since your last visit" in-app
+                                                          -- digest watermark. NULL means the digest has never run for
+                                                          -- this account yet (bootstrap: record a baseline, show
+                                                          -- nothing — same first-check-no-notify shape as
+                                                          -- planning_availability_state, so a brand-new/pre-existing
+                                                          -- user never gets their entire history dumped in one
+                                                          -- banner). Deliberately NOT reused from last_login_at above
+                                                          -- — that column is overwritten on every login before a
+                                                          -- digest would ever get a chance to read the *previous*
+                                                          -- value, and the digest can also advance on an ordinary
+                                                          -- page load (not just login), which last_login_at never
+                                                          -- does.
     UNIQUE (auth_provider, auth_provider_id)
 );
 
