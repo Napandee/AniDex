@@ -105,6 +105,68 @@ def test_create_session_inserts_a_row(two_users):
     assert token  # a real opaque token was returned
 
 
+def test_create_session_stores_a_hash_not_the_raw_token(two_users, pg_conn):
+    """Issue #311's core acceptance criterion: reading `sessions` directly in the
+    DB must never show a usable raw session token. create_session() returns the
+    raw token (for the caller's cookie), but only SHA256(token) should ever land
+    in the row."""
+    user_id, _ = two_users
+    token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT session_token_hash FROM sessions WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
+
+    assert row[0] == sessions.hash_token(token)
+    assert row[0] != token  # the raw token itself is never what's stored
+
+    # The old plaintext column is gone entirely — not just unused.
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'sessions' AND column_name = 'session_token'"
+        )
+        assert cur.fetchone() is None
+
+
+def test_resolve_session_looks_up_by_hash_of_the_raw_cookie_value(two_users, pg_conn):
+    """The caller only ever has the raw cookie value (never the hash) — confirm
+    resolve_session() hashes it internally and finds the row via
+    session_token_hash, rather than needing an already-hashed value passed in."""
+    user_id, _ = two_users
+    token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
+
+    # Sanity check this is genuinely going through the hash column, not some
+    # leftover raw-token path: the row is only findable by the hash, not by the
+    # raw token string.
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM sessions WHERE session_token_hash = %s", (sessions.hash_token(token),))
+        assert cur.fetchone() is not None
+
+    assert sessions.resolve_session(token) == user_id
+
+
+def test_a_migration_backfilled_session_still_resolves(two_users, pg_conn):
+    """Acceptance criterion: existing active sessions at migration time must keep
+    working, not force a re-login. Simulates a row created before this change
+    (i.e. as migrations/030_session_token_hash.sql's backfill would have produced
+    it) by inserting session_token_hash directly via SQL — bypassing
+    create_session() entirely — the same shape a pre-existing plaintext row looks
+    like once SHA256(session_token) has been backfilled into it."""
+    user_id, _ = two_users
+    pre_existing_token = "pre-existing-raw-token-from-before-the-migration"
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO sessions (session_token_hash, user_id, expires_at) "
+            "VALUES (%s, %s, now() + interval '30 days')",
+            (sessions.hash_token(pre_existing_token), user_id),
+        )
+
+    # The user's still-valid cookie (holding the original raw token, never
+    # rotated by the migration) resolves exactly as it did before the migration.
+    assert sessions.resolve_session(pre_existing_token) == user_id
+
+
 def test_create_session_truncates_an_oversized_ip_address(two_users):
     """Code-review finding: ip_address comes straight from the X-Forwarded-For
     header (attacker-controllable — no comma at all makes the "first element" the
@@ -140,14 +202,15 @@ def test_resolve_session_does_not_write_last_seen_at_when_already_fresh(two_user
     only when last_seen_at is stale by more than _LAST_SEEN_THROTTLE_MINUTES."""
     user_id, _ = two_users
     token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
+    token_hash = sessions.hash_token(token)
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token = %s", (token,))
+        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token_hash = %s", (token_hash,))
         before = cur.fetchone()[0]
 
     sessions.resolve_session(token)  # freshly created — well within the throttle window
 
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token = %s", (token,))
+        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token_hash = %s", (token_hash,))
         after = cur.fetchone()[0]
     assert after == before
 
@@ -155,17 +218,18 @@ def test_resolve_session_does_not_write_last_seen_at_when_already_fresh(two_user
 def test_resolve_session_writes_last_seen_at_once_stale(two_users, pg_conn):
     user_id, _ = two_users
     token = sessions.create_session(user_id, "TestAgent/1.0", "1.2.3.4")
+    token_hash = sessions.hash_token(token)
     stale_time = datetime.now(timezone.utc) - timedelta(minutes=sessions._LAST_SEEN_THROTTLE_MINUTES + 1)
     with pg_conn.cursor() as cur:
         cur.execute(
-            "UPDATE sessions SET last_seen_at = %s WHERE session_token = %s",
-            (stale_time, token),
+            "UPDATE sessions SET last_seen_at = %s WHERE session_token_hash = %s",
+            (stale_time, token_hash),
         )
 
     assert sessions.resolve_session(token) == user_id
 
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token = %s", (token,))
+        cur.execute("SELECT last_seen_at FROM sessions WHERE session_token_hash = %s", (token_hash,))
         after = cur.fetchone()[0]
     assert after > stale_time
 
@@ -360,7 +424,9 @@ def test_revoking_another_session_leaves_current_login_intact(app_client):
     other_token = m.sessions.create_session(1, "OtherDevice/1.0", "5.5.5.5")
 
     client.post("/auth/login", data={"email": "a@example.com", "password": "password123"})
-    other_row = m.db.fetchone("SELECT id FROM sessions WHERE session_token = %s", (other_token,))
+    other_row = m.db.fetchone(
+        "SELECT id FROM sessions WHERE session_token_hash = %s", (m.sessions.hash_token(other_token),)
+    )
 
     resp = client.post(f"/settings/sessions/{other_row['id']}/revoke", follow_redirects=False)
     assert resp.status_code == 303
@@ -385,7 +451,9 @@ def test_revoking_an_already_revoked_session_does_not_show_a_false_success_messa
     )
     other_token = m.sessions.create_session(1, "OtherDevice/1.0", "5.5.5.5")
     client.post("/auth/login", data={"email": "a@example.com", "password": "password123"})
-    other_row = m.db.fetchone("SELECT id FROM sessions WHERE session_token = %s", (other_token,))
+    other_row = m.db.fetchone(
+        "SELECT id FROM sessions WHERE session_token_hash = %s", (m.sessions.hash_token(other_token),)
+    )
 
     first = client.post(f"/settings/sessions/{other_row['id']}/revoke", follow_redirects=False)
     assert first.headers["location"] == "/settings?saved=session_revoked"

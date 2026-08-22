@@ -27,12 +27,33 @@ its death (expiry or revocation) before that sweep removes it, purely so a user 
 looks at "who else is logged in" shortly after a revoke isn't confused by the row
 already being gone — it still won't show up in list_active_sessions() (which filters
 on revoked_at/expires_at directly), it just isn't hard-deleted immediately.
+
+Token storage (issue #311): the opaque token itself is never stored — only
+SHA256(token) is, in `session_token_hash` (migration 030, replacing the old
+plaintext `session_token` column). SHA-256 rather than bcrypt deliberately: the
+token is already 256 bits of secrets.token_urlsafe entropy, so brute-forcing it
+directly is infeasible and bcrypt's slow key-stretching (which exists to protect a
+low-entropy human-chosen secret like a password) would just be a real performance
+regression on a lookup that runs on every single authenticated request. A fast hash
+still allows an indexed, deterministic `WHERE session_token_hash = %s` lookup,
+unlike bcrypt which would force a full-table scan. hash_token() below is the single
+place that hash is computed, so every call site (and the migration's backfill) stays
+consistent.
 """
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
 from app import db
+
+
+def hash_token(token: str) -> str:
+    """SHA256(token) as hex — see module docstring for why SHA-256 (fast, indexed
+    lookup) rather than bcrypt (deliberately slow, per-row scan) is correct here.
+    The single place this hash is computed, so create_session/resolve_session/etc.
+    and migrations/030_session_token_hash.sql's backfill can never drift apart."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 SESSION_TTL_DAYS = 30
 _DEAD_ROW_RETENTION_DAYS = 7
@@ -70,10 +91,10 @@ def create_session(user_id: int, user_agent: str | None, ip_address: str | None)
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
     db.execute(
-        "INSERT INTO sessions (session_token, user_id, user_agent, ip_address, expires_at) "
+        "INSERT INTO sessions (session_token_hash, user_id, user_agent, ip_address, expires_at) "
         "VALUES (%s, %s, %s, %s, %s)",
         (
-            token,
+            hash_token(token),
             user_id,
             (user_agent or "")[:_USER_AGENT_MAX_LEN],
             (ip_address or "")[:_IP_ADDRESS_MAX_LEN] or None,
@@ -115,10 +136,11 @@ def resolve_session(token: str) -> int | None:
     resurrected — "session cannot outlive its time box" applies here the same way
     a revoked_at check applies to a manually-ended one.
     """
+    token_hash = hash_token(token)
     row = db.fetchone(
         "SELECT user_id, last_seen_at, impersonated_by, impersonation_expires_at FROM sessions "
-        "WHERE session_token = %s AND revoked_at IS NULL AND expires_at > now()",
-        (token,),
+        "WHERE session_token_hash = %s AND revoked_at IS NULL AND expires_at > now()",
+        (token_hash,),
     )
     if not row:
         return None
@@ -128,15 +150,15 @@ def resolve_session(token: str) -> int | None:
         and row["impersonation_expires_at"] <= datetime.now(timezone.utc)
     ):
         db.execute(
-            "UPDATE sessions SET revoked_at = now() WHERE session_token = %s",
-            (token,),
+            "UPDATE sessions SET revoked_at = now() WHERE session_token_hash = %s",
+            (token_hash,),
         )
         return None
     stale_before = datetime.now(timezone.utc) - timedelta(minutes=_LAST_SEEN_THROTTLE_MINUTES)
     if row["last_seen_at"] < stale_before:
         db.execute(
-            "UPDATE sessions SET last_seen_at = now() WHERE session_token = %s",
-            (token,),
+            "UPDATE sessions SET last_seen_at = now() WHERE session_token_hash = %s",
+            (token_hash,),
         )
     return row["user_id"]
 
@@ -166,10 +188,10 @@ def start_impersonation_session(
     token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc)
     db.execute(
-        "INSERT INTO sessions (session_token, user_id, user_agent, ip_address, expires_at, "
+        "INSERT INTO sessions (session_token_hash, user_id, user_agent, ip_address, expires_at, "
         "impersonated_by, impersonation_expires_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (
-            token,
+            hash_token(token),
             target_user_id,
             (user_agent or "")[:_USER_AGENT_MAX_LEN],
             (ip_address or "")[:_IP_ADDRESS_MAX_LEN] or None,
@@ -195,9 +217,9 @@ def get_impersonation_context(token: str) -> dict | None:
     this function needing to duplicate that side effect."""
     row = db.fetchone(
         "SELECT impersonated_by, impersonation_expires_at FROM sessions "
-        "WHERE session_token = %s AND revoked_at IS NULL AND expires_at > now() "
+        "WHERE session_token_hash = %s AND revoked_at IS NULL AND expires_at > now() "
         "AND impersonated_by IS NOT NULL",
-        (token,),
+        (hash_token(token),),
     )
     if not row:
         return None
@@ -212,24 +234,26 @@ def revoke_session_by_token(token: str) -> None:
     first. Possessing the token is already the same proof of ownership the cookie
     itself relies on."""
     db.execute(
-        "UPDATE sessions SET revoked_at = now() WHERE session_token = %s AND revoked_at IS NULL",
-        (token,),
+        "UPDATE sessions SET revoked_at = now() WHERE session_token_hash = %s AND revoked_at IS NULL",
+        (hash_token(token),),
     )
 
 
 def revoke_session(session_id: int, user_id: int) -> str | None:
     """Revoke one session row by id, scoped to user_id so a user can never revoke
     another user's session even by guessing/incrementing an id. Returns the revoked
-    row's session_token (the caller uses this to detect "you just revoked your own
-    current session" and clear your local cookie too), or None if no matching active
-    session existed for that user."""
+    row's session_token_hash (the caller hashes its own current cookie token with
+    hash_token() and compares against this to detect "you just revoked your own
+    current session" and clear your local cookie too — the raw token itself is
+    never stored, so this can't return it), or None if no matching active session
+    existed for that user."""
     row = db.execute_returning(
         "UPDATE sessions SET revoked_at = now() "
         "WHERE id = %s AND user_id = %s AND revoked_at IS NULL "
-        "RETURNING session_token",
+        "RETURNING session_token_hash",
         (session_id, user_id),
     )
-    return row["session_token"] if row else None
+    return row["session_token_hash"] if row else None
 
 
 def revoke_all_sessions(user_id: int) -> None:
@@ -249,11 +273,13 @@ def list_active_sessions(user_id: int, current_token: str | None) -> list[dict]:
     """Active sessions belonging to user_id only — never another user's rows, even
     though `sessions` isn't otherwise partitioned per caller (this is the one place
     that enforces it, via the WHERE clause below, same pattern as every other
-    per-user table in this app). The raw session_token is looked at here just long
-    enough to compute is_current and is then dropped — it's never handed back to a
+    per-user table in this app). current_token is the caller's raw cookie value;
+    it's hashed once here to compare against the stored session_token_hash to
+    compute is_current, then dropped — no token or hash is ever handed back to a
     caller/template, so it can't end up rendered into a page."""
+    current_hash = hash_token(current_token) if current_token else None
     rows = db.fetchall(
-        "SELECT id, session_token, user_agent, ip_address, created_at, last_seen_at "
+        "SELECT id, session_token_hash, user_agent, ip_address, created_at, last_seen_at "
         "FROM sessions WHERE user_id = %s AND revoked_at IS NULL AND expires_at > now() "
         "ORDER BY last_seen_at DESC",
         (user_id,),
@@ -261,7 +287,7 @@ def list_active_sessions(user_id: int, current_token: str | None) -> list[dict]:
     return [
         {
             "id": r["id"],
-            "is_current": r["session_token"] == current_token,
+            "is_current": r["session_token_hash"] == current_hash,
             "user_agent": r["user_agent"],
             "ip_address": r["ip_address"],
             "created_at": r["created_at"],

@@ -131,16 +131,29 @@ CREATE TABLE admin_audit_log (
 -- app/sessions.py), not a sliding window; there's no scheduled cleanup job, dead
 -- rows for a user are opportunistically swept the next time that user starts a new
 -- session (same lazy-cleanup precedent as password_resets above).
+--
+-- session_token_hash (issue #311, migration 030): SHA256(token) hex digest, never
+-- the raw opaque token itself — closes the gap where a DB leak made every
+-- currently-active session instantly usable. SHA-256, not bcrypt: the token is
+-- already 256 bits of secrets.token_urlsafe entropy (infeasible to brute-force
+-- directly), and this column is looked up on EVERY authenticated request, so a
+-- fast, indexed, deterministic `WHERE session_token_hash = %s` lookup is correct
+-- here — bcrypt's slow key-stretching exists to protect a low-entropy human secret
+-- (see personal_access_tokens.token_hash below for that case) and would be a real
+-- performance regression at this lookup frequency. See app/sessions.py's
+-- hash_token() — the single place this hash is computed. Replaces the old
+-- plaintext `session_token TEXT NOT NULL UNIQUE` column, dropped in the same
+-- migration once existing rows were backfilled.
 CREATE TABLE sessions (
-    id             SERIAL PRIMARY KEY,
-    session_token  TEXT NOT NULL UNIQUE,
-    user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    user_agent     TEXT,                      -- best-effort, Settings "device" display only, truncated to 255 chars
-    ip_address     TEXT,                      -- best-effort, cosmetic — never used for any access decision, truncated to 255 chars
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT now(),  -- touched roughly every 5 min of activity, not every request — see resolve_session()
-    expires_at     TIMESTAMPTZ NOT NULL,
-    revoked_at     TIMESTAMPTZ,                -- NULL = still active
+    id                  SERIAL PRIMARY KEY,
+    session_token_hash  TEXT NOT NULL UNIQUE,
+    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_agent          TEXT,                      -- best-effort, Settings "device" display only, truncated to 255 chars
+    ip_address          TEXT,                      -- best-effort, cosmetic — never used for any access decision, truncated to 255 chars
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at        TIMESTAMPTZ NOT NULL DEFAULT now(),  -- touched roughly every 5 min of activity, not every request — see resolve_session()
+    expires_at          TIMESTAMPTZ NOT NULL,
+    revoked_at          TIMESTAMPTZ,                -- NULL = still active
     -- Admin "login as user" impersonation (issue #230, migration 027). NULL/NULL
     -- for every ordinary session. impersonated_by is the admin who started this
     -- session; impersonation_expires_at is its own short deadline

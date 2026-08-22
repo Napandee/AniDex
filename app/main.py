@@ -4951,11 +4951,12 @@ def settings_revoke_session(request: Request, session_id: int):
     if denied:
         return denied
 
-    revoked_token = sessions.revoke_session(session_id, user["id"])
-    if revoked_token and revoked_token == request.session.get("sid"):
+    revoked_token_hash = sessions.revoke_session(session_id, user["id"])
+    current_sid = request.session.get("sid")
+    if revoked_token_hash and current_sid and revoked_token_hash == sessions.hash_token(current_sid):
         request.session.clear()
         return RedirectResponse(url="/auth/login", status_code=303)
-    if revoked_token:
+    if revoked_token_hash:
         return RedirectResponse(url="/settings?saved=session_revoked", status_code=303)
     return RedirectResponse(url="/settings", status_code=303)
 
