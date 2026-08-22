@@ -319,6 +319,11 @@
   "queue_rewatch_finished_singular": "Finished {months} month ago",
   "queue_rewatch_finished_plural": "Finished {months} months ago",
   "queue_rewatch_start_btn": "↺ Rewatch",
+  "queue_filler_badge": "Next: Ep {num} · {status}",
+  "queue_skip_filler_btn": "⏭ Skip to next canon",
+  "filler_status_canon": "Canon",
+  "filler_status_filler": "Filler",
+  "filler_status_mixed": "Mixed",
 
   "notes_title": "Notes — {title} — Anime Tracker",
   "notes_your_score": "Your score",

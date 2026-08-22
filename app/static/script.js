@@ -1358,6 +1358,39 @@ document.querySelectorAll('.btn-move-planning').forEach(btn => {
   });
 });
 
+// ── Skip to next canon (queue page, issue #301) ─────────────────────────────────
+// Jumps progress straight to the server-computed target (the episode right before
+// the next canon/mixed/unknown episode -- see next_episode_filler_info() in
+// main.py for how that target is walked). Reuses the same existing progress-update
+// endpoint as btn-mark-watched above; no new AniList mutation. Reloads on success
+// rather than just removing/fading the card (unlike btn-mark-watched/btn-move-
+// planning/btn-start-rewatch) because the card usually stays in the queue --
+// its badge and this action just need to reflect the new progress.
+document.querySelectorAll('.btn-skip-filler').forEach(btn => {
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    const animeId = btn.dataset.animeId;
+    const targetProgress = parseInt(btn.dataset.targetProgress);
+
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const resp = await fetch(`/api/anime/${animeId}/progress`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({progress: targetProgress}),
+      });
+      if (!resp.ok) throw new Error('request failed');
+
+      window.location.reload();
+    } catch {
+      btn.disabled = false;
+      btn.textContent = t('queue_skip_filler_btn');
+    }
+  });
+});
+
 // ── Add to planning (recommendations page) ────────────────────────────────────
 document.querySelectorAll('.btn-add-planning').forEach(btn => {
   btn.addEventListener('click', async () => {

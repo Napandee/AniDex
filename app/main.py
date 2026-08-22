@@ -3791,6 +3791,40 @@ COMMON_TIMEZONES = [
 ]
 
 
+def next_episode_filler_info(progress, filler_map: dict[int, str]) -> tuple[int, str | None, int | None]:
+    """Pure logic for issue #301's queue-card badge + "skip to next canon" action --
+    kept separate from the /queue route so it's unit-testable without a database.
+    `progress` is the anime's current library_entries.progress (None/0 both mean
+    "nothing watched yet"). `filler_map` is {episode_number: status} sourced from
+    #299's filler_episode_cache for one anime -- absence of a key means "unknown",
+    never "canon" (see this repo's CLAUDE.md note on that table).
+
+    Returns (next_episode_number, next_episode_status, skip_target):
+    - `next_episode_status` is None when #299 has no cached row for the very next
+      unwatched episode -- the badge must stay silent in that case (unknown != canon).
+    - `skip_target` is the new progress value the "skip to next canon" action would
+      apply, or None when there's no filler run to skip (next episode isn't filler,
+      or its status is unknown). It walks forward from the next unwatched episode
+      through consecutive cached 'filler' episodes and stops at the first episode
+      that's either canon/mixed *or* has no cached row at all -- an uncached episode
+      stops the walk rather than being assumed to still be filler, since only what
+      AniFillerPedia has actually been researched should ever be trusted here.
+    """
+    next_ep = (progress or 0) + 1
+    next_status = filler_map.get(next_ep)
+
+    if next_status != "filler":
+        return next_ep, next_status, None
+
+    ep = next_ep
+    while filler_map.get(ep) == "filler":
+        ep += 1
+    # `ep` is the first episode past the contiguous filler run -- either a cached
+    # canon/mixed episode, or an uncached (unknown) one. Either way the run stops
+    # here, so the new progress value is the episode right before it.
+    return next_ep, next_status, ep - 1
+
+
 @app.get("/queue", response_class=HTMLResponse)
 def queue(request: Request, status: str = None):
     user, denied = _require_user(request)
@@ -3843,6 +3877,23 @@ def queue(request: Request, status: str = None):
         params,
     )
 
+    # Issue #301 -- filler-status badge + "skip to next canon" action, read-only
+    # against #299's filler_episode_cache. Batched across every anime on this page
+    # rather than one query per card. Absence of a (anime_id, episode_number) row
+    # means "unknown", never "canon" -- see next_episode_filler_info() above.
+    anime_ids = [row["id"] for row in rows]
+    filler_rows = (
+        db.fetchall(
+            "SELECT anime_id, episode_number, status FROM filler_episode_cache WHERE anime_id = ANY(%s)",
+            (anime_ids,),
+        )
+        if anime_ids
+        else []
+    )
+    filler_by_anime: dict[int, dict[int, str]] = {}
+    for fr in filler_rows:
+        filler_by_anime.setdefault(fr["anime_id"], {})[fr["episode_number"]] = fr["status"]
+
     entries = []
     for row in rows:
         entry = dict(row)
@@ -3855,6 +3906,14 @@ def queue(request: Request, status: str = None):
         if reason.get("matched_studio"):
             matched.append(reason["matched_studio"])
         entry["matched"] = matched
+
+        next_ep, next_ep_status, skip_target = next_episode_filler_info(
+            row["progress"], filler_by_anime.get(row["id"], {})
+        )
+        entry["next_episode_number"] = next_ep
+        entry["next_episode_filler_status"] = next_ep_status
+        entry["filler_skip_target"] = skip_target
+
         entries.append(entry)
 
     # Issue #191 -- rewatch reminder section, independent of the PLANNING/PAUSED
