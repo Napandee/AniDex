@@ -3409,6 +3409,16 @@ a.drop-tag-chip-link:focus-visible {
   margin: 0 0 0.35rem;
 }
 
+/* Issue #307 — search-result cards reuse .card/.cover/.title from library.html,
+   but library's click-to-notes behavior comes from a JS delegation handler
+   keyed on a #notes-modal element this page doesn't have, so it never
+   attaches here. Plain <a> wrappers on the cover and title give this page its
+   own working link without pulling in library's quick-edit modal, which this
+   page doesn't need. Reset anchor defaults explicitly — the same class of bug
+   this repo has hit before when reusing a class designed for non-anchor
+   elements on an <a>. */
+.search-card-link { display: block; color: inherit; text-decoration: none; }
+
 .status-chip {
   font-size: 0.7rem;
   padding: 0.15rem 0.5rem;
