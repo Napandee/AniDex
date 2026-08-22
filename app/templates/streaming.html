@@ -113,6 +113,44 @@
     {% endif %}
   </div>
 
+  {# ── Cancel candidates (issue #284, inverse framing of #255/#182) ───────────────
+     Distinct from the "unique contribution" section above: this one is scoped to
+     the actual Watching/Planning list (not the broader Upcoming-inclusive
+     set-cover universe) and reports a percentage plus an explicit "safe to
+     cancel" signal, sorted safest-to-cancel (lowest impact) first. #}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_cancel_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_cancel_desc') }}</p>
+    {% if not owned_services %}
+    <p class="settings-section-desc">{{ t('streaming_cancel_none_owned') }}</p>
+    {% else %}
+    <p class="streaming-summary-line">
+      <span class="streaming-summary-item">
+        {{ t('streaming_cancel_total_label') }}:
+        <strong>{% if cancel_total_titles == 1 %}{{ t('streaming_titles_singular', count=cancel_total_titles) }}{% else %}{{ t('streaming_titles_plural', count=cancel_total_titles) }}{% endif %}</strong>
+      </span>
+    </p>
+    <div class="streaming-marginal-list">
+      {% for c in cancel_candidates %}
+      <details class="streaming-title-details">
+        <summary>
+          <span class="streaming-rank-label">{{ c.service }}</span>
+          {% if c.fully_redundant %}<span class="streaming-calendar-owned-badge">{{ t('streaming_cancel_safe_badge') }}</span>{% endif %}
+          — {{ c.pct }}% ({% if c.count == 1 %}{{ t('streaming_titles_singular', count=c.count) }}{% else %}{{ t('streaming_titles_plural', count=c.count) }}{% endif %})
+        </summary>
+        {% if c.titles %}
+        <div class="drop-tag-cloud">
+          {% for t in c.titles %}<a href="/anime/{{ t.id }}/notes?back={{ t.status }}" class="drop-tag-chip drop-tag-chip-link">{{ t.title }}</a>{% endfor %}
+        </div>
+        {% else %}
+        <p class="settings-section-desc">{{ t('streaming_cancel_zero_impact') }}</p>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
   {# ── Swap/consolidation suggestion ───────────────────────────────────────────── #}
   {% if owned_services %}
   <div class="settings-section">

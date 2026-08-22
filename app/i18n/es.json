@@ -730,6 +730,13 @@
   "streaming_marginal_none_owned": "Indica qué servicios de streaming tienes en Ajustes para ver esto.",
   "streaming_marginal_zero_unique": "Nada único aquí — todo lo que cubre también está en otro servicio que tienes.",
 
+  "streaming_cancel_title": "Candidatos a cancelar",
+  "streaming_cancel_desc": "Para cada servicio que tienes, qué parte de tu lista real de Viendo/Planeado quedaría sin cobertura si lo cancelaras — ordenado del más seguro de cancelar al menos.",
+  "streaming_cancel_none_owned": "Indica qué servicios de streaming tienes en Ajustes para ver esto.",
+  "streaming_cancel_total_label": "Títulos en tu lista de Viendo/Planeado",
+  "streaming_cancel_safe_badge": "Seguro cancelar — totalmente redundante",
+  "streaming_cancel_zero_impact": "Cancelarlo no te hace perder nada — todo lo que cubre también está en otro servicio que tienes.",
+
   "streaming_swap_title": "Considera cambiar",
   "streaming_swap_desc": "Un servicio que no tienes cuya cobertura por sí sola iguala o supera lo que tus servicios cubren juntos.",
   "streaming_swap_none": "Ningún servicio que no tengas iguala o supera lo que tus servicios ya cubren juntos.",
