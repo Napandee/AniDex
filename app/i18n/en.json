@@ -730,6 +730,13 @@
   "streaming_marginal_none_owned": "Set which streaming services you own in Settings to see this.",
   "streaming_marginal_zero_unique": "Nothing unique here — every title it covers is also on another service you own.",
 
+  "streaming_cancel_title": "Cancel candidates",
+  "streaming_cancel_desc": "For each service you own, what fraction of your actual Watching/Planning list would become uncovered if you cancelled it — sorted safest-to-cancel first.",
+  "streaming_cancel_none_owned": "Set which streaming services you own in Settings to see this.",
+  "streaming_cancel_total_label": "Titles in your Watching/Planning list",
+  "streaming_cancel_safe_badge": "Safe to cancel — fully redundant",
+  "streaming_cancel_zero_impact": "Cancelling this loses nothing — every title it covers is also on another service you own.",
+
   "streaming_swap_title": "Consider swapping",
   "streaming_swap_desc": "An un-owned service whose coverage alone matches or beats what your owned services cover combined.",
   "streaming_swap_none": "No un-owned service matches or beats what your owned services already cover together.",

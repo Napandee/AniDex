@@ -730,6 +730,13 @@
   "streaming_marginal_none_owned": "请在设置中填写你已拥有的流媒体服务，以查看此内容。",
   "streaming_marginal_zero_unique": "这里没有独家内容 — 它覆盖的作品在你的其他服务上也能看到。",
 
+  "streaming_cancel_title": "可取消的服务",
+  "streaming_cancel_desc": "对于你拥有的每项服务，如果取消它，你实际的在看/计划观看列表中会有多少比例失去覆盖 — 按最安全取消的顺序排列。",
+  "streaming_cancel_none_owned": "请在设置中填写你已拥有的流媒体服务，以查看此内容。",
+  "streaming_cancel_total_label": "你的在看/计划观看列表中的作品数",
+  "streaming_cancel_safe_badge": "可安全取消 — 完全重复",
+  "streaming_cancel_zero_impact": "取消它不会失去任何内容 — 它覆盖的作品在你的其他服务上也能看到。",
+
   "streaming_swap_title": "考虑更换",
   "streaming_swap_desc": "一项你未拥有的服务，其单独覆盖率达到或超过你已拥有服务的合计覆盖率。",
   "streaming_swap_none": "没有未拥有的服务能达到或超过你已拥有服务的合计覆盖率。",

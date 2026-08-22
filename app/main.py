@@ -4177,6 +4177,72 @@ def _compute_streaming_setcover(user_id: int) -> dict:
     }
 
 
+# ── Cancel candidates (issue #284, inverse framing of #255) ─────────────────────
+# #255's `marginal` above already computes "what each owned service uniquely
+# covers" (a subscribe-value framing) over the broader Upcoming-inclusive
+# set-cover universe. #284 asks a related but distinct question worth its own
+# read-model: "if I cancel this service I already pay for, what % of my actual
+# Watching/Planning list — not the wider set-cover universe — becomes
+# uncovered?" Denominator is every WATCHING/PLANNING title regardless of
+# whether it's on any recognized streaming service at all (same honesty
+# principle as _compute_streaming_setcover's uncovered_titles bucket — a title
+# with zero links still counts against the total, it just never contributes to
+# any single service's uncovered count either). Reuses
+# _STREAMING_ACTIVE_STATUSES (the same WATCHING/PLANNING definition
+# _compute_streaming_coverage's episode-weighted ranking already uses) and the
+# STREAMING_SITES allowlist — no new query shape, no new AniList calls.
+def _compute_streaming_cancel_candidates(user_id: int) -> dict:
+    owned = {
+        r["service"] for r in db.fetchall(
+            "SELECT service FROM user_streaming_services WHERE user_id = %s", (user_id,)
+        )
+    }
+
+    rows = db.fetchall(
+        """
+        SELECT le.anime_id AS id, a.title_english, a.title_romaji, le.status, a.external_links
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status = ANY(%s)
+        """,
+        (user_id, sorted(_STREAMING_ACTIVE_STATUSES)),
+    )
+    total_titles = len(rows)
+
+    id_to_title = {r["id"]: (r["title_english"] or r["title_romaji"]) for r in rows}
+    id_to_status = {r["id"]: r["status"] for r in rows}
+    id_to_sites = {
+        r["id"]: {
+            lnk.get("site") for lnk in (r["external_links"] or [])
+            if lnk.get("site") in STREAMING_SITES
+        }
+        for r in rows
+    }
+
+    # Per-owned-service: titles reachable ONLY through that one owned service
+    # among the owned set — exactly what becomes uncovered if it were cancelled
+    # (a title also reachable via another owned service stays covered either
+    # way, so it's not part of this service's cancel impact).
+    candidates = []
+    for svc in sorted(owned):
+        unique_ids = [
+            aid for aid, sites in id_to_sites.items() if sites & owned == {svc}
+        ]
+        count = len(unique_ids)
+        candidates.append({
+            "service": svc,
+            "count": count,
+            "pct": round(count / total_titles * 100, 1) if total_titles else 0.0,
+            "titles": _title_pairs(unique_ids, id_to_title, id_to_status),
+            "fully_redundant": count == 0,
+        })
+
+    # Safest-to-cancel first: lowest impact surfaces at the top of the list.
+    candidates.sort(key=lambda c: (c["count"], c["service"]))
+
+    return {"total_titles": total_titles, "candidates": candidates}
+
+
 @app.get("/streaming", response_class=HTMLResponse)
 def streaming_page(request: Request):
     user, denied = _require_user(request)
@@ -4186,6 +4252,7 @@ def streaming_page(request: Request):
     coverage = _compute_streaming_coverage(user["id"])
     calendar = _compute_streaming_calendar(user["id"])
     setcover = _compute_streaming_setcover(user["id"])
+    cancel = _compute_streaming_cancel_candidates(user["id"])
 
     return templates.TemplateResponse(
         request,
@@ -4206,6 +4273,8 @@ def streaming_page(request: Request):
             "sc_marginal": setcover["marginal"],
             "sc_ranked_all": setcover["ranked_all"],
             "sc_swap_candidates": setcover["swap_candidates"],
+            "cancel_total_titles": cancel["total_titles"],
+            "cancel_candidates": cancel["candidates"],
         },
     )
 

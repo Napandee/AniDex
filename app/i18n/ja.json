@@ -730,6 +730,13 @@
   "streaming_marginal_none_owned": "これを見るには、設定で契約中の配信サービスを設定してください。",
   "streaming_marginal_zero_unique": "このサービス独自の作品はありません — カバーしている作品はすべて他の契約中サービスでも視聴できます。",
 
+  "streaming_cancel_title": "解約候補",
+  "streaming_cancel_desc": "契約中の各サービスについて、それを解約した場合に実際の視聴中/視聴予定リストのどれだけがカバーされなくなるか — 解約しても安全な順に並べています。",
+  "streaming_cancel_none_owned": "これを見るには、設定で契約中の配信サービスを設定してください。",
+  "streaming_cancel_total_label": "視聴中/視聴予定リストの作品数",
+  "streaming_cancel_safe_badge": "解約しても安全 — 完全に重複",
+  "streaming_cancel_zero_impact": "解約しても何も失いません — カバーしている作品はすべて他の契約中サービスでも視聴できます。",
+
   "streaming_swap_title": "乗り換えの検討",
   "streaming_swap_desc": "契約していないサービス単体で、契約中のサービス全体のカバー範囲と同等以上になるものです。",
   "streaming_swap_none": "契約中のサービス全体のカバー範囲と同等以上になる未契約サービスはありません。",
