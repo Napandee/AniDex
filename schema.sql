@@ -325,6 +325,46 @@ CREATE TABLE planning_availability_state (
     PRIMARY KEY (user_id, anime_id)
 );
 
+-- Filler/canon episode data cache from AniFillerPedia (issue #299), a separate
+-- first-party project keying its own `series` table by anilist_id — the same id
+-- anime.id already is, so anime_id here is a direct FK, no fuzzy matching. Global/
+-- catalog-scoped like airing_schedule_cache, not per-user: filler status doesn't
+-- vary by who's watching. Populated by scripts/sync_filler_data.py, never
+-- hand-edited. See migrations/029_filler_data_cache.sql for the full design
+-- rationale (three tables, why filler_sync_state can't just live on the cache
+-- table, why filler_data_license is a singleton).
+CREATE TABLE filler_episode_cache (
+    id                     SERIAL PRIMARY KEY,
+    anime_id               INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    episode_number         INTEGER NOT NULL,
+    status                 TEXT NOT NULL CHECK (status IN ('canon', 'filler', 'mixed')),
+    status_note            TEXT,
+    citation_url           TEXT,
+    citation_description   TEXT,
+    synced_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (anime_id, episode_number)
+);
+
+-- Per-anime "have we checked AniFillerPedia for this title, and did it match" state
+-- — exists separately from filler_episode_cache because "no match" and "matched,
+-- zero episodes researched" are both expected, common outcomes with no cache rows to
+-- hang a last-checked timestamp off of. afp_series_id NULL = no match found (yet).
+CREATE TABLE filler_sync_state (
+    anime_id           INTEGER PRIMARY KEY REFERENCES anime(id) ON DELETE CASCADE,
+    afp_series_id      INTEGER,
+    last_checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Single-row cache of AniFillerPedia's GET /license response, so a future UI issue
+-- can render CC BY-NC-SA attribution without a live call per page render.
+CREATE TABLE filler_data_license (
+    id                    INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    license_name          TEXT NOT NULL,
+    attribution_notice    TEXT NOT NULL,
+    raw_response          JSONB NOT NULL,
+    fetched_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- =========================================================================
 -- PERSONAL LAYER (never touched by sync — this is the reason the site exists)
 -- =========================================================================

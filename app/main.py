@@ -51,6 +51,7 @@ _SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts
 _FULL_SYNC_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_full_sync.py")
 _RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
 _AIRING_SCHEDULE_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_airing_schedule.py")
+_FILLER_DATA_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_filler_data.py")
 _NETFLIX_CSV_IMPORT_SCRIPT = os.path.join(_SCRIPTS_DIR, "import_netflix_csv.py")
 _NETFLIX_CSV_IMPORT_TIMEOUT = 480  # seconds — same order as PROVIDER_STEP_TIMEOUT in
                                     # run_full_sync.py; a full-history CSV runs the same
@@ -347,6 +348,25 @@ def _refresh_airing_schedule() -> None:
         log.error("Airing schedule refresh exception: %s", e)
 
 
+def _refresh_filler_data() -> None:
+    """Daily job: refresh filler_episode_cache/filler_sync_state/filler_data_license
+    from AniFillerPedia (issue #299) — a global table like airing_schedule_cache, one
+    pass over the whole catalog rather than per-user. Filler/canon status barely
+    changes once approved, so this runs far less often than the hourly airing-schedule
+    refresh; daily is plenty, and scripts/sync_filler_data.py's own per-title
+    last-checked tracking means most runs after the first do very little work anyway.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, _FILLER_DATA_SCRIPT],
+            capture_output=True, text=True, timeout=1200, env=os.environ.copy(),
+        )
+        if result.returncode != 0:
+            log.error("Filler data refresh failed: %s", result.stderr[-800:])
+    except Exception as e:
+        log.error("Filler data refresh exception: %s", e)
+
+
 def _check_airing_episodes() -> None:
     """Hourly job: notify each user about their own unwatched episodes that started airing.
 
@@ -588,6 +608,15 @@ def _apply_schedule() -> None:
         _check_airing_episodes,
         CronTrigger(minute=0, timezone="UTC"),
         id="airing_check", replace_existing=True,
+    )
+    # Issue #299 — catalog-wide, not per-user, and not tied to instance_config's
+    # user-facing sync-time settings (those are about each user's own AniList/CR/
+    # Netflix sync). Fixed low-traffic UTC time, offset from every other job above
+    # rather than reusing daily_sync's slot.
+    _scheduler.add_job(
+        _refresh_filler_data,
+        CronTrigger(hour=3, minute=15, timezone="UTC"),
+        id="filler_data_refresh", replace_existing=True,
     )
     _scheduler.add_job(
         _weekly_airing_digest,
