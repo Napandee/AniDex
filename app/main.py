@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from collections import Counter
 from datetime import datetime, timezone, timedelta, date
@@ -4950,11 +4951,12 @@ def settings_revoke_session(request: Request, session_id: int):
     if denied:
         return denied
 
-    revoked_token = sessions.revoke_session(session_id, user["id"])
-    if revoked_token and revoked_token == request.session.get("sid"):
+    revoked_token_hash = sessions.revoke_session(session_id, user["id"])
+    current_sid = request.session.get("sid")
+    if revoked_token_hash and current_sid and revoked_token_hash == sessions.hash_token(current_sid):
         request.session.clear()
         return RedirectResponse(url="/auth/login", status_code=303)
-    if revoked_token:
+    if revoked_token_hash:
         return RedirectResponse(url="/settings?saved=session_revoked", status_code=303)
     return RedirectResponse(url="/settings", status_code=303)
 
@@ -6922,6 +6924,48 @@ def stats_wrapped(request: Request):
     return templates.TemplateResponse(request, "wrapped.html", {"wrapped": wrapped})
 
 
+# Security-review finding (issue #314): /api/export and /admin/export-all return a
+# user's (or, for admin, *every* user's) full personal library data in one response,
+# and previously had zero in-app throttle — an authenticated session (the account's
+# own, or a stolen/scripted one) could hammer either endpoint with no limit. Cloudflare
+# Access sits in front of this instance (per CLAUDE.local.md) but that's a login/identity
+# gate, not a request-rate control, so it doesn't cover repeated calls from an already-
+# authenticated session. In-memory fixed-window counter, same single-process assumption
+# as _totp_setup_state above (no --workers flag, see Dockerfile CMD) — a process restart
+# just resets everyone's window, not a security gap. Keyed by user id (not IP), so it
+# tracks the actual account regardless of proxy/IP churn in front of the app. A lock
+# guards the shared dict since FastAPI runs sync `def` routes like these in a thread
+# pool — concurrent requests from the same account are exactly the burst this exists
+# to catch, so the check itself must be safe under real concurrency.
+_export_rate_limit_state: dict[str, list[float]] = {}  # key -> recent request timestamps
+_export_rate_limit_lock = threading.Lock()
+
+
+def _check_export_rate_limit(key: str, max_requests: int, window_seconds: float) -> tuple[bool, int]:
+    """Trailing-window rate check. Returns (allowed, retry_after_seconds). Records the
+    request immediately when allowed, so the count reflects requests actually let
+    through rather than merely attempted."""
+    now = time.monotonic()
+    cutoff = now - window_seconds
+    with _export_rate_limit_lock:
+        timestamps = _export_rate_limit_state.setdefault(key, [])
+        while timestamps and timestamps[0] < cutoff:
+            timestamps.pop(0)
+        if len(timestamps) >= max_requests:
+            retry_after = max(1, int(window_seconds - (now - timestamps[0])) + 1)
+            return False, retry_after
+        timestamps.append(now)
+        return True, 0
+
+
+def _export_rate_limited_response(retry_after: int) -> Response:
+    return JSONResponse(
+        {"error": "Too many export requests. Please try again shortly."},
+        status_code=429,
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def _export_user_library(user_id: int) -> list:
     """Shared by /api/export (self-service, one user) and /admin/export-all
     (admin, loops this over every user) — see issue #90."""
@@ -6976,6 +7020,10 @@ def export_library(request: Request):
     user, denied = _require_user_api(request)
     if denied:
         return denied
+
+    allowed, retry_after = _check_export_rate_limit(f"export:{user['id']}", max_requests=10, window_seconds=60)
+    if not allowed:
+        return _export_rate_limited_response(retry_after)
 
     export = _export_user_library(user["id"])
     return Response(
@@ -7158,6 +7206,15 @@ def admin_export_all(request: Request):
     denied = _require_admin(request)
     if denied:
         return denied
+
+    # Tighter budget than /api/export above: this loops the same query over every
+    # user in one call, so it's the more expensive of the two per request (issue #314).
+    admin = get_current_user(request)
+    allowed, retry_after = _check_export_rate_limit(
+        f"export-all:{admin['id']}", max_requests=3, window_seconds=300
+    )
+    if not allowed:
+        return _export_rate_limited_response(retry_after)
 
     users = db.fetchall("SELECT id, email FROM users ORDER BY email")
     buf = io.BytesIO()
