@@ -319,6 +319,11 @@
   "queue_rewatch_finished_singular": "{months} महीने पहले पूरी हुई",
   "queue_rewatch_finished_plural": "{months} महीने पहले पूरी हुई",
   "queue_rewatch_start_btn": "↺ फिर से देखें",
+  "queue_filler_badge": "अगला: एप {num} · {status}",
+  "queue_skip_filler_btn": "⏭ अगले कैनन पर जाएँ",
+  "filler_status_canon": "कैनन",
+  "filler_status_filler": "फिलर",
+  "filler_status_mixed": "मिश्रित",
 
   "notes_title": "नोट्स — {title} — Anime Tracker",
   "notes_your_score": "आपका स्कोर",

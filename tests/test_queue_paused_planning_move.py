@@ -72,12 +72,14 @@ def app_client(monkeypatch):
 
     def fake_fetchall(*args, **kwargs):
         call_count["n"] += 1
-        # queue() makes exactly two db.fetchall calls per request, in order:
-        # (1) the PLANNING/PAUSED entries query, (2) the rewatch-reminder
-        # completed_rows query (not under test here) — so odd calls are always
-        # the first of a pair, regardless of how many requests this fixture
+        # queue() makes exactly three db.fetchall calls per request, in order:
+        # (1) the PLANNING/PAUSED entries query, (2) issue #301's batched
+        # filler_episode_cache lookup (only issued because entries is
+        # non-empty here), (3) the rewatch-reminder completed_rows query (not
+        # under test here) — so slot 0 of every 3-call cycle is always the
+        # first of that cycle, regardless of how many requests this fixture
         # instance serves across a single test.
-        if call_count["n"] % 2 == 1:
+        if (call_count["n"] - 1) % 3 == 0:
             return [_row(PLANNING_ID, "PLANNING"), _row(PAUSED_ID, "PAUSED")]
         return []
 

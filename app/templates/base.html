@@ -17,26 +17,29 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=65 — bumped for #302's /upcoming filler-episode badge + month-chip
-       dot recolor CSS (.filler-badge, .upcoming-month-chip-dot--filler).
-       See the superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64
-       comments for why this needs bumping on every style.css change in this
-       repo: several parallel branches land CSS independently and a stale
+  <!-- v=66 — bumped for #301's queue-card filler badge + "skip to next canon"
+       action CSS (.badge-filler*, .btn-skip-filler). v=65 was already claimed
+       by #302's /upcoming filler-episode badge CSS by the time this branch
+       rebased onto origin/main. See the superseded
+       v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65 comments
+       for why this needs bumping on every style.css change in this repo:
+       several parallel branches land CSS independently and a stale
        cache-bust value silently serves an old stylesheet to a browser that
        already cached the previous version — v=57 itself only exists because
        #275 skipped this exact step. Re-check this against origin/main right
-       before merging — another parallel PR may have already claimed v=65
-       (issues #300 and #301 are being built in parallel worktrees right now
-       and may also touch style.css). -->
-  <link rel="stylesheet" href="/static/style.css?v=65">
+       before merging — another parallel PR (#300 is still in flight) may
+       have already claimed v=66. -->
+  <link rel="stylesheet" href="/static/style.css?v=66">
   <script>window.I18N = {{ i18n_json|safe }};</script>
-  <!-- v=27 — same #257/PR #275 gap as style.css above: the month-toggle
+  <!-- v=28 — same #257/PR #275 gap as style.css above: the month-toggle
        click-handler wiring shipped in script.js without bumping this value,
        so a cached script.js left the new Month button with no listener
        attached client-side. Bump this on every script.js change too, same
        reasoning as style.css's v= comment. #236 adds the AniDexWrapupReveal
-       module + its auto-init pass. -->
-  <script src="/static/script.js?v=27" defer></script>
+       module + its auto-init pass. #301 adds the .btn-skip-filler click
+       handler. Re-check against origin/main right before merging — #300/#302
+       are in flight concurrently and may also touch this file. -->
+  <script src="/static/script.js?v=28" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% if nav_impersonation %}

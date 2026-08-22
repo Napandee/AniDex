@@ -319,6 +319,11 @@
   "queue_rewatch_finished_singular": "{months} 个月前看完",
   "queue_rewatch_finished_plural": "{months} 个月前看完",
   "queue_rewatch_start_btn": "↺ 重看",
+  "queue_filler_badge": "下一集: 第{num}集 · {status}",
+  "queue_skip_filler_btn": "⏭ 跳到下一正史集",
+  "filler_status_canon": "正史",
+  "filler_status_filler": "填充",
+  "filler_status_mixed": "混合",
 
   "notes_title": "笔记 — {title} — Anime Tracker",
   "notes_your_score": "你的评分",
