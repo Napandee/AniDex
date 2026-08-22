@@ -366,6 +366,18 @@
   "notes_rewatch_placeholder": "इस बार कुछ अलग…",
   "notes_rewatch_save_btn": "रीवॉच #{num} नोट सहेजें",
 
+  "notes_filler_heading": "फिलर एपिसोड",
+  "notes_filler_no_match": "AniFillerPedia पर अभी तक शोध नहीं किया गया।",
+  "notes_filler_matched_empty": "AniFillerPedia पर मैच मिला, लेकिन अभी तक किसी एपिसोड पर शोध नहीं हुआ है।",
+  "notes_filler_count_canon": "{n} कैनन",
+  "notes_filler_count_filler": "{n} फिलर",
+  "notes_filler_count_mixed": "{n} मिश्रित",
+  "notes_filler_researched_hint": "अब तक शोधे गए {n} एपिसोड पर आधारित — पूरी सीरीज़ को कवर नहीं कर सकता।",
+  "notes_filler_show_filler": "फिलर एपिसोड दिखाएं ({n})",
+  "notes_filler_show_mixed": "मिश्रित एपिसोड दिखाएं ({n})",
+  "notes_filler_citation_fallback": "AniFillerPedia पर स्रोत देखें",
+  "notes_filler_source_link": "AniFillerPedia ↗",
+
   "relation_prequel": "प्रीक्वल",
   "relation_sequel": "सीक्वल",
   "relation_parent": "मूल",

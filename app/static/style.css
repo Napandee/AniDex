@@ -1110,6 +1110,55 @@ main {
 .related-format { color: var(--t7); }
 .related-in-library { background: var(--pill-violet-bg); color: var(--pill-violet-text); border: 1px solid var(--pill-violet-border); border-radius: 3px; padding: 0 0.3rem; font-size: 0.65rem; line-height: 1.5; white-space: nowrap; }
 
+/* ── Filler episodes section (issue #300) ─────────────────────────────────── */
+
+.filler-counts { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.status-chip--filler-canon  { color: var(--pill-success-text-strong); border-color: var(--pill-success-border); background: var(--pill-success-bg); }
+.status-chip--filler-filler { color: var(--pill-warning-text-strong); border-color: var(--pill-warning-border); background: var(--pill-warning-bg); }
+.status-chip--filler-mixed  { color: var(--pill-orange-text); border-color: var(--pill-orange-border); background: var(--pill-orange-bg); }
+
+/* Native <details>/<summary> disclosure, same visual pattern as #255's
+   .streaming-title-details — no JS needed. */
+.filler-episode-details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  margin-top: 0.6rem;
+}
+.filler-episode-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--t3);
+  list-style: none;
+}
+.filler-episode-details summary::-webkit-details-marker { display: none; }
+.filler-episode-details summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 0.4rem;
+  color: var(--t6);
+  transition: transform 0.15s ease;
+}
+.filler-episode-details[open] summary::before { transform: rotate(90deg); }
+
+.filler-episode-ranges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
+.filler-episode-range {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid;
+  text-decoration: none;
+  cursor: default;
+}
+.filler-episode-range--filler { color: var(--pill-warning-text-strong); border-color: var(--pill-warning-border); background: var(--pill-warning-bg); }
+.filler-episode-range--mixed  { color: var(--pill-orange-text); border-color: var(--pill-orange-border); background: var(--pill-orange-bg); }
+a.filler-episode-range { cursor: pointer; }
+a.filler-episode-range:hover { filter: brightness(1.08); }
+
+.filler-attribution { font-size: 0.72rem; color: var(--t8); margin: 0.85rem 0 0; }
+.filler-attribution a { color: var(--t7); margin-left: 0.3rem; }
+
 .notes-form { display: flex; flex-direction: column; gap: 1.25rem; }
 
 .form-field { display: flex; flex-direction: column; gap: 0.35rem; }

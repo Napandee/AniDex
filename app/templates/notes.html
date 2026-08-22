@@ -104,6 +104,55 @@
     </div>
   </div>
 
+  {# ── Filler episodes (issue #300, sourced from #299's cache) ─────────── #}
+  {% if filler %}
+  <div class="extra-section" style="margin-bottom:1.25rem;">
+    <div>
+      <h2 class="extra-heading">{{ t('notes_filler_heading') }}</h2>
+
+      {% if filler.state == 'no_match' %}
+      <p class="extra-empty">{{ t('notes_filler_no_match') }}</p>
+      {% elif filler.state == 'matched_empty' %}
+      <p class="extra-empty">{{ t('notes_filler_matched_empty') }}</p>
+      {% else %}
+      <div class="filler-counts">
+        <span class="status-chip status-chip--filler-canon">{{ t('notes_filler_count_canon', n=filler.counts.canon) }}</span>
+        <span class="status-chip status-chip--filler-filler">{{ t('notes_filler_count_filler', n=filler.counts.filler) }}</span>
+        <span class="status-chip status-chip--filler-mixed">{{ t('notes_filler_count_mixed', n=filler.counts.mixed) }}</span>
+      </div>
+      <p class="extra-empty" style="margin-top:0.5rem;">{{ t('notes_filler_researched_hint', n=filler.total_researched) }}</p>
+
+      {% for status_key in ['filler', 'mixed'] %}
+      {% if filler.groups[status_key] %}
+      <details class="filler-episode-details">
+        <summary>{{ t('notes_filler_show_' + status_key, n=filler.counts[status_key]) }}</summary>
+        <div class="filler-episode-ranges">
+          {% for g in filler.groups[status_key] %}
+          {% if g.citation_url %}
+          <a href="{{ g.citation_url }}" target="_blank" rel="noopener"
+             class="filler-episode-range filler-episode-range--{{ status_key }}"
+             title="{{ g.citation_description or t('notes_filler_citation_fallback') }}">{{ g.label }}</a>
+          {% else %}
+          <span class="filler-episode-range filler-episode-range--{{ status_key }}"
+                title="{{ g.citation_description or '' }}">{{ g.label }}</span>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+
+      {% if filler_license and filler.state != 'no_match' %}
+      <p class="filler-attribution">
+        {{ filler_license.attribution_notice }}
+        <a href="https://anifillerpedia.wiki" target="_blank" rel="noopener">{{ t('notes_filler_source_link') }}</a>
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <form method="post" action="/anime/{{ anime.id }}/notes" class="notes-form">
     <input type="hidden" name="back" value="{{ back }}">
 

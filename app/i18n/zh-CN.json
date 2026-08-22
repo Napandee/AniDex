@@ -366,6 +366,18 @@
   "notes_rewatch_placeholder": "这次有什么不一样…",
   "notes_rewatch_save_btn": "保存第 {num} 次重看笔记",
 
+  "notes_filler_heading": "填充集",
+  "notes_filler_no_match": "AniFillerPedia 尚未收录该作品。",
+  "notes_filler_matched_empty": "已在 AniFillerPedia 匹配，但尚未有任何一集被研究过。",
+  "notes_filler_count_canon": "正传 {n} 集",
+  "notes_filler_count_filler": "填充 {n} 集",
+  "notes_filler_count_mixed": "混合 {n} 集",
+  "notes_filler_researched_hint": "基于目前已研究的 {n} 集 — 可能未覆盖全部剧集。",
+  "notes_filler_show_filler": "显示填充集（{n}）",
+  "notes_filler_show_mixed": "显示混合集（{n}）",
+  "notes_filler_citation_fallback": "在 AniFillerPedia 查看来源",
+  "notes_filler_source_link": "AniFillerPedia ↗",
+
   "relation_prequel": "前传",
   "relation_sequel": "续作",
   "relation_parent": "本篇",
