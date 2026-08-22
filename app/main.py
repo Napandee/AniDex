@@ -4008,7 +4008,7 @@ def _streaming_universe(user_id: int) -> list[dict]:
     rows = db.fetchall(
         """
         SELECT le.anime_id AS id, a.title_english, a.title_romaji, a.external_links,
-               le.status
+               le.status, a.episodes, le.progress
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         WHERE le.user_id = %s
@@ -4034,6 +4034,12 @@ def _streaming_universe(user_id: int) -> list[dict]:
             "title": row["title_english"] or row["title_romaji"],
             "sites": sites,
             "status": row["status"],
+            # #285: episodes-remaining weight, same fallback rule as
+            # _compute_streaming_coverage's marginal-value ranking (see
+            # _episodes_remaining's docstring) — reused here rather than
+            # reinvented so the two read-models handle an unknown
+            # anime.episodes total identically.
+            "remaining": _episodes_remaining(row["progress"], row["episodes"]),
         })
     return universe
 
@@ -4112,10 +4118,18 @@ def _compute_streaming_setcover(user_id: int) -> dict:
     id_to_sites = {t["id"]: t["sites"] for t in covered}
     id_to_title = {t["id"]: t["title"] for t in covered}
     id_to_status = {t["id"]: t["status"] for t in covered}
+    # #285: episodes-remaining weight per title, carried over from
+    # _streaming_universe (which already applies the NULL-episodes fallback via
+    # _episodes_remaining). Title count stays available too (`count` fields
+    # below) as a secondary detail — episodes becomes the headline metric.
+    id_to_remaining = {t["id"]: t["remaining"] for t in covered}
 
     owned_coverable_ids = {t["id"] for t in covered if t["sites"] & owned}
     owned_total_covered = len(owned_coverable_ids)
+    owned_total_covered_episodes = sum(id_to_remaining[aid] for aid in owned_coverable_ids)
 
+    # #285 out of scope: the set-cover algorithm's shape is unchanged — it still
+    # selects the minimal combination by title coverage, not episode weight.
     minimal_combination = (
         _greedy_set_cover(sorted(owned), owned_coverable_ids, id_to_sites) if owned else []
     )
@@ -4133,22 +4147,28 @@ def _compute_streaming_setcover(user_id: int) -> dict:
         marginal.append({
             "service": svc,
             "count": len(unique_ids),
+            "episodes": sum(id_to_remaining[aid] for aid in unique_ids),
             "titles": _title_pairs(unique_ids, id_to_title, id_to_status),
         })
 
     # Full ranked list of every allowlisted service, owned or not — no coverage
     # threshold cutoff (#255 acceptance criteria: transparency over curation).
+    total_covered_episodes = sum(id_to_remaining.values())
     ranked_all = []
     for svc in sorted(STREAMING_SITES):
         ids = [t["id"] for t in covered if svc in t["sites"]]
+        episodes = sum(id_to_remaining[aid] for aid in ids)
         ranked_all.append({
             "service": svc,
             "owned": svc in owned,
             "count": len(ids),
             "pct": round(len(ids) / len(covered) * 100, 1) if covered else 0.0,
+            "episodes": episodes,
+            "episodes_pct": round(episodes / total_covered_episodes * 100, 1) if total_covered_episodes else 0.0,
             "titles": _title_pairs(ids, id_to_title, id_to_status),
         })
-    ranked_all.sort(key=lambda r: (-r["count"], r["service"]))
+    # #285: episodes-remaining is now the headline sort key, title count the tie-break.
+    ranked_all.sort(key=lambda r: (-r["episodes"], -r["count"], r["service"]))
 
     # Swap/consolidation suggestion: an un-owned service whose total coverage
     # alone matches or beats the current owned combination's total coverage —
@@ -4156,13 +4176,17 @@ def _compute_streaming_setcover(user_id: int) -> dict:
     # separate computation"). Guarded on `owned` being non-empty: with nothing
     # owned there's no existing combination to "swap out" of, just a plain
     # recommendation the full ranked list below already covers; and on
-    # count > 0 so two services that both cover nothing don't produce a
-    # meaningless 0-beats-0 suggestion.
+    # episodes > 0 so two services that both cover nothing don't produce a
+    # meaningless 0-beats-0 suggestion. #285: compared on episodes-remaining
+    # now, not raw title count.
     swap_candidates = []
     if owned:
         swap_candidates = sorted(
-            (r for r in ranked_all if not r["owned"] and r["count"] > 0 and r["count"] >= owned_total_covered),
-            key=lambda r: (-r["count"], r["service"]),
+            (
+                r for r in ranked_all
+                if not r["owned"] and r["episodes"] > 0 and r["episodes"] >= owned_total_covered_episodes
+            ),
+            key=lambda r: (-r["episodes"], -r["count"], r["service"]),
         )
 
     return {
@@ -4170,6 +4194,7 @@ def _compute_streaming_setcover(user_id: int) -> dict:
         "uncovered_titles": uncovered_titles,
         "owned": sorted(owned),
         "owned_total_covered": owned_total_covered,
+        "owned_total_covered_episodes": owned_total_covered_episodes,
         "minimal_combination": minimal_combination,
         "marginal": marginal,
         "ranked_all": ranked_all,
@@ -4200,7 +4225,8 @@ def _compute_streaming_cancel_candidates(user_id: int) -> dict:
 
     rows = db.fetchall(
         """
-        SELECT le.anime_id AS id, a.title_english, a.title_romaji, le.status, a.external_links
+        SELECT le.anime_id AS id, a.title_english, a.title_romaji, le.status,
+               a.external_links, a.episodes, le.progress
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         WHERE le.user_id = %s AND le.status = ANY(%s)
@@ -4218,6 +4244,16 @@ def _compute_streaming_cancel_candidates(user_id: int) -> dict:
         }
         for r in rows
     }
+    # #285: episodes-remaining weight per title — same fallback rule as
+    # _compute_streaming_setcover / _compute_streaming_coverage (NULL
+    # anime.episodes, e.g. a still-airing title with no confirmed final count,
+    # is treated as "at least 1 episode at stake" by _episodes_remaining rather
+    # than 0, so it stays visible instead of silently vanishing from a cancel
+    # service's impact).
+    id_to_remaining = {
+        r["id"]: _episodes_remaining(r["progress"], r["episodes"]) for r in rows
+    }
+    total_episodes_remaining = sum(id_to_remaining.values())
 
     # Per-owned-service: titles reachable ONLY through that one owned service
     # among the owned set — exactly what becomes uncovered if it were cancelled
@@ -4229,18 +4265,34 @@ def _compute_streaming_cancel_candidates(user_id: int) -> dict:
             aid for aid, sites in id_to_sites.items() if sites & owned == {svc}
         ]
         count = len(unique_ids)
+        episodes = sum(id_to_remaining[aid] for aid in unique_ids)
         candidates.append({
             "service": svc,
             "count": count,
             "pct": round(count / total_titles * 100, 1) if total_titles else 0.0,
+            "episodes": episodes,
+            "episodes_pct": round(episodes / total_episodes_remaining * 100, 1) if total_episodes_remaining else 0.0,
             "titles": _title_pairs(unique_ids, id_to_title, id_to_status),
-            "fully_redundant": count == 0,
+            # #285: redundancy is now judged on episode impact, not raw title
+            # count — a uniquely-covered title that happens to have 0 episodes
+            # actually remaining (progress caught up to a known total, just not
+            # yet marked Completed) truly costs nothing to cancel. In practice
+            # this only differs from `count == 0` in that edge case; every
+            # existing title still contributes >=1 whenever it has any episodes
+            # left or an unknown total (see _episodes_remaining).
+            "fully_redundant": episodes == 0,
         })
 
     # Safest-to-cancel first: lowest impact surfaces at the top of the list.
-    candidates.sort(key=lambda c: (c["count"], c["service"]))
+    # #285: episodes-remaining is now the headline sort key, title count the
+    # tie-break (was title count only).
+    candidates.sort(key=lambda c: (c["episodes"], c["count"], c["service"]))
 
-    return {"total_titles": total_titles, "candidates": candidates}
+    return {
+        "total_titles": total_titles,
+        "total_episodes_remaining": total_episodes_remaining,
+        "candidates": candidates,
+    }
 
 
 @app.get("/streaming", response_class=HTMLResponse)
@@ -4269,11 +4321,13 @@ def streaming_page(request: Request):
             "sc_universe_size": setcover["universe_size"],
             "sc_uncovered_titles": setcover["uncovered_titles"],
             "sc_owned_total_covered": setcover["owned_total_covered"],
+            "sc_owned_total_covered_episodes": setcover["owned_total_covered_episodes"],
             "sc_minimal_combination": setcover["minimal_combination"],
             "sc_marginal": setcover["marginal"],
             "sc_ranked_all": setcover["ranked_all"],
             "sc_swap_candidates": setcover["swap_candidates"],
             "cancel_total_titles": cancel["total_titles"],
+            "cancel_total_episodes_remaining": cancel["total_episodes_remaining"],
             "cancel_candidates": cancel["candidates"],
         },
     )

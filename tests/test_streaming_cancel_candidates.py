@@ -94,20 +94,20 @@ def _seeded_user(pg_conn):
         )
 
 
-def _insert_anime(pg_conn, anime_id, sites, title=None):
+def _insert_anime(pg_conn, anime_id, sites, title=None, episodes=None):
     links = [{"site": s, "url": f"https://example.com/{anime_id}"} for s in sites]
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO anime (id, title_romaji, external_links) VALUES (%s, %s, %s::jsonb)",
-            (anime_id, title or f"Anime {anime_id}", json.dumps(links)),
+            "INSERT INTO anime (id, title_romaji, external_links, episodes) VALUES (%s, %s, %s::jsonb, %s)",
+            (anime_id, title or f"Anime {anime_id}", json.dumps(links), episodes),
         )
 
 
-def _insert_entry(pg_conn, anime_id, status, user_id=USER_ID):
+def _insert_entry(pg_conn, anime_id, status, user_id=USER_ID, progress=0):
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO library_entries (user_id, anime_id, status, progress) VALUES (%s, %s, %s, 0)",
-            (user_id, anime_id, status),
+            "INSERT INTO library_entries (user_id, anime_id, status, progress) VALUES (%s, %s, %s, %s)",
+            (user_id, anime_id, status, progress),
         )
 
 
@@ -205,6 +205,70 @@ def test_cancel_candidates_sorted_safest_first(pg_conn, app_module, _seeded_user
     assert services_in_order == ["Netflix", "Crunchyroll", "Hulu"]
 
 
+def test_cancel_candidates_weighted_by_episodes_remaining_not_title_count(
+    pg_conn, app_module, _seeded_user
+):
+    """Issue #285: a single long-runner uniquely on one service must outweigh
+    several short shows uniquely on another service — the headline `episodes`/
+    `episodes_pct` fields must reflect that even though `count` (title-based,
+    secondary) looks similar or reversed."""
+    # Crunchyroll-unique: one 500-episode long-runner, 10 watched -> 490 remaining.
+    _insert_anime(pg_conn, 1, ["Crunchyroll"], title="LongRunner", episodes=500)
+    _insert_entry(pg_conn, 1, "WATCHING", progress=10)
+    # Hulu-unique: three short 12-episode shows, untouched -> 12 remaining each = 36.
+    _insert_anime(pg_conn, 2, ["Hulu"], title="Short1", episodes=12)
+    _insert_entry(pg_conn, 2, "WATCHING", progress=0)
+    _insert_anime(pg_conn, 3, ["Hulu"], title="Short2", episodes=12)
+    _insert_entry(pg_conn, 3, "WATCHING", progress=0)
+    _insert_anime(pg_conn, 4, ["Hulu"], title="Short3", episodes=12)
+    _insert_entry(pg_conn, 4, "WATCHING", progress=0)
+    _set_owned(pg_conn, ["Crunchyroll", "Hulu"])
+
+    result = app_module._compute_streaming_cancel_candidates(USER_ID)
+    by_service = {c["service"]: c for c in result["candidates"]}
+
+    crunchyroll = by_service["Crunchyroll"]
+    hulu = by_service["Hulu"]
+
+    # Title count alone would rank Hulu as higher-impact (3 titles vs 1) — but
+    # episode-weighted, Crunchyroll's single long-runner is the real bigger loss.
+    assert crunchyroll["count"] == 1
+    assert hulu["count"] == 3
+    assert crunchyroll["episodes"] == 490
+    assert hulu["episodes"] == 36
+    assert crunchyroll["episodes"] > hulu["episodes"]
+    assert result["total_episodes_remaining"] == 490 + 36
+    assert crunchyroll["episodes_pct"] == round(490 / 526 * 100, 1)
+
+    # Sort order (safest-to-cancel first) must follow the episode-weighted
+    # headline, not the title count — Hulu (36 remaining) now sorts before
+    # Crunchyroll (490 remaining) even though Crunchyroll has fewer titles.
+    services_in_order = [c["service"] for c in result["candidates"]]
+    assert services_in_order == ["Hulu", "Crunchyroll"]
+
+
+def test_cancel_candidates_null_episodes_falls_back_without_crashing(
+    pg_conn, app_module, _seeded_user
+):
+    """Issue #285 acceptance criteria: a title with anime.episodes NULL (e.g.
+    still-airing with no confirmed final count) must not crash the calculation
+    or silently drop out of the episode-weighted denominator — it's treated as
+    1 remaining episode, same fallback _episodes_remaining already uses for
+    #182's marginal-value ranking."""
+    _insert_anime(pg_conn, 1, ["Crunchyroll"], title="StillAiring", episodes=None)
+    _insert_entry(pg_conn, 1, "WATCHING", progress=3)
+    _set_owned(pg_conn, ["Crunchyroll"])
+
+    result = app_module._compute_streaming_cancel_candidates(USER_ID)
+
+    assert result["total_episodes_remaining"] == 1  # fallback weight, not a crash/0
+    crunchyroll = result["candidates"][0]
+    assert crunchyroll["count"] == 1
+    assert crunchyroll["episodes"] == 1
+    assert crunchyroll["episodes_pct"] == 100.0
+    assert crunchyroll["fully_redundant"] is False
+
+
 def test_cancel_candidates_no_owned_services_produces_empty_list(pg_conn, app_module, _seeded_user):
     _insert_anime(pg_conn, 1, ["Netflix"], title="Solo")
     _insert_entry(pg_conn, 1, "PLANNING")
@@ -223,8 +287,17 @@ def test_cancel_candidates_empty_watching_planning_list_no_division_by_zero(
     result = app_module._compute_streaming_cancel_candidates(USER_ID)
 
     assert result["total_titles"] == 0
+    assert result["total_episodes_remaining"] == 0
     assert result["candidates"] == [
-        {"service": "Crunchyroll", "count": 0, "pct": 0.0, "titles": [], "fully_redundant": True}
+        {
+            "service": "Crunchyroll",
+            "count": 0,
+            "pct": 0.0,
+            "episodes": 0,
+            "episodes_pct": 0.0,
+            "titles": [],
+            "fully_redundant": True,
+        }
     ]
 
 

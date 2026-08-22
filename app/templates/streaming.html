@@ -62,7 +62,8 @@
     <p class="streaming-summary-line">
       <span class="streaming-summary-item">
         {{ t('streaming_minimal_coverage_label') }}:
-        <strong>{% if sc_owned_total_covered == 1 %}{{ t('streaming_titles_singular', count=sc_owned_total_covered) }}{% else %}{{ t('streaming_titles_plural', count=sc_owned_total_covered) }}{% endif %}</strong>
+        <strong>{% if sc_owned_total_covered_episodes == 1 %}{{ t('streaming_episodes_singular', count=sc_owned_total_covered_episodes) }}{% else %}{{ t('streaming_episodes_plural', count=sc_owned_total_covered_episodes) }}{% endif %}</strong>
+        ({% if sc_owned_total_covered == 1 %}{{ t('streaming_titles_singular', count=sc_owned_total_covered) }}{% else %}{{ t('streaming_titles_plural', count=sc_owned_total_covered) }}{% endif %})
       </span>
     </p>
     {% else %}
@@ -98,7 +99,7 @@
       <details class="streaming-title-details">
         <summary>
           <span class="streaming-rank-label">{{ m.service }}</span>
-          — {% if m.count == 1 %}{{ t('streaming_titles_singular', count=m.count) }}{% else %}{{ t('streaming_titles_plural', count=m.count) }}{% endif %}
+          — {% if m.episodes == 1 %}{{ t('streaming_episodes_singular', count=m.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=m.episodes) }}{% endif %} ({% if m.count == 1 %}{{ t('streaming_titles_singular', count=m.count) }}{% else %}{{ t('streaming_titles_plural', count=m.count) }}{% endif %})
         </summary>
         {% if m.titles %}
         <div class="drop-tag-cloud">
@@ -127,7 +128,8 @@
     <p class="streaming-summary-line">
       <span class="streaming-summary-item">
         {{ t('streaming_cancel_total_label') }}:
-        <strong>{% if cancel_total_titles == 1 %}{{ t('streaming_titles_singular', count=cancel_total_titles) }}{% else %}{{ t('streaming_titles_plural', count=cancel_total_titles) }}{% endif %}</strong>
+        <strong>{% if cancel_total_episodes_remaining == 1 %}{{ t('streaming_episodes_singular', count=cancel_total_episodes_remaining) }}{% else %}{{ t('streaming_episodes_plural', count=cancel_total_episodes_remaining) }}{% endif %}</strong>
+        ({% if cancel_total_titles == 1 %}{{ t('streaming_titles_singular', count=cancel_total_titles) }}{% else %}{{ t('streaming_titles_plural', count=cancel_total_titles) }}{% endif %})
       </span>
     </p>
     <div class="streaming-marginal-list">
@@ -136,7 +138,7 @@
         <summary>
           <span class="streaming-rank-label">{{ c.service }}</span>
           {% if c.fully_redundant %}<span class="streaming-calendar-owned-badge">{{ t('streaming_cancel_safe_badge') }}</span>{% endif %}
-          — {{ c.pct }}% ({% if c.count == 1 %}{{ t('streaming_titles_singular', count=c.count) }}{% else %}{{ t('streaming_titles_plural', count=c.count) }}{% endif %})
+          — {{ c.episodes_pct }}% ({% if c.episodes == 1 %}{{ t('streaming_episodes_singular', count=c.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=c.episodes) }}{% endif %}, {% if c.count == 1 %}{{ t('streaming_titles_singular', count=c.count) }}{% else %}{{ t('streaming_titles_plural', count=c.count) }}{% endif %})
         </summary>
         {% if c.titles %}
         <div class="drop-tag-cloud">
@@ -159,7 +161,14 @@
     {% if sc_swap_candidates %}
     <ul class="streaming-swap-list">
       {% for s in sc_swap_candidates %}
-      <li>{{ t('streaming_swap_line', service=s.service, count=s.count, owned_count=owned_services | length, owned_total=sc_owned_total_covered) }}</li>
+      {# #285: headline is now episodes-remaining (s.episodes / sc_owned_total_covered_episodes)
+         fed into the existing sentence's number placeholders; title count kept as a
+         secondary detail appended after it rather than reworking the translated
+         string itself across all 5 locales. #}
+      <li>
+        {{ t('streaming_swap_line', service=s.service, count=s.episodes, owned_count=owned_services | length, owned_total=sc_owned_total_covered_episodes) }}
+        ({% if s.count == 1 %}{{ t('streaming_titles_singular', count=s.count) }}{% else %}{{ t('streaming_titles_plural', count=s.count) }}{% endif %})
+      </li>
       {% endfor %}
     </ul>
     {% else %}
@@ -181,7 +190,7 @@
         <summary>
           <span class="streaming-rank-label">{{ r.service }}</span>
           {% if r.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
-          — {{ r.pct }}% ({% if r.count == 1 %}{{ t('streaming_titles_singular', count=r.count) }}{% else %}{{ t('streaming_titles_plural', count=r.count) }}{% endif %})
+          — {{ r.episodes_pct }}% ({% if r.episodes == 1 %}{{ t('streaming_episodes_singular', count=r.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=r.episodes) }}{% endif %} · {% if r.count == 1 %}{{ t('streaming_titles_singular', count=r.count) }}{% else %}{{ t('streaming_titles_plural', count=r.count) }}{% endif %})
         </summary>
         {% if r.titles %}
         <div class="drop-tag-cloud">

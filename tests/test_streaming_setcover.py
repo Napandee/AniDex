@@ -167,20 +167,20 @@ def _seeded_user(pg_conn):
         )
 
 
-def _insert_anime(pg_conn, anime_id, sites, title=None):
+def _insert_anime(pg_conn, anime_id, sites, title=None, episodes=None):
     links = [{"site": s, "url": f"https://example.com/{anime_id}"} for s in sites]
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO anime (id, title_romaji, external_links) VALUES (%s, %s, %s::jsonb)",
-            (anime_id, title or f"Anime {anime_id}", json.dumps(links)),
+            "INSERT INTO anime (id, title_romaji, external_links, episodes) VALUES (%s, %s, %s::jsonb, %s)",
+            (anime_id, title or f"Anime {anime_id}", json.dumps(links), episodes),
         )
 
 
-def _insert_entry(pg_conn, anime_id, status, user_id=USER_ID):
+def _insert_entry(pg_conn, anime_id, status, user_id=USER_ID, progress=0):
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO library_entries (user_id, anime_id, status, progress) VALUES (%s, %s, %s, 0)",
-            (user_id, anime_id, status),
+            "INSERT INTO library_entries (user_id, anime_id, status, progress) VALUES (%s, %s, %s, %s)",
+            (user_id, anime_id, status, progress),
         )
 
 
@@ -347,6 +347,57 @@ def test_setcover_full_ranked_list_has_no_threshold_cutoff(pg_conn, app_module, 
     assert ranked["Crunchyroll"]["count"] == 4
     assert ranked["Hulu"]["count"] == 2
     assert ranked["Netflix"]["count"] == 2
+
+
+def test_setcover_ranked_all_weighted_by_episodes_remaining_not_title_count(
+    pg_conn, app_module, _seeded_user
+):
+    """Issue #285: ranked_all's headline (`episodes`/`episodes_pct`) must reflect
+    episodes-remaining, not raw title count — a service with one long-runner
+    outranks a service with several short shows even though it has fewer titles."""
+    # Crunchyroll: one 500-episode long-runner, 20 watched -> 480 remaining.
+    _insert_anime(pg_conn, 1, ["Crunchyroll"], title="LongRunner", episodes=500)
+    _insert_entry(pg_conn, 1, "WATCHING", progress=20)
+    # Netflix: four short 12-episode shows, untouched -> 12 remaining each = 48.
+    for i, aid in enumerate([2, 3, 4, 5], start=1):
+        _insert_anime(pg_conn, aid, ["Netflix"], title=f"Short{i}", episodes=12)
+        _insert_entry(pg_conn, aid, "WATCHING", progress=0)
+
+    result = app_module._compute_streaming_setcover(USER_ID)
+    ranked = {r["service"]: r for r in result["ranked_all"]}
+
+    assert ranked["Netflix"]["count"] == 4  # more titles...
+    assert ranked["Crunchyroll"]["count"] == 1
+    assert ranked["Crunchyroll"]["episodes"] == 480  # ...but fewer episodes remaining
+    assert ranked["Netflix"]["episodes"] == 48
+    assert ranked["Crunchyroll"]["episodes"] > ranked["Netflix"]["episodes"]
+
+    # Headline sort order (ranked_all) must follow episodes, not title count —
+    # Crunchyroll (480 remaining, 1 title) ranks ahead of Netflix (48 remaining,
+    # 4 titles).
+    services_by_coverage = [r["service"] for r in result["ranked_all"] if r["count"] > 0]
+    assert services_by_coverage == ["Crunchyroll", "Netflix"]
+
+
+def test_setcover_null_episodes_falls_back_without_crashing(pg_conn, app_module, _seeded_user):
+    """Issue #285 acceptance criteria: anime.episodes NULL (e.g. still-airing,
+    no confirmed final episode count) must not crash the calculation or
+    silently drop the title from the episode-weighted denominator — it's
+    treated as 1 remaining episode via _episodes_remaining's documented
+    fallback, reused as-is rather than reinvented for this feature."""
+    _insert_anime(pg_conn, 1, ["Crunchyroll"], title="StillAiring", episodes=None)
+    _insert_entry(pg_conn, 1, "WATCHING", progress=5)
+    _set_owned(pg_conn, ["Crunchyroll"])
+
+    result = app_module._compute_streaming_setcover(USER_ID)
+
+    assert result["owned_total_covered"] == 1
+    assert result["owned_total_covered_episodes"] == 1  # fallback weight, not a crash/0
+    ranked = {r["service"]: r for r in result["ranked_all"]}
+    assert ranked["Crunchyroll"]["episodes"] == 1
+    assert ranked["Crunchyroll"]["episodes_pct"] == 100.0
+    marginal = {m["service"]: m for m in result["marginal"]}
+    assert marginal["Crunchyroll"]["episodes"] == 1
 
 
 def test_setcover_swap_candidate_appears_when_unowned_matches_owned_total(
