@@ -176,6 +176,54 @@ def test_valid_token_succeeds_on_an_admin_only_route(client):
     assert resp.status_code == 303, resp.text
 
 
+def test_rewatch_notes_form_carries_its_own_real_token(client, pg_conn):
+    """Regression test: every other test in this file scrapes its token from
+    base.html's <meta name="csrf-token"> tag, which only proves the CSRF
+    mechanism itself works — it can't catch a specific <form> template that
+    forgot its own hidden csrf_token field (exactly the bug this test caught
+    in review: notes.html's rewatch-notes form, the *second* <form> on the
+    page, was missing it while the first — the general notes form — had it).
+    This test scrapes the token straight out of that second form's own hidden
+    input, not the meta tag, so a future template-level omission like this
+    one fails here instead of shipping silently."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO anime (id, title_romaji) VALUES (999998, 'Rewatch Test Anime') "
+            "ON CONFLICT (id) DO NOTHING"
+        )
+    _register(client)
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE email = %s", ("owner@example.com",))
+        user_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO library_entries (user_id, anime_id, status, repeat_count) "
+            "VALUES (%s, 999998, 'COMPLETED', 1)",
+            (user_id,),
+        )
+
+    page = client.get("/anime/999998/notes")
+    rewatch_form_match = re.search(
+        r'action="/anime/999998/rewatch-notes/1"[^>]*>.*?name="csrf_token" value="([^"]*)"',
+        page.text,
+        re.DOTALL,
+    )
+    assert rewatch_form_match, (
+        "rewatch-notes <form> has no csrf_token hidden field — regression of "
+        "the bug caught in this PR's review"
+    )
+    rewatch_token = rewatch_form_match.group(1)
+    assert rewatch_token, "rewatch-notes form's csrf_token field is present but empty"
+
+    resp = client.request(
+        "POST",
+        "/anime/999998/rewatch-notes/1",
+        data={"note": "hit different the second time", "back": "COMPLETED", "csrf_token": rewatch_token},
+        follow_redirects=False,
+        skip_csrf_autoinject=True,
+    )
+    assert resp.status_code in (200, 303), resp.text
+
+
 def test_valid_token_succeeds_on_the_specific_interactive_features_the_issue_calls_out(client, pg_conn):
     """Issue #312 explicitly names bulk edit, rating, progress, and tags as the
     features most at risk of a silent CSRF-rollout regression. Spot-checks all

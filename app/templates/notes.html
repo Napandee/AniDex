@@ -233,6 +233,7 @@
       {% for rw in rewatch_notes %}
       <form method="post" action="/anime/{{ anime.id }}/rewatch-notes/{{ rw.repeat_count }}"
             class="notes-form" style="margin-bottom:0.75rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="back" value="{{ back }}">
         <div class="form-field">
           <label class="form-label" for="rewatch_note_{{ rw.repeat_count }}">{{ t('notes_rewatch_label', num=rw.repeat_count) }}</label>
