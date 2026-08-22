@@ -758,6 +758,14 @@
   "streaming_titles_singular": "{count} शीर्षक",
   "streaming_titles_plural": "{count} शीर्षक",
 
+  "streaming_genre_title": "आपकी शीर्ष-रेटेड विधाओं के अनुसार कवरेज",
+  "streaming_genre_desc": "औसत रेटिंग के अनुसार आपकी शीर्ष विधाएँ (केवल पूर्ण किए गए शीर्षक), और आपकी देख रहे/योजना/आगामी सूची में हर एक को अभी कौन-सी सेवा कितना कवर करती है।",
+  "streaming_genre_empty": "विधा के अनुसार कवरेज दिखाने के लिए अभी पर्याप्त रेटेड शीर्षक नहीं हैं — इसे अनलॉक करने के लिए कुछ और पूर्ण शीर्षकों को रेट करें।",
+  "streaming_genre_top_badge": "शीर्ष विधा",
+  "streaming_genre_avg_score_label": "औसत स्कोर",
+  "streaming_genre_min_titles_note": "केवल वे विधाएँ दिखाई गई हैं जिनमें कम से कम {count} रेटेड शीर्षक हैं।",
+  "streaming_genre_no_coverage": "इस विधा का कुछ भी अभी आपकी देख रहे/योजना/आगामी सूची में नहीं है।",
+
   "streaming_footprint_title": "ऐतिहासिक पदचिह्न (पूर्ण / छोड़ा गया)",
   "streaming_footprint_desc": "केवल जानकारी हेतु — ऊपर की रैंकिंग को प्रभावित नहीं करता।",
   "streaming_footprint_empty": "अभी तक स्ट्रीमिंग लिंक वाले कोई पूर्ण या छोड़े गए शीर्षक नहीं हैं।",

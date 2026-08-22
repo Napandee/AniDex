@@ -758,6 +758,14 @@
   "streaming_titles_singular": "{count} título",
   "streaming_titles_plural": "{count} títulos",
 
+  "streaming_genre_title": "Cobertura por tus géneros mejor valorados",
+  "streaming_genre_desc": "Tus géneros con mejor puntuación media (solo títulos Completados) y cuánto de cada uno sigue cubierto por cada servicio en tu lista de Viendo/Planeando/Próximos.",
+  "streaming_genre_empty": "Aún no hay suficientes títulos puntuados para desglosar la cobertura por género — puntúa algunos títulos Completados más para desbloquear esto.",
+  "streaming_genre_top_badge": "Género principal",
+  "streaming_genre_avg_score_label": "Puntuación media",
+  "streaming_genre_min_titles_note": "Solo se muestran géneros con al menos {count} títulos puntuados.",
+  "streaming_genre_no_coverage": "Nada de este género está actualmente en tu lista de Viendo/Planeando/Próximos.",
+
   "streaming_footprint_title": "Huella histórica (Completado / Abandonado)",
   "streaming_footprint_desc": "Solo informativo — no afecta a la clasificación anterior.",
   "streaming_footprint_empty": "Todavía no hay títulos Completados o Abandonados con enlaces de streaming.",

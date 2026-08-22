@@ -204,6 +204,54 @@
     </div>
   </div>
 
+  {# ── Genre affinity coverage (issue #286) ────────────────────────────────────
+     Correlates episode-weighted coverage (#285) against the user's top-RATED
+     genres (library_entries.score x anime.genres, COMPLETED-only, gated by
+     GENRE_AFFINITY_MIN_TITLES) — a distinct question from every section above,
+     which only ever ranks services, never genres. Hidden entirely (not an
+     empty state) when _compute_streaming_genre_affinity returns None. #}
+  {% if genre_affinity %}
+  <div class="settings-section">
+    <h2 class="settings-section-title">{{ t('streaming_genre_title') }}</h2>
+    <p class="settings-section-desc">{{ t('streaming_genre_desc') }}</p>
+    <p class="settings-section-desc">{{ t('streaming_genre_min_titles_note', count=genre_affinity.min_titles) }}</p>
+    <div class="streaming-marginal-list">
+      {% for g in genre_affinity.genres %}
+      <details class="streaming-title-details"{% if loop.first %} open{% endif %}>
+        <summary>
+          <span class="streaming-rank-label">{{ g.genre }}</span>
+          {% if loop.first %}<span class="streaming-calendar-owned-badge">{{ t('streaming_genre_top_badge') }}</span>{% endif %}
+          — {{ t('streaming_genre_avg_score_label') }} {{ g.avg_score }} ({% if g.title_count == 1 %}{{ t('streaming_titles_singular', count=g.title_count) }}{% else %}{{ t('streaming_titles_plural', count=g.title_count) }}{% endif %})
+        </summary>
+        {% if g.services %}
+        <div class="drop-rate-list streaming-rank-list">
+          {% set max_episodes = g.services[0].episodes %}
+          {% for s in g.services %}
+          <div class="drop-rate-row streaming-rank-row">
+            <span class="drop-rate-label streaming-rank-label">
+              {{ s.service }}
+              {% if s.owned %}<span class="streaming-calendar-owned-badge">{{ t('streaming_calendar_owned_badge') }}</span>{% endif %}
+            </span>
+            <div class="drop-rate-bar-track">
+              <span class="drop-rate-bar-fill streaming-rank-bar-fill"
+                    style="width: {{ ((s.episodes / max_episodes * 100) if max_episodes else 0) | round(1) }}%"></span>
+            </div>
+            <span class="drop-rate-pct streaming-rank-value">
+              {{ s.pct }}%
+              <span class="drop-rate-n">· {% if s.episodes == 1 %}{{ t('streaming_episodes_singular', count=s.episodes) }}{% else %}{{ t('streaming_episodes_plural', count=s.episodes) }}{% endif %}</span>
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="settings-section-desc">{{ t('streaming_genre_no_coverage') }}</p>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Marginal-value ranking (the core of #182) ─────────────────────────────── #}
   <div class="settings-section">
     <h2 class="settings-section-title">{{ t('streaming_ranked_title') }}</h2>
