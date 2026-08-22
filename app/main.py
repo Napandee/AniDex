@@ -1296,6 +1296,128 @@ def _get_current_impersonation(request: Request) -> dict | None:
     return getattr(request.state, "_cached_impersonation", None)
 
 
+def _build_whats_new_digest(user_id: int, since: datetime) -> dict | None:
+    """Issue #235 — the actual "what's new since your last visit" content, computed
+    for everything that happened for this user strictly after `since`. Deliberately
+    passive/summary-shaped, not a re-delivery of anything the per-event dispatcher
+    (#51, app/notify.py) already pushed: new episodes aired for Watching/Repeating
+    shows, new (non-dismissed, non-snoozed) recommendations, and recent sync
+    activity. Returns None when there's genuinely nothing new to show, so callers
+    never render an empty banner.
+    """
+    episodes = db.fetchall(
+        """
+        SELECT a.id AS anime_id, a.title_english, a.title_romaji,
+               COUNT(*) AS episodes_aired, MAX(sched.episode) AS latest_episode
+        FROM airing_schedule_cache sched
+        JOIN library_entries le ON le.anime_id = sched.anime_id
+        JOIN anime a ON a.id = sched.anime_id
+        WHERE le.user_id = %s
+          AND le.status IN ('WATCHING', 'REPEATING')
+          AND sched.airing_at > %s
+          AND sched.airing_at <= now()
+        GROUP BY a.id, a.title_english, a.title_romaji
+        ORDER BY MAX(sched.airing_at) DESC
+        """,
+        (user_id, since),
+    )
+
+    rec_rows = db.fetchall(
+        """
+        SELECT a.title_english, a.title_romaji, rs.score
+        FROM recommendation_scores rs
+        JOIN anime a ON a.id = rs.anime_id
+        WHERE rs.user_id = %s
+          AND rs.first_shown_at > %s
+          AND rs.dismissed = false
+          AND (rs.snoozed_until IS NULL OR rs.snoozed_until <= now())
+        ORDER BY rs.score DESC
+        """,
+        (user_id, since),
+    )
+
+    sync_rows = db.fetchall(
+        """
+        SELECT status, entries_updated
+        FROM sync_log
+        WHERE user_id = %s
+          AND run_at > %s
+          AND type IN ('full_sync', 'force_full_resync')
+        """,
+        (user_id, since),
+    )
+
+    if not episodes and not rec_rows and not sync_rows:
+        return None
+
+    sync_runs = len(sync_rows)
+    sync_entries_updated = sum(
+        r["entries_updated"] or 0 for r in sync_rows if r["status"] == "ok"
+    )
+    sync_had_error = any(r["status"] in ("error", "partial") for r in sync_rows)
+
+    return {
+        "episodes": [
+            {
+                "anime_id": r["anime_id"],
+                "title": r["title_english"] or r["title_romaji"],
+                "episodes_aired": r["episodes_aired"],
+                "latest_episode": r["latest_episode"],
+            }
+            for r in episodes
+        ],
+        "recommendations_count": len(rec_rows),
+        "recommendation_titles": [
+            r["title_english"] or r["title_romaji"] for r in rec_rows[:3]
+        ],
+        "sync_runs": sync_runs,
+        "sync_entries_updated": sync_entries_updated,
+        "sync_had_error": sync_had_error,
+    }
+
+
+def _whats_new_for_request(request: Request, user: dict | None, impersonation: dict | None) -> dict | None:
+    """Session-gated wrapper around _build_whats_new_digest — shows the digest at
+    most once per browser session (the "on login, or first page load after some
+    elapsed time" trigger from #235: a fresh session covers both a real login and
+    the cookie having expired/been reissued after a while away), then advances
+    users.digest_last_seen_at so a second page view in the same session — or a
+    login again later the same day — doesn't re-show the same items.
+
+    Skipped entirely while impersonating: nav_user is the *target* user in that
+    case, and advancing their digest watermark as a side effect of an admin
+    browsing on their behalf would silently eat the real digest the target user
+    would otherwise have seen next time they log in themselves.
+
+    Deliberately called only from the library() route (`GET /` — the redirect
+    target of a real login, and the natural "first page" of a return visit), not
+    wired into the shared _nav_context template-context processor that runs on
+    every TemplateResponse across the whole app: plenty of other routes/tests
+    monkeypatch db.fetchall narrowly for their own unrelated query shape (queue
+    cards, settings tabs, etc.), and a digest query firing unconditionally on
+    every page would either hit those canned fixtures with the wrong shape or a
+    real query most of those tests never provision for. Confining this to one
+    deliberate call site keeps the "since last visit" semantics intact (nothing
+    else redirects here on login) without turning every page in the app into an
+    implicit dependency of this feature.
+    """
+    if user is None or impersonation is not None:
+        return None
+    if request.session.get("whats_new_shown"):
+        return None
+    request.session["whats_new_shown"] = True
+
+    row = db.fetchone("SELECT digest_last_seen_at FROM users WHERE id = %s", (user["id"],))
+    last_seen = row["digest_last_seen_at"] if row else None
+
+    digest = None
+    if last_seen is not None:
+        digest = _build_whats_new_digest(user["id"], last_seen)
+
+    db.execute("UPDATE users SET digest_last_seen_at = now() WHERE id = %s", (user["id"],))
+    return digest
+
+
 def _nav_context(request: Request) -> dict:
     """Context processor: makes the logged-in user (nav_user), the active-locale
     translator (t), and the theme preference (nav_theme) available to every
@@ -6792,6 +6914,13 @@ def library(request: Request, response: Response, status: str = None):
         ensure_ascii=False,
     ).replace("<", "\\u003c")
 
+    # Issue #235 — "what's new since your last visit" in-app digest. `/` is the
+    # redirect target of a real login and the natural landing page of a return
+    # visit, so this is the one deliberate call site — see
+    # _whats_new_for_request's docstring for why this isn't in the shared
+    # _nav_context processor instead.
+    whats_new = _whats_new_for_request(request, user, _get_current_impersonation(request))
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -6800,6 +6929,7 @@ def library(request: Request, response: Response, status: str = None):
             "statuses": statuses,
             "active_status": active_status,
             "collections_json": collections_json,
+            "nav_whats_new": whats_new,
         },
     )
 

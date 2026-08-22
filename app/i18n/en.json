@@ -799,5 +799,15 @@
   "js_collection_save_failed": "Failed to save collection.",
   "js_collection_rename_failed": "Rename failed.",
   "js_collection_delete_failed": "Delete failed.",
-  "js_collection_delete_confirm": "Delete the \"{name}\" collection? This can't be undone."
+  "js_collection_delete_confirm": "Delete the \"{name}\" collection? This can't be undone.",
+
+  "whats_new_title": "What's new since your last visit",
+  "whats_new_episodes_one": "1 new episode aired for {title}",
+  "whats_new_episodes_many": "{count} new episodes aired for {title} (now at Ep {latest})",
+  "whats_new_episodes_more": "+{count} more shows with new episodes",
+  "whats_new_recommendations": "{count} new recommendations — including {titles}",
+  "whats_new_recommendations_and_more": "{count} new recommendations — including {titles}, and {more} more",
+  "whats_new_sync_ok": "{runs} sync run(s) updated {entries} entries",
+  "whats_new_sync_had_error": "{runs} sync run(s), including one that needs attention",
+  "whats_new_dismiss": "Dismiss"
 }

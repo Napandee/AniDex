@@ -799,5 +799,15 @@
   "js_collection_save_failed": "कलेक्शन सहेजने में विफल।",
   "js_collection_rename_failed": "नाम बदलने में विफल।",
   "js_collection_delete_failed": "हटाने में विफल।",
-  "js_collection_delete_confirm": "\"{name}\" कलेक्शन हटाएं? इसे वापस नहीं किया जा सकता।"
+  "js_collection_delete_confirm": "\"{name}\" कलेक्शन हटाएं? इसे वापस नहीं किया जा सकता।",
+
+  "whats_new_title": "आपकी पिछली विज़िट के बाद क्या नया है",
+  "whats_new_episodes_one": "{title} का 1 नया एपिसोड प्रसारित हुआ",
+  "whats_new_episodes_many": "{title} के {count} नए एपिसोड प्रसारित हुए (अब एपिसोड {latest} तक)",
+  "whats_new_episodes_more": "+{count} और शो जिनमें नए एपिसोड हैं",
+  "whats_new_recommendations": "{count} नई सिफारिशें — जिनमें {titles} शामिल हैं",
+  "whats_new_recommendations_and_more": "{count} नई सिफारिशें — जिनमें {titles} शामिल हैं, और {more} और",
+  "whats_new_sync_ok": "{runs} सिंक रन ने {entries} एंट्रीज़ अपडेट कीं",
+  "whats_new_sync_had_error": "{runs} सिंक रन, जिनमें से एक पर ध्यान देने की आवश्यकता है",
+  "whats_new_dismiss": "खारिज करें"
 }

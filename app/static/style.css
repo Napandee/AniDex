@@ -352,6 +352,58 @@ body {
   opacity: 0.85;
 }
 
+/* Issue #235 — "what's new since your last visit" in-app digest banner.
+   Deliberately calm/informational (pill-info tokens, not warning/danger) — this
+   is a passive summary a user can ignore, not an alert; the impersonation
+   banner above it stays the loud one on purpose. */
+.whats-new-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.5rem;
+  background: var(--pill-info-bg);
+  color: var(--pill-info-text);
+  border-bottom: 1px solid var(--pill-info-border);
+}
+
+.whats-new-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.whats-new-title {
+  color: var(--pill-info-text-strong);
+  font-size: 0.9rem;
+}
+
+.whats-new-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--pill-info-text);
+}
+
+.whats-new-list li {
+  margin: 0.1rem 0;
+}
+
+.whats-new-dismiss {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--pill-info-text);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.whats-new-dismiss:hover {
+  color: var(--pill-info-text-strong);
+}
+
 header {
   padding: 1rem 2rem;
   border-bottom: 1px solid var(--border-subtle);

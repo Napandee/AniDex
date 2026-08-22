@@ -799,5 +799,15 @@
   "js_collection_save_failed": "保存收藏集失败。",
   "js_collection_rename_failed": "重命名失败。",
   "js_collection_delete_failed": "删除失败。",
-  "js_collection_delete_confirm": "删除收藏集“{name}”？此操作无法撤销。"
+  "js_collection_delete_confirm": "删除收藏集“{name}”？此操作无法撤销。",
+
+  "whats_new_title": "自上次访问以来的新动态",
+  "whats_new_episodes_one": "《{title}》更新了1集新剧集",
+  "whats_new_episodes_many": "《{title}》更新了{count}集新剧集（现已更新至第{latest}集）",
+  "whats_new_episodes_more": "还有{count}部作品有新剧集",
+  "whats_new_recommendations": "{count}条新推荐 — 包括{titles}",
+  "whats_new_recommendations_and_more": "{count}条新推荐 — 包括{titles}，以及另外{more}条",
+  "whats_new_sync_ok": "{runs}次同步更新了{entries}条记录",
+  "whats_new_sync_had_error": "{runs}次同步，其中一次需要处理",
+  "whats_new_dismiss": "关闭"
 }
