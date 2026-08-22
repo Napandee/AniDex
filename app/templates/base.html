@@ -17,16 +17,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AniDex">
-  <!-- v=63 — bumped for #235's what's-new digest banner CSS (on top of #236's
-       v=62 yearly wrap-up sequential-reveal CSS). See the superseded
-       v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62 comments for why this needs
-       bumping on every style.css change in this repo: several parallel
-       branches land CSS independently and a stale cache-bust value silently
-       serves an old stylesheet to a browser that already cached the previous
-       version — v=57 itself only exists because #275 skipped this exact
-       step. Re-check this against origin/main right before merging — another
-       parallel PR may have already claimed v=63. -->
-  <link rel="stylesheet" href="/static/style.css?v=63">
+  <!-- v=64 — bumped for #270's /streaming at-a-glance card + grouped
+       progressive-disclosure CSS (.streaming-glance-*, .streaming-group-*).
+       See the superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63
+       comments for why this needs bumping on every style.css change in this
+       repo: several parallel branches land CSS independently and a stale
+       cache-bust value silently serves an old stylesheet to a browser that
+       already cached the previous version — v=57 itself only exists because
+       #275 skipped this exact step. Re-check this against origin/main right
+       before merging — another parallel PR may have already claimed v=64. -->
+  <link rel="stylesheet" href="/static/style.css?v=64">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=27 — same #257/PR #275 gap as style.css above: the month-toggle
        click-handler wiring shipped in script.js without bumping this value,
