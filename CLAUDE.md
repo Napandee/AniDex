@@ -94,6 +94,19 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   sid to a `user_id`, enabling Settings' view/revoke-active-sessions list.
   `totp_recovery_codes` (issue #83) holds one-time hashed recovery codes per user for
   optional TOTP 2FA on local accounts; the TOTP secret itself lives on `users.totp_secret`.
+- **External-derived cache** (`filler_episode_cache`, `filler_sync_state`,
+  `filler_data_license`) — issue #299. Sourced from AniFillerPedia
+  (github.com/Napandee/AniFillerPedia, a separate first-party project keying its own
+  `series` table by `anilist_id`, the same id `anime.id` already is), not AniList
+  itself, so kept as its own category rather than folded into "AniList-sourced" above
+  — but same shape: global/catalog-wide (not per-user), fully rebuildable, never
+  hand-edited, populated only by `scripts/sync_filler_data.py`. `filler_sync_state`
+  tracks per-anime `last_checked_at` (and whether a match was found) so the sync
+  doesn't re-query an unmatched or already-checked title on every run.
+  `filler_data_license` is a single-row cache of AniFillerPedia's `/license` response
+  (CC BY-NC-SA attribution) for a future UI to render without a live call. Foundation
+  for three still-open UI issues (#300/#301/#302) that read this data — no UI ships
+  in #299 itself.
 
 ## Architecture
 
@@ -153,6 +166,17 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.
+- **Filler data sync** (issue #299): `scripts/sync_filler_data.py`, catalog-wide like
+  `sync_airing_schedule.py` — no `USER_ID`, one pass over every distinct `anime.id` in
+  the local catalog rather than per-user. Looks each up against AniFillerPedia by
+  `anilist_id` (direct integer match, no fuzzy matching), caching researched
+  filler/canon episodes into `filler_episode_cache` and per-title check state into
+  `filler_sync_state`. Runs on its own daily APScheduler job
+  (`_refresh_filler_data`/`filler_data_refresh` in `app/main.py`, fixed 03:15 UTC, not
+  tied to the user-configurable daily-sync time in Instance Config) — independent of
+  both `run_full_sync.py` and the hourly airing-schedule refresh, since filler status
+  is static catalog metadata that barely changes once approved, not per-user or
+  airing-state data.
 - **App**: reads all tables, scoped to the logged-in user; writes to `personal_notes`, the
   `dismissed` flag on `recommendation_scores`, and `library_entries.score` (via the rating
   endpoint). Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry`
