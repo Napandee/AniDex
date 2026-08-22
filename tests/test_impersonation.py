@@ -107,15 +107,15 @@ def test_resolve_session_auto_revokes_an_expired_impersonation_session(pg_conn, 
     past = datetime.now(timezone.utc) - timedelta(minutes=1)
     with pg_conn.cursor() as cur:
         cur.execute(
-            "UPDATE sessions SET impersonation_expires_at = %s WHERE session_token = %s",
-            (past, token),
+            "UPDATE sessions SET impersonation_expires_at = %s WHERE session_token_hash = %s",
+            (past, sessions.hash_token(token)),
         )
 
     assert sessions.resolve_session(token) is None
     assert sessions.get_impersonation_context(token) is None
 
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT revoked_at FROM sessions WHERE session_token = %s", (token,))
+        cur.execute("SELECT revoked_at FROM sessions WHERE session_token_hash = %s", (sessions.hash_token(token),))
         row = cur.fetchone()
     assert row[0] is not None, "expired impersonation session must be revoked, not just filtered"
 
@@ -356,14 +356,18 @@ def test_impersonation_session_row_is_actually_revoked_on_stop(app_client):
     client.post("/admin/users/2/impersonate", follow_redirects=False)
 
     imp_row = m.db.fetchone(
-        "SELECT session_token FROM sessions WHERE user_id = 2 AND impersonated_by IS NOT NULL"
+        "SELECT id, revoked_at FROM sessions WHERE user_id = 2 AND impersonated_by IS NOT NULL"
     )
     assert imp_row is not None
-    assert m.sessions.resolve_session(imp_row["session_token"]) == 2
+    assert imp_row["revoked_at"] is None  # not yet revoked — the raw token isn't
+    # recoverable from the DB anymore (only its hash is stored), so liveness is
+    # checked directly via revoked_at rather than round-tripping through
+    # resolve_session() with a token this test doesn't have.
 
     client.post("/admin/impersonate/stop", follow_redirects=False)
 
-    assert m.sessions.resolve_session(imp_row["session_token"]) is None
+    still_row = m.db.fetchone("SELECT revoked_at FROM sessions WHERE id = %s", (imp_row["id"],))
+    assert still_row["revoked_at"] is not None
 
 
 def test_expired_impersonation_falls_back_to_the_admins_session_automatically(app_client):
