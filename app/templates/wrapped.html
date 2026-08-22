@@ -24,9 +24,17 @@
   <p class="wrapup-empty">{{ t('stats_wrapped_empty', year=wrapped.year) }}</p>
   {% else %}
 
+  {# Issue #236 — replays the sequential reveal (auto-played once, the first time
+     this year's page is viewed — see the AniDexWrapupReveal auto-init at the
+     bottom of script.js, keyed off #wrapped-reveal's data-wrapup-reveal-year) on
+     demand, any time afterward. #}
+  <button type="button" class="wrapup-replay-btn" id="wrapped-replay-btn">{{ t('stats_wrapup_replay_btn') }}</button>
+
+  <div id="wrapped-reveal" data-wrapup-reveal-scope="wrapped" data-wrapup-reveal-year="{{ wrapped.year }}" data-wrapup-reveal-replay-btn="wrapped-replay-btn">
+
   {# ── Pace vs. last year (issue #164, folded in) — passive/visual only, no
        notification tied specifically to this stat. ───────────────────────────── #}
-  <div class="wrapped-pace-card pace-{{ wrapped.pace.status }}">
+  <div class="wrapped-pace-card pace-{{ wrapped.pace.status }} wrapup-reveal-step">
     <span class="wrapped-pace-icon" aria-hidden="true">
       {% if wrapped.pace.status == 'ahead' %}↑{% elif wrapped.pace.status == 'behind' %}↓{% elif wrapped.pace.status == 'on_pace' %}→{% else %}—{% endif %}
     </span>
@@ -44,15 +52,15 @@
   </div>
 
   <div class="stats-headlines">
-    <div class="stat-headline"><span class="stat-num">{{ wrapped.total_episodes }}</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
-    <div class="stat-headline"><span class="stat-num">{{ wrapped.total_watch_display }}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
-    <div class="stat-headline"><span class="stat-num">{{ wrapped.top_genre or '—' }}</span><span class="stat-label">{{ t('stats_wrapped_hl_top_genre') }}</span></div>
-    <div class="stat-headline"><span class="stat-num">{{ wrapped.status_snapshot.planning_to_completed }}</span><span class="stat-label">{{ t('stats_wrapped_planning_completed') }}</span></div>
+    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.total_episodes }}</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
+    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.total_watch_display }}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
+    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.top_genre or '—' }}</span><span class="stat-label">{{ t('stats_wrapped_hl_top_genre') }}</span></div>
+    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.status_snapshot.planning_to_completed }}</span><span class="stat-label">{{ t('stats_wrapped_planning_completed') }}</span></div>
   </div>
 
   <div class="chart-card chart-card--wide">
     <div class="wrapped-detail-grid">
-      <div class="wrapped-detail">
+      <div class="wrapped-detail wrapup-reveal-step">
         <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_hl_highest_rated') }}</h3>
         {% if wrapped.highest_rated %}
         <p>{{ wrapped.highest_rated.title }} — {{ wrapped.highest_rated.score }} ★</p>
@@ -60,7 +68,7 @@
         <p>{{ t('stats_wrapped_highest_rated_empty') }}</p>
         {% endif %}
       </div>
-      <div class="wrapped-detail">
+      <div class="wrapped-detail wrapup-reveal-step">
         <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_binge') }}</h3>
         <p>
           {% if wrapped.binge_week %}
@@ -68,7 +76,7 @@
           {% else %}—{% endif %}
         </p>
       </div>
-      <div class="wrapped-detail wrapped-detail--wide">
+      <div class="wrapped-detail wrapped-detail--wide wrapup-reveal-step">
         <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_score_shift') }}</h3>
         {% if wrapped.score_shift.has_prior_year_data %}
         <div class="genre-list wrapped-score-list">
@@ -84,6 +92,8 @@
         {% endif %}
       </div>
     </div>
+  </div>
+
   </div>
 
   {% endif %}
