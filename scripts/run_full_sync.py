@@ -48,6 +48,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app import config  # noqa: E402 — decrypt_secret()/ENCRYPTED_KEYS for load_settings()
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 SCRIPTS_DIR = Path(__file__).parent
@@ -70,14 +73,26 @@ def log(msg: str) -> None:
 
 
 def load_settings() -> dict:
-    """Pull this user's settings from DB; return as dict."""
+    """Pull this user's settings from DB; return as dict.
+
+    Issue #310 — anilist_token/cr_etp_rt/netflix_cookie_header/netflix_profile_guid
+    are stored Fernet-encrypted (app.config.ENCRYPTED_KEYS). This script talks to
+    Postgres directly rather than through app.config.get_all() (it's a standalone
+    single-user process, not running inside the app), so it must decrypt those keys
+    itself here — otherwise every credential handed to the crunchyroll/netflix/anilist
+    subprocess steps below would be raw ciphertext instead of a real usable
+    token/cookie, breaking every sync silently once issue #310's migration runs."""
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT key, value FROM settings WHERE user_id = %s", (USER_ID,))
-            return {row["key"]: row["value"] for row in cur.fetchall()}
+            result = {row["key"]: row["value"] for row in cur.fetchall()}
     finally:
         conn.close()
+    for key in config.ENCRYPTED_KEYS:
+        if key in result:
+            result[key] = config.decrypt_secret(result[key])
+    return result
 
 
 def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, timeout: int | None = None) -> dict:

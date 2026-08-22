@@ -359,3 +359,46 @@ def test_invalid_encryption_key_fails_import_loudly():
     assert result.returncode != 0
     assert "SETTINGS_ENCRYPTION_KEY" in result.stderr
     assert "RuntimeError" in result.stderr
+
+
+# ── scripts/run_full_sync.py's load_settings() must decrypt too ─────────────
+#
+# run_full_sync.py talks to Postgres directly (it's a standalone single-user
+# process, not running inside the app) rather than through app.config.get_all(),
+# so it has its own separate credential-loading code path that must independently
+# decrypt ENCRYPTED_KEYS — otherwise every credential handed to the crunchyroll/
+# netflix/anilist subprocess steps would be raw Fernet ciphertext instead of a
+# real usable token/cookie, breaking every sync silently. tests/test_run_full_sync.py
+# monkeypatches load_settings() entirely for its own (unrelated) control-flow
+# coverage, so it can't catch this — this test calls the real, unmocked
+# load_settings() against a real seeded Postgres row instead.
+
+
+def test_run_full_sync_load_settings_decrypts_credentials(pg_conn, monkeypatch):
+    uid = _make_user(pg_conn)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, %s, %s)",
+            (uid, "anilist_token", config.encrypt_secret("real-anilist-token-abc123")),
+        )
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, %s, %s)",
+            (uid, "cr_etp_rt", config.encrypt_secret("real-etp-rt-cookie-xyz789")),
+        )
+        # A non-sensitive key stored alongside — must pass through unchanged, not
+        # be mistaken for something needing decryption.
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, %s, %s)",
+            (uid, "timezone", "Europe/London"),
+        )
+
+    import run_full_sync as rfs
+
+    monkeypatch.setattr(rfs, "DATABASE_URL", DATABASE_URL)
+    monkeypatch.setattr(rfs, "USER_ID", uid)
+
+    settings = rfs.load_settings()
+
+    assert settings["anilist_token"] == "real-anilist-token-abc123"
+    assert settings["cr_etp_rt"] == "real-etp-rt-cookie-xyz789"
+    assert settings["timezone"] == "Europe/London"
