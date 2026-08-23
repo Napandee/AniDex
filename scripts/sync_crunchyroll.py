@@ -527,6 +527,27 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
         save_cr_state(conn, anilist_id, title, cr_ep, True)
         return f"rewatch started → REPEATING ep {cr_ep}"
 
+    # ── Rewatch: a new pass restarted while already mid-rewatch ─────────────
+    # Same signal as the branch immediately above, just for a series that's
+    # already REPEATING rather than freshly transitioning from COMPLETED: cr_ep
+    # only ever reflects genuinely NEW watch activity (fetch_since() already
+    # filtered out anything at/before the fetch watermark), so a fresh episode
+    # number LOWER than the stored peak (last_ep) can only mean the user
+    # rewatched an earlier episode — in practice, almost always "started this
+    # rewatch over again from episode 1" while several passes deep already
+    # (repeat_count > 0). Without this branch, cr_ep never numerically exceeds
+    # last_ep again until the user watches all the way back past the OLD peak,
+    # and the final fallback below (`max(cr_ep, last_ep)`) would otherwise
+    # silently re-lock last_seen_episode at that stale peak on every single
+    # future sync — the exact bug reported in issue #328 (confirmed live: a
+    # user rewatching Alderamin on the Sky from episode 1, 6 fresh episodes in
+    # one sitting, produced zero AniList updates because last_ep was already
+    # sitting at a higher point from an earlier pass).
+    if rewatch_active and cr_ep < last_ep:
+        _update(conn, anilist_id, progress=cr_ep)
+        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        return f"new rewatch pass detected (was at {last_ep}) → progress reset to {cr_ep}"
+
     # ── No progress since last sync ───────────────────────────────────────────
     if cr_ep <= last_ep and not rewatch_active:
         if cr_ep > al_ep:
