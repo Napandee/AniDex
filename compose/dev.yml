@@ -36,6 +36,10 @@ services:
     environment:
       DATABASE_URL: postgresql://anime_tracker:devpass@anidex-dev-postgres:5432/anime_tracker
       SESSION_SECRET_KEY: dev-only-not-for-real-use
+      # #310 made this a hard boot requirement (no safe random fallback, since a
+      # fresh key each start would brick already-encrypted rows) — this stack is
+      # thrown away with `down -v` every time, so a fixed dev-only value is fine.
+      SETTINGS_ENCRYPTION_KEY: 8CgnHDlfBgM3RQ9L0M_tjLWCtET3Cv8YdauDtn0bkfc=
       TZ: UTC
       # Skips the live AniList push in rating/status/progress — see app/main.py's
       # ANILIST_MOCK. Lets those endpoints be exercised locally with no real AniList

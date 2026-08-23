@@ -33,7 +33,7 @@
        already cached the previous version — v=57 itself only exists because
        #275 skipped this exact step. Re-check this against origin/main right
        before merging — another parallel PR may have already claimed v=69. -->
-  <link rel="stylesheet" href="/static/style.css?v=69">
+  <link rel="stylesheet" href="/static/style.css?v=70">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=29 — bumped for #312's global fetch() CSRF-header patch. See the
        superseded v=28 comment for why this needs bumping on every script.js
@@ -41,7 +41,7 @@
        stale cache-bust value silently serves an old script.js to a browser that
        already cached the previous version. Re-check this against origin/main
        right before merging — another parallel PR may have already claimed v=29. -->
-  <script src="/static/script.js?v=29" defer></script>
+  <script src="/static/script.js?v=30" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% if nav_impersonation %}
