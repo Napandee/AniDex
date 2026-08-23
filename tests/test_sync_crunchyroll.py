@@ -465,6 +465,72 @@ def test_no_progress_since_last_sync_makes_no_anilist_call(monkeypatch):
     assert not any(c[0] == "update" for c in calls)
 
 
+# ── Issue #328: a new rewatch pass restarting while already mid-rewatch ─────
+#
+# Reproduces the exact live bug: a series already several rewatches deep
+# (repeat_count > 0, rewatch_in_progress already True, last_seen_episode
+# sitting at a high point from a previous pass) gets watched again from
+# episode 1. cr_ep genuinely reflects new activity (fetch_since() already
+# filtered out anything at/before the watermark) but is numerically LOWER
+# than the stored peak — before the fix, every branch's `cr_ep > al_ep` /
+# `cr_ep >= total` check failed, and the final fallback's
+# `max(cr_ep, last_ep)` silently re-clamped the state back to the stale
+# peak on every single sync, permanently hiding the new pass.
+
+
+def test_new_rewatch_pass_restarting_from_a_low_episode_is_detected(monkeypatch):
+    """Direct reproduction of the live Alderamin on the Sky case: repeat_count=0,
+    rewatch already active, last_seen_episode=10 from earlier in this same pass,
+    a fresh sync sees cr_ep=6 (a lower episode watched again) — must be treated
+    as the current pass's real position, not silently discarded."""
+    calls = _capture(monkeypatch)
+    entry = _entry(status="REPEATING", progress=10, repeat=0, total=13)
+    cr_state = {"last_seen_episode": 10, "rewatch_in_progress": True}
+    result = cr.process("Alderamin on the Sky", cr_ep=6, entry=entry, cr_state=cr_state, conn=None)
+    assert "new rewatch pass detected" in result
+    assert ("update", 42, {"progress": 6}) in calls
+    assert ("save", 42, 6, True) in calls
+
+
+def test_new_rewatch_pass_detection_works_several_passes_deep(monkeypatch):
+    """Same scenario but with repeat_count > 0 (the user's other two affected
+    shows were 2-3 rewatches deep already) — the fix must not be scoped to
+    only the very first rewatch."""
+    calls = _capture(monkeypatch)
+    entry = _entry(status="REPEATING", progress=8, repeat=3, total=12)
+    cr_state = {"last_seen_episode": 8, "rewatch_in_progress": True}
+    result = cr.process("The Kingdoms of Ruin", cr_ep=2, entry=entry, cr_state=cr_state, conn=None)
+    assert "new rewatch pass detected" in result
+    assert ("update", 42, {"progress": 2}) in calls
+    assert ("save", 42, 2, True) in calls
+
+
+def test_pre_fix_behavior_would_have_silently_clamped_to_the_old_peak(monkeypatch):
+    """Guards against a regression back to the old fallback behavior: confirms
+    the fix's save_cr_state call carries the NEW low cr_ep, not
+    max(cr_ep, last_ep) (which would have re-stored the stale peak, 10 — the
+    literal bug this issue reported)."""
+    calls = _capture(monkeypatch)
+    entry = _entry(status="REPEATING", progress=10, repeat=0, total=13)
+    cr_state = {"last_seen_episode": 10, "rewatch_in_progress": True}
+    cr.process("Alderamin on the Sky", cr_ep=6, entry=entry, cr_state=cr_state, conn=None)
+    save_calls = [c for c in calls if c[0] == "save"]
+    assert len(save_calls) == 1
+    assert save_calls[0][2] == 6, "must store the new pass's real episode, not the old high-water mark"
+
+
+def test_equal_episode_while_rewatching_does_not_falsely_trigger_new_pass_detection(monkeypatch):
+    """cr_ep == last_ep (not less than) must not be treated as a new pass — this
+    is the ordinary "nothing new" case for an active rewatch and should fall
+    through to the harmless no-op fallback, not the new-pass branch."""
+    calls = _capture(monkeypatch)
+    entry = _entry(status="REPEATING", progress=6, repeat=0, total=13)
+    cr_state = {"last_seen_episode": 6, "rewatch_in_progress": True}
+    result = cr.process("Alderamin on the Sky", cr_ep=6, entry=entry, cr_state=cr_state, conn=None)
+    assert "new rewatch pass detected" not in result
+    assert not any(c[0] == "update" for c in calls)
+
+
 def test_new_entry_creates_watching_status_at_detected_episode(monkeypatch):
     # Issue #252 — the resolved decision: a brand-new entry (status=None is
     # main()'s create sentinel, built by resolve_or_create_user_list_entry() for
