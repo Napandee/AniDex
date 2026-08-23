@@ -290,7 +290,12 @@ function refreshTagFilterOptions() {
       season: document.getElementById('season-filter')?.value || '',
       tag: document.getElementById('tag-filter')?.value || '',
       score: document.querySelector('.filter-btn[data-score-filter].active')?.dataset.scoreFilter || '',
-      rewatch: document.querySelector('.filter-btn[data-rewatch-filter].active')?.dataset.rewatchFilter || '',
+      // #330 replaced the old two-.filter-btn pair with a single .rewatch-toggle
+      // switch (no .filter-btn class, and its data-rewatch-filter attribute is
+      // static — it's never updated to "1"), so the old selector here always
+      // matched nothing and this always saved/restored '' regardless of the
+      // toggle's actual state. Read the toggle's .active class instead (#332).
+      rewatch: document.querySelector('.rewatch-toggle')?.classList.contains('active') ? '1' : '',
       sort: document.querySelector('.sort-btn.active')?.dataset.sort || 'score',
       q: librarySearch?.value || '',
     };
@@ -313,7 +318,13 @@ function refreshTagFilterOptions() {
     }
     clickFormat(filters.format);
     clickAttr('data-score-filter', filters.score);
-    clickAttr('data-rewatch-filter', filters.rewatch);
+    // The toggle is stateful (one element, flips on click), not a pair of static
+    // buttons — clickAttr's exact-value selector can't address it. Click only if
+    // its current state doesn't already match what's being restored (#332).
+    const rewatchToggle = document.querySelector('.rewatch-toggle');
+    if (rewatchToggle && Boolean(filters.rewatch) !== rewatchToggle.classList.contains('active')) {
+      rewatchToggle.click();
+    }
     clickAttr('data-sort', filters.sort || 'score');
 
     const seasonSel = document.getElementById('season-filter');

@@ -26,14 +26,6 @@
       <button id="collections-manage-btn" type="button" class="filter-btn" title="{{ t('lib_collections_manage_btn') }}">{{ t('lib_collections_manage_btn') }}</button>
     </div>
 
-    <div class="filter-group">
-      <button class="filter-btn active" data-format="">{{ t('status_all') }}</button>
-      <button class="filter-btn" data-format="TV">TV</button>
-      <button class="filter-btn" data-format="MOVIE">{{ t('queue_ep_movie') }}</button>
-      <button class="filter-btn" data-format="OVA">OVA</button>
-      <button class="filter-btn" data-format="ONA">ONA</button>
-    </div>
-
     <div class="sort-group">
       <span class="sort-label">{{ t('lib_sort_label') }}</span>
       <button class="sort-btn active" data-sort="score">{{ t('lib_sort_score') }}</button>
@@ -43,44 +35,86 @@
       <button class="sort-btn" data-sort="rewatches">{{ t('lib_sort_rewatches') }}</button>
     </div>
 
-    <div class="season-filter-group">
-      <select id="season-filter" class="season-filter-select">
-        <option value="">{{ t('lib_all_seasons') }}</option>
-      </select>
-    </div>
-
-    <div class="tag-filter-group">
-      <select id="tag-filter" class="tag-filter-select">
-        <option value="">{{ t('queue_tag_filter_all') }}</option>
-      </select>
-    </div>
-
-    <div class="filter-group score-filter-group">
-      <button class="filter-btn active" data-score-filter="">{{ t('lib_all_stars') }}</button>
-      {% for s in [1,2,3,4,5] %}
-      <button class="filter-btn" data-score-filter="{{ s }}">{{ '★' * s }}</button>
-      {% endfor %}
-    </div>
-
-    {# Issue #330 — was a two-.filter-btn-pill pair ("All" / "Rewatched"); merged
-       into a single toggle switch to match the chosen design direction, and its
-       criterion now also catches an in-progress rewatch (status REPEATING),
-       not just a completed one (repeat_count >= 1) — see the JS below. #}
-    <div class="rewatch-toggle-group">
-      <span class="rewatch-toggle-label">{{ t('lib_rewatches_only') }}</span>
-      <button type="button" class="rewatch-toggle" data-rewatch-filter="" aria-pressed="false" role="switch">
-        <span class="rewatch-toggle-knob"></span>
+    {# Issue #332 — format/season/tag/score/rewatch/favorite used to sit flat in
+       this toolbar (one control added per feature over time) and wrapped to 2-3
+       messy rows. They're moved (not rebuilt) into this popover behind a single
+       Filters trigger — same ids/classes/data-attributes as before, so the
+       existing per-control handlers below and applyLibraryFilters()/
+       applyScoreFilter()/applyRewatchFilter()/applyFavoriteFilter() need no
+       filtering-logic changes, only a different container. #}
+    <div class="filters-anchor">
+      <button type="button" id="filters-toggle" class="filters-btn" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></svg>
+        {{ t('lib_filters_btn') }}
+        <span id="filter-count" class="filter-count" hidden>0</span>
       </button>
-    </div>
 
-    <div class="filter-group favorite-filter-group">
-      <button class="filter-btn active" data-favorite-filter="">{{ t('lib_all_favorites') }}</button>
-      <button class="filter-btn" data-favorite-filter="1">{{ t('lib_favorited_filter') }}</button>
+      <div id="filters-popover" class="filters-popover" hidden>
+        <div>
+          <div class="pop-section-label">{{ t('lib_filters_format_label') }}</div>
+          <div class="filter-group">
+            <button class="filter-btn active" data-format="">{{ t('status_all') }}</button>
+            <button class="filter-btn" data-format="TV">TV</button>
+            <button class="filter-btn" data-format="MOVIE">{{ t('queue_ep_movie') }}</button>
+            <button class="filter-btn" data-format="OVA">OVA</button>
+            <button class="filter-btn" data-format="ONA">ONA</button>
+          </div>
+        </div>
+
+        <div class="pop-row">
+          <div>
+            <div class="pop-section-label">{{ t('lib_filters_season_label') }}</div>
+            <select id="season-filter" class="season-filter-select">
+              <option value="">{{ t('lib_all_seasons') }}</option>
+            </select>
+          </div>
+          <div>
+            <div class="pop-section-label">{{ t('lib_filters_tags_label') }}</div>
+            <select id="tag-filter" class="tag-filter-select">
+              <option value="">{{ t('queue_tag_filter_all') }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div class="pop-section-label">{{ t('lib_filters_score_label') }}</div>
+          <div class="filter-group score-filter-group">
+            <button class="filter-btn active" data-score-filter="">{{ t('lib_all_stars') }}</button>
+            {% for s in [1,2,3,4,5] %}
+            <button class="filter-btn" data-score-filter="{{ s }}">{{ '★' * s }}</button>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="pop-row">
+          {# Issue #330 — was a two-.filter-btn-pill pair ("All" / "Rewatched"); merged
+             into a single toggle switch, and its criterion now also catches an
+             in-progress rewatch (status REPEATING), not just a completed one
+             (repeat_count >= 1) — see the JS below. #}
+          <div>
+            <div class="rewatch-toggle-group">
+              <span class="rewatch-toggle-label">{{ t('lib_rewatches_only') }}</span>
+              <button type="button" class="rewatch-toggle" data-rewatch-filter="" aria-pressed="false" role="switch">
+                <span class="rewatch-toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+          <div>
+            <div class="pop-section-label">{{ t('lib_filters_favorites_label') }}</div>
+            <div class="filter-group favorite-filter-group">
+              <button class="filter-btn active" data-favorite-filter="">{{ t('lib_all_favorites') }}</button>
+              <button class="filter-btn" data-favorite-filter="1">{{ t('lib_favorited_filter') }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <button id="bulk-toggle" class="filter-btn">{{ t('js_select') }}</button>
   </div>
 </div>
+
+<div id="filter-chip-row" class="chip-row" hidden></div>
 
 <div id="bulk-bar" class="bulk-bar" hidden>
   <span id="bulk-count" class="bulk-count">0 selected</span>
@@ -440,6 +474,133 @@
     });
     if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
   }
+}());
+
+// ── Filters popover + active-filter chips (#332) ───────────────────────────────
+// The six controls above are unchanged — same ids/classes/data-attributes, same
+// applyLibraryFilters()/applyScoreFilter()/applyRewatchFilter()/applyFavoriteFilter().
+// This block only (a) shows/hides the popover that now contains them and (b) reads
+// their resulting DOM state to paint a count badge + removable chip row, so there's
+// no second source of truth for "what's filtered" — the DOM state the existing
+// handlers already maintain is the only source of truth.
+(function () {
+  const trigger = document.getElementById('filters-toggle');
+  const popover = document.getElementById('filters-popover');
+  const countEl = document.getElementById('filter-count');
+  const chipRow = document.getElementById('filter-chip-row');
+  if (!trigger || !popover || !countEl || !chipRow) return;
+
+  function closePopover() {
+    popover.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+  function openPopover() {
+    popover.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+  trigger.addEventListener('click', () => {
+    if (popover.hidden) openPopover(); else closePopover();
+  });
+  document.addEventListener('click', (e) => {
+    if (popover.hidden) return;
+    if (popover.contains(e.target) || trigger.contains(e.target)) return;
+    closePopover();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !popover.hidden) { closePopover(); trigger.focus(); }
+  });
+
+  function activeFormatBtn() { return document.querySelector('.filter-btn[data-format].active'); }
+  function activeScoreBtn() { return document.querySelector('.filter-btn[data-score-filter].active'); }
+  function activeFavoriteBtn() { return document.querySelector('.filter-btn[data-favorite-filter].active'); }
+  function rewatchToggle() { return document.querySelector('.rewatch-toggle'); }
+
+  function makeChip(label, onClear) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const text = document.createElement('span');
+    text.textContent = label;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'chip-x';
+    x.setAttribute('aria-label', label);
+    x.textContent = '✕';
+    x.addEventListener('click', () => { onClear(); setTimeout(refreshFilterSummary, 0); });
+    chip.appendChild(text);
+    chip.appendChild(x);
+    return chip;
+  }
+
+  function refreshFilterSummary() {
+    const fmtBtn = activeFormatBtn();
+    const scoreBtn = activeScoreBtn();
+    const favBtn = activeFavoriteBtn();
+    const rwToggle = rewatchToggle();
+    const season = document.getElementById('season-filter');
+    const tag = document.getElementById('tag-filter');
+
+    const chips = [];
+    if (fmtBtn && fmtBtn.dataset.format) {
+      chips.push(makeChip(t('lib_chip_format', {value: fmtBtn.textContent.trim()}), () => {
+        document.querySelector('.filter-btn[data-format=""]')?.click();
+      }));
+    }
+    if (season && season.value) {
+      const label = season.options[season.selectedIndex]?.textContent || season.value;
+      chips.push(makeChip(label, () => { season.value = ''; season.dispatchEvent(new Event('change')); }));
+    }
+    if (tag && tag.value) {
+      const label = tag.options[tag.selectedIndex]?.textContent || tag.value;
+      chips.push(makeChip(label, () => { tag.value = ''; tag.dispatchEvent(new Event('change')); }));
+    }
+    if (scoreBtn && scoreBtn.dataset.scoreFilter) {
+      chips.push(makeChip(t('lib_chip_score', {stars: scoreBtn.textContent.trim()}), () => {
+        document.querySelector('.filter-btn[data-score-filter=""]')?.click();
+      }));
+    }
+    if (rwToggle && rwToggle.classList.contains('active')) {
+      chips.push(makeChip(t('lib_rewatches_only'), () => { rwToggle.click(); }));
+    }
+    if (favBtn && favBtn.dataset.favoriteFilter) {
+      chips.push(makeChip(t('lib_favorited_filter'), () => {
+        document.querySelector('.filter-btn[data-favorite-filter=""]')?.click();
+      }));
+    }
+
+    countEl.textContent = String(chips.length);
+    countEl.hidden = chips.length === 0;
+
+    chipRow.innerHTML = '';
+    chipRow.hidden = chips.length === 0;
+    chips.forEach(chip => chipRow.appendChild(chip));
+
+    if (chips.length >= 2) {
+      const clearAll = document.createElement('button');
+      clearAll.type = 'button';
+      clearAll.className = 'chip-clear';
+      clearAll.textContent = t('lib_clear_all_filters');
+      clearAll.addEventListener('click', () => {
+        document.querySelector('.filter-btn[data-format=""]')?.click();
+        if (season) { season.value = ''; season.dispatchEvent(new Event('change')); }
+        if (tag) { tag.value = ''; tag.dispatchEvent(new Event('change')); }
+        document.querySelector('.filter-btn[data-score-filter=""]')?.click();
+        if (rwToggle && rwToggle.classList.contains('active')) rwToggle.click();
+        document.querySelector('.filter-btn[data-favorite-filter=""]')?.click();
+        setTimeout(refreshFilterSummary, 0);
+      });
+      chipRow.appendChild(clearAll);
+    }
+  }
+
+  // popover's own click/change listeners run after whichever handler (this file's
+  // inline IIFEs, or script.js's format handler — load order aside) updated the
+  // control's state, since both fire synchronously for the same click; deferring
+  // to a fresh macrotask means this always reads the settled DOM state regardless
+  // of which handler happened to be registered first.
+  popover.addEventListener('click', () => setTimeout(refreshFilterSummary, 0));
+  popover.addEventListener('change', () => setTimeout(refreshFilterSummary, 0));
+
+  refreshFilterSummary();
 }());
 
 // ── Bulk select ───────────────────────────────────────────────────────────────
