@@ -13,11 +13,15 @@ same tables/DATABASE_URL the rest of the app already reads doesn't clear that ba
 it's naturally just another route surface, like /api/*.
 
 Uses the official MCP Python SDK (`mcp`, added to requirements.txt) rather than
-hand-rolling the streamable-HTTP JSON-RPC protocol — FastMCP's `add_tool()` API
+hand-rolling the streamable-HTTP JSON-RPC protocol — MCPServer's `add_tool()` API
 (the same registration `@tool()` sugar calls internally; used directly here so a
 fresh instance can be built per _build_mcp() call, see below) handles tool schema
 generation, request routing, and the streamable-HTTP transport; only the auth layer
-below is this app's own code.
+below is this app's own code. On SDK v2 (issue #326, migrated from v1's `FastMCP`
+class, which v2 renamed `MCPServer` and moved to `mcp.server.mcpserver` — the
+decorator/registration API itself is unchanged between v1 and v2, confirmed
+directly against the installed v2 package before this migration, not assumed from
+the SDK's own migration guide alone).
 
 Auth — deliberately NOT using the SDK's own `auth=`/`token_verifier=` machinery
 (a `TokenVerifier` protocol + `AuthSettings`, built for OAuth-flavored
@@ -71,8 +75,8 @@ import json as json_mod
 import logging
 from contextvars import ContextVar
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from starlette.concurrency import run_in_threadpool
 
 from app import db, pat
@@ -92,8 +96,8 @@ _INSTRUCTIONS = (
 )
 
 
-def _build_mcp() -> FastMCP:
-    """A fresh FastMCP instance with all four read tools registered.
+def _build_mcp() -> MCPServer:
+    """A fresh MCPServer instance with all four read tools registered.
 
     Deliberately a factory, not a module-level singleton: `mcp.server.streamable_
     http_manager.StreamableHTTPSessionManager.run()` (the background loop that
@@ -106,21 +110,14 @@ def _build_mcp() -> FastMCP:
     start/stop cycles. In production this factory still only ever runs once, at
     the one real app startup, so there's no behavior change there — this only
     matters for repeated start/stop cycles within a single process, which normal
-    operation never does."""
-    instance = FastMCP(
-        name="AniDex",
-        instructions=_INSTRUCTIONS,
-        stateless_http=True,   # each request is independent — matches a read-only
-                                # tool server with no need to remember state
-                                # between calls
-        json_response=True,    # plain JSON responses rather than an SSE stream,
-                                # simpler for both this app's tests and most MCP
-                                # HTTP clients
-        streamable_http_path="/",  # mounted at /mcp already (see main.py's
-                                    # app.mount) — without this the effective URL
-                                    # would be /mcp/mcp, since FastMCP's own
-                                    # default route path is also /mcp
-    )
+    operation never does.
+
+    Issue #326 (SDK v1 -> v2): the transport-shaping kwargs (stateless_http,
+    json_response, streamable_http_path) that used to live on FastMCP's own
+    constructor moved to streamable_http_app() in v2 — see start() below, which is
+    where they're passed now. Confirmed directly against the installed v2 package
+    (inspect.signature) that MCPServer.__init__ no longer accepts them at all."""
+    instance = MCPServer(name="AniDex", instructions=_INSTRUCTIONS)
     for fn in _TOOL_FUNCTIONS:
         instance.add_tool(fn)
     return instance
@@ -150,10 +147,13 @@ def _require_write_scope() -> dict:
     write tool below calls this instead of _require_user() as its first line —
     a read-scoped token resolves to a real, active user (so _require_user()
     alone would happily let it through), but must not be able to reach any
-    write tool. Raises ToolError (mcp.server.fastmcp.exceptions), which FastMCP
+    write tool. Raises ToolError (mcp.server.mcpserver.exceptions), which the SDK
     surfaces to the calling client as a normal tool-call error rather than a
     transport-level failure — the same shape as any other tool-level rejection
-    (e.g. an invalid status value)."""
+    (e.g. an invalid status value). Verified this client-visible shape is
+    unchanged on SDK v2 (issue #326) via the SDK's own in-memory test Client
+    before migrating, not assumed from the v2 migration guide's own summary,
+    which suggested otherwise."""
     user = _require_user()
     if user.get("pat_scope") != pat.SCOPE_READ_WRITE:
         raise ToolError(
@@ -188,24 +188,27 @@ async def _send_401(send) -> None:
 
 
 class _BearerAuthGate:
-    """Pure-ASGI wrapper around the FastMCP streamable-HTTP app. Extracts
+    """Pure-ASGI wrapper around the MCP server's streamable-HTTP app. Extracts
     `Authorization: Bearer <token>`, resolves it via app.pat.resolve_token (bcrypt
     compare against every currently-active token — see that module's docstring),
     and either rejects with 401 or sets the resolved user as a contextvar for the
     duration of the request before calling through to the real MCP app.
 
-    The contextvar is set here, in the outermost ASGI call, before FastMCP's own
+    The contextvar is set here, in the outermost ASGI call, before the SDK's own
     session-manager/task-group machinery does anything with the request — Python's
     asyncio.Task captures a copy of the *current* context at task-creation time, so
     any task the session manager spawns while handling this request (including the
     one that eventually invokes a tool function) still sees the value set here, even
     though it's a different Task object than this one. Verified live end-to-end
     (multiple concurrent PATs, one MCP client session each) as part of #207 — not
-    just theorized from asyncio's contextvars semantics.
+    just theorized from asyncio's contextvars semantics. This class is generic ASGI
+    middleware with no SDK-specific coupling, which is exactly why issue #326's SDK
+    v1->v2 migration needed zero changes here: streamable_http_app() still returns a
+    plain starlette.applications.Starlette ASGI app on v2, confirmed directly.
 
     Holds a swappable reference to the inner app (`self._app`, set via set_app())
     rather than a fixed one passed to __init__ — see start()/_build_mcp()'s
-    docstring for why: this module builds a brand-new FastMCP/session-manager
+    docstring for why: this module builds a brand-new MCPServer/session-manager
     instance on every start(), and this is the one long-lived object (constructed
     once, mounted once in main.py) whose target needs to follow along.
     """
@@ -252,7 +255,7 @@ class _BearerAuthGate:
 # ── JSON-safety for tool return values ───────────────────────────────────────────
 # psycopg2's RealDictCursor hands back datetime.date/datetime and Decimal objects
 # that aren't directly JSON-serializable — converted explicitly here rather than
-# relying on whatever FastMCP's own result-serialization path happens to do with
+# relying on whatever the SDK's own result-serialization path happens to do with
 # them, so a tool's output shape doesn't quietly depend on an SDK implementation
 # detail.
 
@@ -621,13 +624,13 @@ _TOOL_FUNCTIONS = (
 # ── ASGI app + session-manager lifecycle ─────────────────────────────────────────
 # asgi_app is the one long-lived object: constructed once at import time and mounted
 # once in main.py (`app.mount("/mcp", mcp_server.asgi_app)`). Its target inner app is
-# swapped on every start() — see _build_mcp()'s docstring for why a fresh FastMCP
+# swapped on every start() — see _build_mcp()'s docstring for why a fresh MCPServer
 # instance (and therefore a fresh, not-yet-run StreamableHTTPSessionManager) is built
 # on every start() rather than reusing one across the process's lifetime.
 
 asgi_app = _BearerAuthGate()
 
-_current_mcp: FastMCP | None = None
+_current_mcp: MCPServer | None = None
 _session_manager_task: asyncio.Task | None = None
 _stop_event: asyncio.Event | None = None
 
@@ -637,15 +640,24 @@ async def start() -> None:
     session manager's background run loop — must complete before any request can
     reach asgi_app (StreamableHTTPSessionManager.handle_request asserts its task
     group is already active and raises otherwise). Called from main.py's startup
-    event; see "mounting multiple FastMCP servers in a single FastAPI application",
-    the advanced use case FastMCP's own session_manager property docstring names
-    explicitly — this app does exactly that, just with one FastMCP instance at a
+    event; see "mounting multiple MCP servers in a single FastAPI application",
+    the advanced use case MCPServer's own session_manager property docstring names
+    explicitly — this app does exactly that, just with one MCPServer instance at a
     time rather than several concurrently."""
     global _current_mcp, _session_manager_task, _stop_event
 
     _current_mcp = _build_mcp()
-    raw_asgi_app = _current_mcp.streamable_http_app()  # also lazily creates
-                                                        # _current_mcp.session_manager
+    # Issue #326 (SDK v1 -> v2): stateless_http/json_response/streamable_http_path
+    # used to be FastMCP constructor kwargs (see _build_mcp()) — v2 moved them here,
+    # onto streamable_http_app() itself. Same effective behavior as before: each
+    # request independent (no need to remember state between calls), plain JSON
+    # responses rather than an SSE stream, and mounted at "/" so the effective URL
+    # under main.py's `app.mount("/mcp", ...)` doesn't become /mcp/mcp.
+    raw_asgi_app = _current_mcp.streamable_http_app(  # also lazily creates
+        stateless_http=True,                          # _current_mcp.session_manager
+        json_response=True,
+        streamable_http_path="/",
+    )
     asgi_app.set_app(raw_asgi_app)
 
     _stop_event = asyncio.Event()
