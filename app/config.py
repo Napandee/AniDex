@@ -22,7 +22,23 @@ DEFAULTS = {
 # theme, notification toggles, hidden_tags, etc.) stays plaintext on purpose: no
 # real security benefit to encrypting those, and it would make them unreadable to
 # a human glancing at the settings table for debugging.
-ENCRYPTED_KEYS = {"anilist_token", "cr_etp_rt", "netflix_cookie_header", "netflix_profile_guid"}
+#
+# Issue #319 — telegram_bot_token/discord_webhook_url/ntfy_auth_token added: found
+# during #310's own call-site grep, deliberately split into a follow-up rather than
+# folded into that PR (per this repo's issue-first convention for mid-session
+# finds). Same DB-leak exposure shape as #310's keys, just a smaller blast radius
+# (post into a Telegram chat / Discord channel / ntfy topic, not hijack a real
+# streaming account) — see app/notify.py's config.get() call sites for where these
+# get read back for an actual send.
+ENCRYPTED_KEYS = {
+    "anilist_token",
+    "cr_etp_rt",
+    "netflix_cookie_header",
+    "netflix_profile_guid",
+    "telegram_bot_token",
+    "discord_webhook_url",
+    "ntfy_auth_token",
+}
 
 _SETTINGS_ENCRYPTION_KEY = os.environ.get("SETTINGS_ENCRYPTION_KEY")
 if not _SETTINGS_ENCRYPTION_KEY:
