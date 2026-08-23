@@ -442,47 +442,62 @@ def mcp_two_users(live_app):
 
 
 async def _mcp_call(base_url, token, tool_name, args=None):
+    import httpx2
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
+    # Issue #326 (SDK v1 -> v2): streamablehttp_client(url, headers=...) is gone —
+    # renamed streamable_http_client, and headers are now set via a pre-configured
+    # httpx2.AsyncClient passed as http_client= rather than a headers= kwarg on the
+    # transport itself. Also yields a 2-tuple (read, write) now, not v1's 3-tuple
+    # (read, write, get_session_id) — confirmed directly against the installed v2
+    # package (mcp.client.streamable_http.TransportStreams) before this change.
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    async with streamablehttp_client(f"{base_url}/mcp", headers=headers) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, args or {})
-            # Prefer structuredContent — reliable for list-typed tool returns
-            # regardless of how many text content blocks FastMCP emits (it emits
-            # one block per list item, so content[0].text is only the FIRST row
-            # for a >1-item list, not the whole list). structuredContent always
-            # carries the full, properly-typed {"result": ...} payload.
-            if result.structuredContent is not None:
-                return result.structuredContent.get("result")
-            if result.content:
-                return json.loads(result.content[0].text)
-            return None
+    async with httpx2.AsyncClient(headers=headers, follow_redirects=True) as http_client:
+        async with streamable_http_client(f"{base_url}/mcp", http_client=http_client) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, args or {})
+                # Prefer structured_content — reliable for list-typed tool returns
+                # regardless of how many text content blocks the SDK emits (it emits
+                # one block per list item, so content[0].text is only the FIRST row
+                # for a >1-item list, not the whole list). structured_content always
+                # carries the full, properly-typed {"result": ...} payload. (Issue
+                # #326, SDK v1 -> v2: this field was camelCase structuredContent on
+                # v1 — confirmed the snake_case rename directly against the
+                # installed v2 package before relying on it here.)
+                if result.structured_content is not None:
+                    return result.structured_content.get("result")
+                if result.content:
+                    return json.loads(result.content[0].text)
+                return None
 
 
 async def _mcp_list_tools(base_url, token):
+    import httpx2
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
     headers = {"Authorization": f"Bearer {token}"}
-    async with streamablehttp_client(f"{base_url}/mcp", headers=headers) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            return sorted(t.name for t in tools.tools)
+    async with httpx2.AsyncClient(headers=headers, follow_redirects=True) as http_client:
+        async with streamable_http_client(f"{base_url}/mcp", http_client=http_client) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                return sorted(t.name for t in tools.tools)
 
 
 async def _mcp_expect_auth_failure(base_url, token):
+    import httpx2
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with pytest.raises(Exception):
-        async with streamablehttp_client(f"{base_url}/mcp", headers=headers) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
+        async with httpx2.AsyncClient(headers=headers, follow_redirects=True) as http_client:
+            async with streamable_http_client(f"{base_url}/mcp", http_client=http_client) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
 
 
 def test_mcp_exposes_the_four_read_tools_and_five_write_tools(live_app, mcp_two_users):
@@ -539,17 +554,19 @@ def mcp_two_users_write(live_app):
 async def _mcp_call_expect_error(base_url, token, tool_name, args=None):
     """Like _mcp_call, but for calls expected to fail as a tool-level error
     (ToolError) rather than succeed — returns the raw CallToolResult so the
-    caller can assert on isError / the error text, since FastMCP surfaces tool
-    errors as a normal (isError=True) result rather than raising on the client
-    side."""
+    caller can assert on is_error / the error text, since the SDK surfaces tool
+    errors as a normal (is_error=True) result rather than raising on the client
+    side (verified unchanged on SDK v2, issue #326)."""
+    import httpx2
     from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from mcp.client.streamable_http import streamable_http_client
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    async with streamablehttp_client(f"{base_url}/mcp", headers=headers) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            return await session.call_tool(tool_name, args or {})
+    async with httpx2.AsyncClient(headers=headers, follow_redirects=True) as http_client:
+        async with streamable_http_client(f"{base_url}/mcp", http_client=http_client) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                return await session.call_tool(tool_name, args or {})
 
 
 def test_mcp_update_personal_notes_persists_and_is_scoped_to_owner(live_app, mcp_two_users_write):
@@ -672,7 +689,7 @@ def test_mcp_bulk_apply_tags_rejects_empty_id_list(live_app, mcp_two_users_write
     result = asyncio.run(_mcp_call_expect_error(base_url, alice_token, "bulk_apply_tags", {
         "anime_ids": [], "tags": ["binged"],
     }))
-    assert result.isError is True
+    assert result.is_error is True
 
 
 def test_mcp_bulk_apply_tags_rejects_more_ids_than_the_per_call_cap(live_app, mcp_two_users_write):
@@ -689,7 +706,7 @@ def test_mcp_bulk_apply_tags_rejects_more_ids_than_the_per_call_cap(live_app, mc
     result = asyncio.run(_mcp_call_expect_error(base_url, alice_token, "bulk_apply_tags", {
         "anime_ids": too_many_ids, "tags": ["binged"],
     }))
-    assert result.isError is True
+    assert result.is_error is True
 
 
 def test_mcp_set_rating_persists_and_is_user_scoped(live_app, mcp_two_users_write):
@@ -726,7 +743,7 @@ def test_mcp_set_status_rejects_invalid_status(live_app, mcp_two_users_write):
     result = asyncio.run(_mcp_call_expect_error(base_url, alice_token, "set_status", {
         "anime_id": 101, "status": "NOT_A_REAL_STATUS",
     }))
-    assert result.isError is True
+    assert result.is_error is True
 
 
 def test_mcp_set_progress_persists(live_app, mcp_two_users_write):
@@ -767,7 +784,7 @@ def test_mcp_write_tool_rejects_a_read_only_token(live_app, mcp_two_users):
 
     for tool_name, args in _WRITE_TOOL_CALLS.items():
         result = asyncio.run(_mcp_call_expect_error(base_url, alice_token, tool_name, args))
-        assert result.isError is True, f"{tool_name} did not reject a read-only token"
+        assert result.is_error is True, f"{tool_name} did not reject a read-only token"
 
     # And nothing was actually written by any of the calls above.
     progress = m.db.fetchone("SELECT progress FROM library_entries WHERE user_id = 1 AND anime_id = 101")["progress"]
