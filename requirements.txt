@@ -13,4 +13,4 @@ bcrypt==5.0.0
 cryptography==50.0.0
 pyotp==2.10.0
 qrcode==8.2
-mcp==1.29.0
+mcp==2.0.0
