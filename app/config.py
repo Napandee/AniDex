@@ -38,6 +38,14 @@ ENCRYPTED_KEYS = {
     "telegram_bot_token",
     "discord_webhook_url",
     "ntfy_auth_token",
+    # Issue #153 — Plex account-level and server-scoped tokens from the OAuth PIN
+    # connect flow (app/plex_auth.py). Same DB-leak exposure shape as the keys
+    # above — a leaked token is live account/server access, not just AniDex
+    # access. plex_server_base_url/plex_server_name stay plaintext on purpose,
+    # same reasoning as anilist_username: not secrets, and useful to a human
+    # glancing at the settings table.
+    "plex_account_token",
+    "plex_server_token",
 }
 
 _SETTINGS_ENCRYPTION_KEY = os.environ.get("SETTINGS_ENCRYPTION_KEY")

@@ -190,6 +190,9 @@ def test_encrypted_keys_allowlist_matches_confirmed_call_sites():
         "telegram_bot_token",
         "discord_webhook_url",
         "ntfy_auth_token",
+        # Issue #153 — Plex OAuth PIN connect flow (app/plex_auth.py).
+        "plex_account_token",
+        "plex_server_token",
     }
 
 
