@@ -1459,6 +1459,7 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 .cred-icon--anilist     { color: var(--pill-info-text-strong);   background: var(--pill-info-bg); }
 .cred-icon--crunchyroll { color: var(--pill-warning-text-strong); background: var(--pill-warning-bg); }
 .cred-icon--netflix     { color: var(--pill-danger-text-strong);  background: var(--pill-danger-bg); }
+.cred-icon--plex        { color: var(--pill-violet-text-strong);  background: var(--pill-violet-bg); }
 .cred-name { font-size: 0.9rem; font-weight: 600; color: var(--t2); }
 .cred-required-badge {
   font-size: 0.65rem;

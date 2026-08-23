@@ -215,6 +215,7 @@
     {% set al_expanded = (cred_status.anilist == 'needs_attention') or (saved == 'credentials_anilist') %}
     {% set cr_expanded = (cred_status.crunchyroll == 'needs_attention') or (saved == 'credentials_crunchyroll') %}
     {% set nf_expanded = (cred_status.netflix == 'needs_attention') or (saved == 'credentials_netflix') %}
+    {% set plex_expanded = (cred_status.plex == 'needs_attention') or (saved in ('plex_connected', 'plex_disconnected')) %}
     <div class="settings-section settings-section--first">
       <h2 class="settings-section-title">{{ t('sync_credentials_title') }}</h2>
       <p class="settings-section-desc">{{ t('sync_credentials_help') }}</p>
@@ -372,6 +373,38 @@
                 <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
               </div>
             </form>
+          </div></div></div>
+        </div>
+
+        {# ── Plex — optional, collapsed by default. OAuth PIN connect flow
+           (#153), not a paste-box like CR/Netflix — Plex has a real (if
+           non-standard) sign-in flow, so there's no cookie to go dig up. #}
+        <div class="cred-card" data-provider="plex">
+          <button type="button" class="cred-card-header" data-cred-toggle="cred-body-plex" aria-expanded="{{ 'true' if plex_expanded else 'false' }}">
+            <span class="cred-icon cred-icon--plex">PX</span>
+            <span class="cred-name">{{ t('sync_plex_subtitle') }}</span>
+            <span class="status-chip status-chip--cred-{{ cred_status.plex }}">{{ t('cred_status_' + cred_status.plex) }}</span>
+            <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="cred-card-body help-disclosure-panel{{ ' open' if plex_expanded else '' }}" id="cred-body-plex"><div><div>
+            {% if saved == 'plex_disconnected' %}<p class="settings-success">{{ t('sync_plex_disconnected') }}</p>{% endif %}
+            {% if cred_status.plex == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
+
+            {% if settings.plex_server_name %}
+            <p class="cred-form-hint">{{ t('sync_plex_connected_as', server=settings.plex_server_name) }}</p>
+            <form method="post" action="/settings/plex/disconnect" class="cred-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="cred-form-actions">
+                <button type="submit" class="btn-test">{{ t('sync_plex_disconnect_btn') }}</button>
+              </div>
+            </form>
+            {% else %}
+            <p class="cred-form-hint">{{ t('sync_plex_connect_hint') }}</p>
+            <div class="cred-form-actions">
+              <button type="button" id="plex-connect-btn" class="btn-save">{{ t('sync_plex_connect_btn') }}</button>
+              <span class="cred-test-result" id="plex-connect-status" hidden></span>
+            </div>
+            {% endif %}
           </div></div></div>
         </div>
 
@@ -915,12 +948,79 @@ document.querySelectorAll('[data-cred-test]').forEach(btn => {
   });
 });
 
+// ── Plex connect (issue #153) ────────────────────────────────────────────────
+// OAuth PIN flow, not a form Save — see app/plex_auth.py's module docstring.
+// Opens plex.tv's approval page in a new tab, then polls until the user has
+// signed in there; the poll route itself does the actual credential-storing
+// once claimed, same as any other credential Save.
+(function () {
+  const btn = document.getElementById('plex-connect-btn');
+  if (!btn) return; // already connected — this card shows Disconnect instead
+  const status = document.getElementById('plex-connect-status');
+  let pollTimer = null;
+
+  function setStatus(text, cls) {
+    status.hidden = false;
+    status.className = 'cred-test-result ' + (cls || '');
+    status.textContent = text;
+  }
+
+  function poll(pinId, attemptsLeft) {
+    if (attemptsLeft <= 0) {
+      setStatus('Timed out waiting for Plex sign-in — try again.', 'cred-test-result--fail');
+      btn.disabled = false;
+      return;
+    }
+    fetch(`/settings/plex/poll/${pinId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'connected') {
+          setStatus(`Connected to "${data.server_name}" — reloading…`, 'cred-test-result--ok');
+          setTimeout(() => location.reload(), 800);
+          return;
+        }
+        if (data.ok === false) {
+          setStatus(data.error || 'Could not connect to Plex.', 'cred-test-result--fail');
+          btn.disabled = false;
+          return;
+        }
+        pollTimer = setTimeout(() => poll(pinId, attemptsLeft - 1), 2000);
+      })
+      .catch(() => {
+        setStatus('Could not reach server.', 'cred-test-result--fail');
+        btn.disabled = false;
+      });
+  }
+
+  btn.addEventListener('click', () => {
+    if (pollTimer) clearTimeout(pollTimer);
+    btn.disabled = true;
+    setStatus('Opening Plex sign-in…', '');
+    fetch('/settings/plex/connect', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) {
+          setStatus(data.error || 'Could not start Plex sign-in.', 'cred-test-result--fail');
+          btn.disabled = false;
+          return;
+        }
+        window.open(data.auth_url, '_blank', 'noopener');
+        setStatus('Waiting for you to finish signing in on plex.tv…', '');
+        poll(data.pin_id, 60); // ~2 minutes at 2s/attempt
+      })
+      .catch(() => {
+        setStatus('Could not reach server.', 'cred-test-result--fail');
+        btn.disabled = false;
+      });
+  });
+}());
+
 // ── Per-service status chips (shared by the live banner and the history table) ──
 // Kept in sync manually with scripts/run_full_sync.py's step order — extend when
 // Prime Video (#49) lands.
-const SERVICE_ORDER = ['crunchyroll', 'netflix', 'anilist_postgres'];
+const SERVICE_ORDER = ['crunchyroll', 'netflix', 'plex', 'anilist_postgres'];
 function fmtService(s) {
-  return { crunchyroll: 'Crunchyroll', netflix: 'Netflix', anilist_postgres: 'AniList library refresh', prime_video: 'Prime Video' }[s] || s;
+  return { crunchyroll: 'Crunchyroll', netflix: 'Netflix', plex: 'Plex', anilist_postgres: 'AniList library refresh', prime_video: 'Prime Video' }[s] || s;
 }
 function renderStepChips(steps) {
   const bySvc = Object.fromEntries((steps || []).map(s => [s.service, s]));

@@ -557,6 +557,26 @@ CREATE TABLE netflix_sync_state (
 );
 
 -- =========================================================================
+-- PLEX SYNC STATE (issue #153) — tracks last-known Plex progress per user, per
+-- series. Owned by sync_plex.py — never written to by the web app.
+-- Same shape as cr_sync_state, not netflix_sync_state: Plex's history items carry
+-- real season/episode numbers the same way Crunchyroll's do (see
+-- notes/2026-08-19-plex-sync-research.md), so progress is an absolute
+-- last_seen_episode, not a delta count.
+-- =========================================================================
+
+CREATE TABLE plex_sync_state (
+    user_id                INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anilist_id              INTEGER NOT NULL,
+    series_title            TEXT,                            -- for human readability
+    last_seen_episode       INTEGER NOT NULL DEFAULT 0,
+    last_seen_watched_at    TIMESTAMPTZ,
+    rewatch_in_progress     BOOLEAN NOT NULL DEFAULT FALSE,
+    last_synced_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, anilist_id)
+);
+
+-- =========================================================================
 -- STREAMING COVERAGE (issue #182) — "services I own", scored against the library by
 -- episodes-remaining. See migrations/016_streaming_coverage.sql for the schema-choice
 -- rationale (free TEXT service name validated against app/main.py's STREAMING_SITES

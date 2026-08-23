@@ -35,7 +35,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server, csrf
+from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server, csrf, plex_auth
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -4978,6 +4978,10 @@ def settings_page(
             bool(current.get("netflix_cookie_header")) and bool(current.get("netflix_profile_guid")),
             "netflix", user["id"],
         ),
+        "plex": _credential_connection_status(
+            bool(current.get("plex_server_token")) and bool(current.get("plex_server_base_url")),
+            "plex", user["id"],
+        ),
     }
 
     # Issue #204 — same GIT_SHA value the admin-only Operability tab already
@@ -5143,6 +5147,78 @@ def settings_save_credentials_netflix(
         config.set_value(user["id"], "netflix_profile_guid", netflix_profile_guid.strip())
 
     return RedirectResponse(url="/settings?saved=credentials_netflix", status_code=303)
+
+
+@app.post("/settings/plex/connect")
+async def settings_plex_connect(request: Request):
+    """Issue #153 — starts a Plex OAuth PIN connect attempt. Returns the pin id
+    and the plex.tv approval URL for the frontend to open in a new tab and then
+    poll /settings/plex/poll/{pin_id} against; see app/plex_auth.py's module
+    docstring for why this can't be a redirect+callback route the way Google/
+    Discord linking is."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    try:
+        pin = plex_auth.create_pin()
+    except httpx.HTTPError as e:
+        return JSONResponse({"ok": False, "error": f"Could not reach plex.tv: {e}"}, status_code=502)
+
+    return JSONResponse({"ok": True, "pin_id": pin["id"], "auth_url": pin["auth_url"]})
+
+
+@app.get("/settings/plex/poll/{pin_id}")
+def settings_plex_poll(request: Request, pin_id: int):
+    """Issue #153 — polled by the Settings page every couple of seconds after
+    connect. Once the PIN is claimed, resolves the account token to a real
+    server-scoped token (list_server_resources() + pick_connection()) and
+    stores everything needed for scripts/sync_plex.py, same as any other
+    credential save — this route is where the actual persisting happens, not
+    the connect route above."""
+    user, denied = _require_user_api(request)
+    if denied:
+        return denied
+
+    try:
+        account_token = plex_auth.poll_pin(pin_id)
+    except httpx.HTTPError as e:
+        return JSONResponse({"ok": False, "error": f"Could not reach plex.tv: {e}"}, status_code=502)
+
+    if not account_token:
+        return JSONResponse({"status": "pending"})
+
+    try:
+        resources = plex_auth.list_server_resources(account_token)
+    except httpx.HTTPError as e:
+        return JSONResponse({"ok": False, "error": f"Could not list Plex servers: {e}"}, status_code=502)
+
+    server = next(iter(resources), None)
+    if not server:
+        return JSONResponse({"ok": False, "error": "Signed in, but no Plex server was found on this account."})
+
+    base_url = plex_auth.pick_connection(server)
+    if not base_url:
+        return JSONResponse({"ok": False, "error": f"Could not reach any connection for '{server.get('name')}'."})
+
+    config.set_value(user["id"], "plex_account_token", account_token)
+    config.set_value(user["id"], "plex_server_token", server.get("accessToken") or "")
+    config.set_value(user["id"], "plex_server_base_url", base_url)
+    config.set_value(user["id"], "plex_server_name", server.get("name") or "")
+
+    return JSONResponse({"status": "connected", "server_name": server.get("name") or ""})
+
+
+@app.post("/settings/plex/disconnect")
+def settings_plex_disconnect(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    for key in ("plex_account_token", "plex_server_token", "plex_server_base_url", "plex_server_name"):
+        config.set_value(user["id"], key, "")
+
+    return RedirectResponse(url="/settings?saved=plex_disconnected", status_code=303)
 
 
 @app.post("/api/credentials/test/{provider}")
