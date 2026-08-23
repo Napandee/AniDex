@@ -4,7 +4,11 @@
 {% block content %}
 <div class="status-tabs">
   {% for s in statuses %}
-  <a href="/?status={{ s }}" class="tab {% if s == active_status %}active{% endif %}">
+  {# Issue #330 — a saved collection (issue #200) can still target
+     ?status=REPEATING directly (the route still accepts it, unchanged), even
+     though it's no longer its own tab. Highlight Watching as active in that
+     case too, rather than landing on a page with no tab visibly selected. #}
+  <a href="/?status={{ s }}" class="tab {% if s == active_status or (s == 'WATCHING' and active_status == 'REPEATING') %}active{% endif %}">
     {{ t('status_' + s.lower()) }}
   </a>
   {% endfor %}
@@ -58,9 +62,15 @@
       {% endfor %}
     </div>
 
-    <div class="filter-group rewatch-filter-group">
-      <button class="filter-btn active" data-rewatch-filter="">{{ t('lib_all_rewatches') }}</button>
-      <button class="filter-btn" data-rewatch-filter="1">{{ t('lib_rewatched_filter') }}</button>
+    {# Issue #330 — was a two-.filter-btn-pill pair ("All" / "Rewatched"); merged
+       into a single toggle switch to match the chosen design direction, and its
+       criterion now also catches an in-progress rewatch (status REPEATING),
+       not just a completed one (repeat_count >= 1) — see the JS below. #}
+    <div class="rewatch-toggle-group">
+      <span class="rewatch-toggle-label">{{ t('lib_rewatches_only') }}</span>
+      <button type="button" class="rewatch-toggle" data-rewatch-filter="" aria-pressed="false" role="switch">
+        <span class="rewatch-toggle-knob"></span>
+      </button>
     </div>
 
     <div class="filter-group favorite-filter-group">
@@ -110,6 +120,7 @@
        data-progress="{{ e.progress or 0 }}"
        data-updated="{{ e.anilist_updated_at.isoformat() if e.anilist_updated_at else '' }}"
        data-repeat-count="{{ e.repeat_count or 0 }}"
+       data-status="{{ e.status }}"
        data-drop="{{ e.drop_reason or '' }}"
        data-tags="{{ (e.personal_tags or []) | join(', ') }}"
        data-notes="{{ e.notes or '' }}"
@@ -122,6 +133,12 @@
     <input type="checkbox" class="bulk-checkbox" data-anime-id="{{ e.id }}" hidden>
     {% if e.cover_image_url %}
     <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+    {% endif %}
+    {% if e.status == 'REPEATING' %}
+    {# Issue #330 — .card already has position:relative + overflow:hidden (see
+       style.css), so this ribbon just needs absolute positioning against it,
+       no extra wrapper around the cover image. #}
+    <span class="rewatch-ribbon">{{ t('lib_rewatch_ribbon') }}</span>
     {% endif %}
     {% if e.episodes and e.progress %}
     <div class="progress-bar-wrap">
@@ -190,7 +207,7 @@
       </div>
       {% endif %}
 
-      {% if e.personal_tags or e.mood_tags or e.is_stale or e.repeat_count or e.next_airing_label %}
+      {% if e.personal_tags or e.mood_tags or e.is_stale or e.repeat_count or e.status == 'REPEATING' or e.next_airing_label %}
       <div class="genres">
         {% if e.next_airing_label %}
         <span class="airing-badge" title="{{ t('lib_airing_badge_title', ep=e.next_episode, label=e.next_airing_label) }}">{{ t('lib_airing_badge_text', ep=e.next_episode, label=e.next_airing_label) }}</span>
@@ -198,7 +215,13 @@
         {% if e.is_stale %}
         <span class="stale-tag">{{ t('lib_stale_tag') }}</span>
         {% endif %}
-        {% if e.repeat_count %}
+        {% if e.status == 'REPEATING' %}
+        {# Issue #330 — "which pass am I currently on" (repeat_count completed +
+           this one in progress), distinct from the plain historical count below:
+           this fires for an in-progress first rewatch too (repeat_count still 0),
+           which the old repeat_count-only condition never showed anything for. #}
+        <span class="rewatch-badge" title="{{ t('lib_rewatch_pass', n=(e.repeat_count or 0) + 1) }}">{{ t('lib_rewatch_pass', n=(e.repeat_count or 0) + 1) }}</span>
+        {% elif e.repeat_count %}
         <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
         {% endif %}
         {% for m in e.mood_tags or [] %}
@@ -359,26 +382,35 @@
 }());
 
 // ── Rewatch filter ────────────────────────────────────────────────────────────
-// "has been rewatched" vs "all" — the minimum bar from #190. Mirrors the score
-// filter above exactly: a per-card data-rewatch-hidden flag that applyLibraryFilters
-// (script.js) folds into its combined show/hide check, rather than a second
-// filtering pass of its own.
+// "is a rewatch, in some sense" vs "all" — the minimum bar from #190, extended
+// by #330 for the merged Watching tab: a card counts as a rewatch if it has a
+// completed rewatch already (repeat_count >= 1) OR it's a rewatch currently in
+// progress (status REPEATING, even with repeat_count still 0 — e.g. a first
+// rewatch not yet finished). Mirrors the score filter above: a per-card
+// data-rewatch-hidden flag that applyLibraryFilters (script.js) folds into its
+// combined show/hide check, rather than a second filtering pass of its own.
+//
+// #330 also swapped the old two-button ("All"/"Rewatched") pill pair for a
+// single toggle switch — one control to flip on/off, rather than a
+// remove-active-from-all/add-active-to-clicked radio-group pattern.
 (function () {
-  let activeRewatch = '';
-  document.querySelectorAll('[data-rewatch-filter]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('[data-rewatch-filter]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeRewatch = btn.dataset.rewatchFilter;
-      applyRewatchFilter();
-    });
+  const toggle = document.querySelector('[data-rewatch-filter]');
+  if (!toggle) return;
+  let active = false;
+
+  toggle.addEventListener('click', () => {
+    active = !active;
+    toggle.classList.toggle('active', active);
+    toggle.setAttribute('aria-pressed', String(active));
+    applyRewatchFilter();
   });
 
   function applyRewatchFilter() {
     document.querySelectorAll('#library-grid .card').forEach(card => {
-      if (!activeRewatch) { card.dataset.rewatchHidden = ''; return; }
+      if (!active) { card.dataset.rewatchHidden = ''; return; }
       const count = parseInt(card.dataset.repeatCount) || 0;
-      card.dataset.rewatchHidden = String(count < 1);
+      const isRewatching = card.dataset.status === 'REPEATING';
+      card.dataset.rewatchHidden = String(count < 1 && !isRewatching);
     });
     if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
   }

@@ -756,6 +756,13 @@ STREAMING_SITES = {
     "Niconico Video", "Funimation", "VRV",
 }
 
+# Issue #330 — the library page's merged "Watching" tab covers both real AniList
+# statuses: an active rewatch is still something actively being watched, not a
+# separate resting state. REPEATING stays a real, independently settable status
+# elsewhere (bulk-status-select, per-card status-select) — only this tab's query
+# filter treats the two as one group.
+WATCHING_TAB_STATUSES = ["WATCHING", "REPEATING"]
+
 # Issue #231 — invite expiry window. A fresh invite (POST /admin/invites) and a
 # resend (POST /admin/invites/{id}/resend) both push expires_at this far out from
 # now(); the DB column carries the same default (schema.sql / migration 022) as a
@@ -7568,18 +7575,34 @@ def library(request: Request, response: Response, status: str = None):
         return denied
 
     response.headers["Cache-Control"] = "no-store"
-    statuses = ["WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED", "REPEATING"]
+    # Issue #330 — REPEATING is no longer its own tab: an active rewatch is still
+    # "something you're actively watching right now", so it's folded into the
+    # Watching tab (see WATCHING_TAB_STATUSES below) rather than needing its own
+    # click to see. REPEATING itself is untouched as a real, settable status —
+    # only removed from this tab list, not from the bulk-status-select /
+    # per-card status-select dropdowns in library.html, which still offer it.
+    statuses = ["WATCHING", "COMPLETED", "DROPPED", "PLANNING", "PAUSED"]
     active_status = status.upper() if status else "WATCHING"
 
-    # "ALL" (issue #225) — not one of the six tabs rendered below, so it's only ever
+    # "ALL" (issue #225) — not one of the five tabs rendered below, so it's only ever
     # reached via a URL a stat-card drill-down link builds directly: some /stats
     # numbers (e.g. total episodes watched, total watch time) sum across every
     # status, not just one, so no single existing status tab can show "the list that
     # sums to it". Same "ALL" pseudo-status pattern /queue already uses for its
     # PLANNING+PAUSED tab (see queue() above) — just unscoped here, skipping the
     # status filter entirely rather than swapping it for an IN (...) list.
-    status_filter_sql = "" if active_status == "ALL" else "le.status = %s AND "
-    where_params = (user["id"],) if active_status == "ALL" else (active_status, user["id"])
+    if active_status == "ALL":
+        status_filter_sql = ""
+        where_params = (user["id"],)
+    elif active_status == "WATCHING":
+        # Issue #330 — matches both real statuses the merged tab covers. Same
+        # le.status = ANY(%s) pattern already used elsewhere in this file (e.g.
+        # the stats seasonal-follow-through query) rather than a new construct.
+        status_filter_sql = "le.status = ANY(%s) AND "
+        where_params = (WATCHING_TAB_STATUSES, user["id"])
+    else:
+        status_filter_sql = "le.status = %s AND "
+        where_params = (active_status, user["id"])
 
     rows = db.fetchall(
         f"""
