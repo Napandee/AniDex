@@ -146,6 +146,11 @@ def test_sensitive_key_stored_as_ciphertext_in_raw_db(pg_conn):
         ("cr_etp_rt", "fake_etp_rt_cookie_value_1234567890"),
         ("netflix_cookie_header", "NetflixId=fake; SecureNetflixId=fake2; nfvdid=fake3"),
         ("netflix_profile_guid", "12345678-abcd-4321-9999-fedcba987654"),
+        # Issue #319 — notification-channel credentials, same encrypt-at-rest
+        # treatment as #310's catalog/session credentials above.
+        ("telegram_bot_token", "123456789:AAFakeTelegramBotTokenValueHere"),
+        ("discord_webhook_url", "https://discord.com/api/webhooks/123456789/fake-webhook-token"),
+        ("ntfy_auth_token", "tk_fakeNtfyAuthTokenValue1234567890"),
     ],
 )
 def test_every_encrypted_key_round_trips(pg_conn, key, value):
@@ -174,14 +179,17 @@ def test_non_sensitive_key_stays_plaintext(pg_conn):
 
 
 def test_encrypted_keys_allowlist_matches_confirmed_call_sites():
-    # Locks in the confirmed-against-app/main.py allowlist from the issue — guards
-    # against silent drift if a future call site adds/renames a sensitive key
-    # without updating ENCRYPTED_KEYS.
+    # Locks in the confirmed-against-app/main.py allowlist from #310 + #319 —
+    # guards against silent drift if a future call site adds/renames a sensitive
+    # key without updating ENCRYPTED_KEYS.
     assert config.ENCRYPTED_KEYS == {
         "anilist_token",
         "cr_etp_rt",
         "netflix_cookie_header",
         "netflix_profile_guid",
+        "telegram_bot_token",
+        "discord_webhook_url",
+        "ntfy_auth_token",
     }
 
 
@@ -296,6 +304,47 @@ def test_migration_encrypts_existing_plaintext_and_is_idempotent(pg_conn):
     assert totp_ciphertext_2 == totp_ciphertext_1
     # And the value is still correctly readable after two passes.
     assert config.decrypt_secret(al_ciphertext_2) == "plain_al_token_value"
+
+
+def test_migration_picks_up_issue_319_notification_keys(pg_conn):
+    """Issue #319's explicit "verify rather than assume" instruction:
+    migrate_settings() iterates config.ENCRYPTED_KEYS itself (no hardcoded key
+    list of its own — see scripts/migrate_encrypt_credentials.py), so adding
+    telegram_bot_token/discord_webhook_url/ntfy_auth_token to the allowlist
+    alone should be enough for the migration to pick them up with zero changes
+    to the script. Confirms that's actually true rather than assuming it."""
+    import migrate_encrypt_credentials as mig
+
+    uid = _make_user(pg_conn)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, 'telegram_bot_token', %s)",
+            (uid, "plain_telegram_token"),
+        )
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, 'discord_webhook_url', %s)",
+            (uid, "https://discord.com/api/webhooks/plain/value"),
+        )
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, 'ntfy_auth_token', %s)",
+            (uid, "plain_ntfy_token"),
+        )
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        result = mig.migrate_settings(conn, dry_run=False)
+    finally:
+        conn.close()
+
+    assert result["telegram_bot_token"]["migrated"] == 1
+    assert result["discord_webhook_url"]["migrated"] == 1
+    assert result["ntfy_auth_token"]["migrated"] == 1
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM settings WHERE user_id = %s AND key = 'telegram_bot_token'", (uid,))
+        ciphertext = cur.fetchone()[0]
+    assert config.is_encrypted(ciphertext)
+    assert config.decrypt_secret(ciphertext) == "plain_telegram_token"
 
 
 def test_migration_dry_run_writes_nothing(pg_conn):

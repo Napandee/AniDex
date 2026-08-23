@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-One-off data migration for issue #310 — encrypts already-live plaintext values
-for app.config's ENCRYPTED_KEYS settings (anilist_token, cr_etp_rt,
-netflix_cookie_header, netflix_profile_guid) and the users.totp_secret column,
-in place, using the Fernet key from SETTINGS_ENCRYPTION_KEY. Code-level
-encrypt/decrypt on the read/write paths (app/config.py, and the TOTP setup/
-verify call sites in app/main.py) ships alongside this script in the same PR —
-this script only exists to bring values that were already written to the
+One-off data migration for issue #310 (extended by #319) — encrypts already-live
+plaintext values for every key in app.config.ENCRYPTED_KEYS (anilist_token,
+cr_etp_rt, netflix_cookie_header, netflix_profile_guid, telegram_bot_token,
+discord_webhook_url, ntfy_auth_token) and the users.totp_secret column, in
+place, using the Fernet key from SETTINGS_ENCRYPTION_KEY. This loop iterates
+config.ENCRYPTED_KEYS itself rather than a hardcoded key list, so #319's three
+additional keys needed no changes here — only the allowlist in app/config.py.
+Code-level encrypt/decrypt on the read/write paths (app/config.py, and the TOTP
+setup/verify call sites in app/main.py) ships alongside this script in the same
+PR — this script only exists to bring values that were already written to the
 database *before* that code shipped up to the same encrypted-at-rest state.
 
 This is a genuine transformation of live, currently-working credentials (a real
