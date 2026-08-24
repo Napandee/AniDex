@@ -282,6 +282,11 @@
   "title_upcoming": "即将播出 — Anime Tracker",
   "upcoming_page_title": "即将播出的剧集",
   "upcoming_page_sub": "你的观看中与计划列表中的新剧集。",
+
+  "on_this_day_title": "历史上的今天",
+  "on_this_day_started": "{years} 年前的今天你开始观看",
+  "on_this_day_finished": "{years} 年前的今天你看完了",
+  "on_this_day_started_and_finished": "{years} 年前的今天你开始并看完了",
   "upcoming_episode_label": "第 {num} 集",
   "upcoming_episode_of": "共 {total} 集",
   "upcoming_progress": "你已看到第 {num} 集",

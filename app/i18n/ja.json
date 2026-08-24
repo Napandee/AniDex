@@ -282,6 +282,11 @@
   "title_upcoming": "放送予定 — Anime Tracker",
   "upcoming_page_title": "放送予定のエピソード",
   "upcoming_page_sub": "視聴中・視聴予定リストの新しいエピソード。",
+
+  "on_this_day_title": "今日は何の日",
+  "on_this_day_started": "{years}年前の今日、視聴を開始しました",
+  "on_this_day_finished": "{years}年前の今日、視聴を完了しました",
+  "on_this_day_started_and_finished": "{years}年前の今日、視聴を開始し、完了しました",
   "upcoming_episode_label": "第{num}話",
   "upcoming_episode_of": "／全{total}話",
   "upcoming_progress": "第{num}話まで視聴済み",

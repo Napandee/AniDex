@@ -59,6 +59,13 @@ it all into one self-hosted page.
   `recommendation_scores`, AniList drift, recent sync failure rate), scoped to that
   one user's own rows instead of every user. `user_id=None` (the admin page's call)
   is unaffected.
+- "On this day" (issue #338): a small card on `/upcoming`'s default view only —
+  watch-start/finish anniversaries landing on today's calendar month/day, computed
+  purely from `library_entries.start_date`/`finish_date` (no new stored state, same
+  "compute on the fly" precedent as #164's pace-stat). Exact calendar-day match
+  only, not a "this week" window; `years_ago == 0` (today, current year) is
+  filtered out — that's not an anniversary of anything. See
+  `_on_this_day_anniversaries()` in `app/main.py`.
 
 **Out of scope — do not build these:**
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
