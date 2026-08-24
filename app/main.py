@@ -2971,6 +2971,27 @@ def _require_user_api(request: Request):
     return user, None
 
 
+def _require_pat_user(request: Request):
+    """Issue #336 — Bearer-token auth for the Home Assistant status endpoint, same
+    resolve_token primitive mcp_server.py's _BearerAuthGate already uses (app/pat.py),
+    but implemented as a plain dependency-style helper for one ordinary FastAPI route
+    rather than a whole ASGI wrapper — this app has exactly one non-MCP route that
+    needs PAT auth, so mounting a second bearer-auth gate would be more machinery than
+    the one call site justifies.
+
+    Deliberately does NOT fall back to session-cookie auth like _require_user_api
+    does: the caller here is a headless poller (Home Assistant's RESTful sensor)
+    that will never carry a browser session cookie, and mixing both auth modes on
+    one route would just be dead code for this specific endpoint. Any scope (read or
+    read_write) is accepted — this endpoint never writes anything."""
+    auth_header = request.headers.get("authorization", "")
+    raw_token = auth_header[7:] if auth_header.lower().startswith("bearer ") else None
+    user = pat.resolve_token(raw_token)
+    if not user:
+        return None, JSONResponse({"error": "not authenticated"}, status_code=401)
+    return user, None
+
+
 SNOOZE_DAYS = 30  # v1 fixed duration for "not now" (issue #75) — no picker yet;
                   # revisit only if a fixed 30 days turns out to not be enough.
 
@@ -5892,6 +5913,118 @@ def outbox_status(request: Request):
     for r in rows:
         by_state[r["state"]] = r["cnt"]
     return JSONResponse({"by_state": by_state})
+
+
+@app.get("/api/ha/status")
+def ha_status(request: Request):
+    """Issue #336 — a single combined, PAT-authenticated JSON payload for polling
+    from Home Assistant's RESTful `sensor:` integration (one `resource:` URL, several
+    `sensor:` sub-items each with their own `value_template` reading one field out of
+    this same response — HA's modern `rest:` config supports that directly, so this
+    stays one endpoint rather than several small ones a poller would have to hit
+    separately).
+
+    PAT-only auth (_require_pat_user, not _require_user_api) — the caller is a
+    headless poller with no browser session, same reasoning MCP's own auth takes.
+
+    Deliberately composes the same underlying queries/state the existing
+    /api/sync/status, /queue, and /upcoming routes already use rather than
+    introducing new sync/queue/airing logic — this endpoint's only job is
+    reshaping already-computed signals into one small payload, not computing
+    anything new."""
+    user, denied = _require_pat_user(request)
+    if denied:
+        return denied
+
+    # Sync health — same read _get_sync_state/sync_log query as /api/sync/status.
+    state = _get_sync_state(user["id"])
+    sync_row = db.fetchone(
+        "SELECT status, steps FROM sync_log WHERE user_id = %s AND type IN ('full_sync', 'force_full_resync') "
+        "ORDER BY run_at DESC LIMIT 1",
+        (user["id"],),
+    )
+    sync_running = bool(state["running"] or (sync_row and sync_row["status"] == "running"))
+    sync_last_result = sync_row["status"] if sync_row and sync_row["status"] != "running" else None
+    sync_steps = [
+        {"service": s.get("service"), "status": s.get("status")}
+        for s in ((sync_row["steps"] if sync_row else None) or [])
+    ]
+    ts_row = db.fetchone(
+        "SELECT MAX(synced_at) AS ts FROM library_entries WHERE user_id = %s", (user["id"],)
+    )
+    last_synced = ts_row["ts"].isoformat() if ts_row and ts_row["ts"] else None
+
+    # Queue — same PLANNING/PAUSED scope and priority/rec-score ordering as /queue's
+    # "ALL" view; length via a plain COUNT (no need for the joins below just to count).
+    queue_count_row = db.fetchone(
+        "SELECT COUNT(*) AS cnt FROM library_entries WHERE user_id = %s AND status IN ('PLANNING', 'PAUSED')",
+        (user["id"],),
+    )
+    queue_length = queue_count_row["cnt"] if queue_count_row else 0
+    next_up_row = db.fetchone(
+        """
+        SELECT a.title_english, a.title_romaji
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
+        LEFT JOIN recommendation_scores rs
+               ON rs.anime_id = a.id AND rs.dismissed = false AND rs.user_id = le.user_id
+        WHERE le.status IN ('PLANNING', 'PAUSED') AND le.user_id = %s
+        ORDER BY
+            CASE WHEN pn.watch_next_priority IS NOT NULL THEN 0 ELSE 1 END,
+            pn.watch_next_priority ASC NULLS LAST,
+            rs.score DESC NULLS LAST,
+            a.title_romaji
+        LIMIT 1
+        """,
+        (user["id"],),
+    )
+    next_up = None
+    if next_up_row:
+        next_up = next_up_row["title_english"] or next_up_row["title_romaji"]
+
+    # Airing today/this week — same airing_schedule_cache + library_entries join as
+    # /upcoming, in the user's own timezone for "today"'s boundary; "this week" is a
+    # rolling 7-day window from now rather than a calendar week, so it needs no
+    # timezone-aware boundary of its own.
+    tz_name = config.get(user["id"], "timezone")
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+    now = datetime.now(tz=timezone.utc)
+    today_end_local = datetime.combine(
+        now.astimezone(tz).date() + timedelta(days=1), datetime.min.time(), tzinfo=tz
+    )
+    week_end = now + timedelta(days=7)
+    airing_counts = db.fetchone(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE asc2.airing_at <= %s) AS today,
+            COUNT(*) FILTER (WHERE asc2.airing_at <= %s) AS this_week
+        FROM airing_schedule_cache asc2
+        JOIN library_entries le ON le.anime_id = asc2.anime_id
+        WHERE asc2.airing_at > %s AND le.user_id = %s
+        """,
+        (today_end_local.astimezone(timezone.utc), week_end, now, user["id"]),
+    )
+
+    return JSONResponse({
+        "sync": {
+            "running": sync_running,
+            "last_result": sync_last_result,
+            "last_synced": last_synced,
+            "steps": sync_steps,
+        },
+        "queue": {
+            "length": queue_length,
+            "next_up": next_up,
+        },
+        "airing": {
+            "today": airing_counts["today"] if airing_counts else 0,
+            "this_week": airing_counts["this_week"] if airing_counts else 0,
+        },
+    })
 
 
 # ── Drop-pattern mining (issue #73) ─────────────────────────────────────────

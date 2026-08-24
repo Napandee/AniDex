@@ -298,6 +298,39 @@ they're Settings-only, since they're free-text URLs rather than a fixed provider
 self-hosting ntfy) in Settings. Uses [ntfy.sh](https://ntfy.sh) by default; no signup
 needed, just pick an unguessable topic name and subscribe to it in the ntfy app.
 
+## Home Assistant integration (optional)
+
+`GET /api/ha/status` returns a single combined JSON payload — sync health, watch-next
+queue length/title, and episodes airing today/this week — meant to be polled from Home
+Assistant's built-in RESTful sensor integration rather than only viewed inside AniDex.
+
+Authenticate with a personal access token (**Settings → Personal access tokens** — the
+same tokens issued for the MCP server; read scope is enough, this endpoint never
+writes). Example `configuration.yaml`:
+
+```yaml
+rest:
+  - resource: https://your-anidex-host/api/ha/status
+    headers:
+      Authorization: !secret anidex_pat
+    scan_interval: 900
+    sensor:
+      - name: "AniDex Sync Status"
+        value_template: "{{ value_json.sync.last_result }}"
+      - name: "AniDex Queue Length"
+        value_template: "{{ value_json.queue.length }}"
+        unit_of_measurement: "shows"
+      - name: "AniDex Next Up"
+        value_template: "{{ value_json.queue.next_up }}"
+      - name: "AniDex Episodes Airing Today"
+        value_template: "{{ value_json.airing.today }}"
+        unit_of_measurement: "episodes"
+```
+
+Store the raw `adx_pat_...` token in `secrets.yaml` as `anidex_pat: "Bearer adx_pat_..."`
+— the `Authorization` header needs the `Bearer ` prefix included in the secret value
+itself, since `!secret` substitutes the whole header value verbatim.
+
 ## CI/CD with GitHub Actions (optional)
 
 The included workflows build and push Docker images to GHCR on every push to `main`, and

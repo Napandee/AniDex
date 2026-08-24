@@ -45,6 +45,13 @@ it all into one self-hosted page.
   availability, a "cancel candidates" inverted framing, household aggregate view, and
   set-cover framing were all considered in #22's brainstorm and deliberately deferred
   past v1 — see #22 for the full list.
+- Home Assistant integration (issue #336): `GET /api/ha/status`, a single combined
+  read-only JSON payload (sync health, watch-next queue length/title, episodes airing
+  today/this week) meant for polling from HA's own RESTful `sensor:` integration, not
+  a bespoke HA add-on/HACS integration. PAT-authenticated only (`_require_pat_user` in
+  `app/main.py`, reusing `app/pat.py`'s `resolve_token` — the same primitive
+  `mcp_server.py` uses) — no session-cookie fallback, since the caller is a headless
+  poller. See README's "Home Assistant integration" section for the `sensor:` YAML.
 
 **Out of scope — do not build these:**
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
