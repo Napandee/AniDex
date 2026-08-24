@@ -587,6 +587,58 @@
       </div>
     </div>
 
+    {# ── Library health (issue #337) — the personal-scope companion to #202's
+       admin Data Quality tab: same _data_quality_signals() computation, just
+       filtered to this one user's own rows via user_id, so a non-admin user has
+       the same orphan/drift visibility an admin already gets across everyone.
+       Deliberately a small always-visible card, not a click-to-expand — the
+       common case (nothing wrong) is a single line, not something worth hiding
+       behind a disclosure toggle. ─────────────────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('library_health_title') }}</h2>
+      {% if library_health.is_healthy %}
+      <p class="status-ok">{{ t('library_health_all_clear') }}</p>
+      {% else %}
+      <p class="settings-section-desc">{{ t('library_health_desc', days=library_health.failure_window_days) }}</p>
+      <ul class="library-health-list">
+        {% if library_health.failure.total %}
+        <li>
+          <span class="{% if library_health.failure.failed %}status-error{% else %}status-ok{% endif %}">
+            {{ t('library_health_sync_failures', failed=library_health.failure.failed, total=library_health.failure.total) }}
+          </span>
+        </li>
+        {% endif %}
+        {% if library_health.orphaned_notes %}
+        <li><span class="status-error">{{ t('library_health_orphaned_notes', count=library_health.orphaned_notes|length) }}</span>
+          <ul>
+            {% for n in library_health.orphaned_notes %}
+            <li>{{ n.title_romaji or n.anime_id }}</li>
+            {% endfor %}
+          </ul>
+        </li>
+        {% endif %}
+        {% if library_health.stale_recommendations %}
+        <li><span class="status-error">{{ t('library_health_stale_recs', count=library_health.stale_recommendations|length) }}</span>
+          <ul>
+            {% for r in library_health.stale_recommendations %}
+            <li>{{ r.title_romaji or r.anime_id }}</li>
+            {% endfor %}
+          </ul>
+        </li>
+        {% endif %}
+        {% if library_health.drift_candidates %}
+        <li><span class="status-error">{{ t('library_health_drift', count=library_health.drift_candidates|length, days=library_health.drift_threshold_days) }}</span>
+          <ul>
+            {% for d in library_health.drift_candidates %}
+            <li>{{ d.title_romaji or d.anime_id }}</li>
+            {% endfor %}
+          </ul>
+        </li>
+        {% endif %}
+      </ul>
+      {% endif %}
+    </div>
+
     {# ── Data export ──────────────────────────────────────────────────── #}
     <div class="settings-section">
       <h2 class="settings-section-title">{{ t('sync_export_title') }}</h2>

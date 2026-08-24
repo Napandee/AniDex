@@ -52,6 +52,13 @@ it all into one self-hosted page.
   `app/main.py`, reusing `app/pat.py`'s `resolve_token` — the same primitive
   `mcp_server.py` uses) — no session-cookie fallback, since the caller is a headless
   poller. See README's "Home Assistant integration" section for the `sensor:` YAML.
+- Personal library health (issue #337): a "Library health" card on Settings > Sync,
+  the non-admin companion to #202's admin Data Quality tab. Reuses
+  `_data_quality_signals()` unchanged, just with its new optional `user_id` filter
+  set to the viewing user — same detection logic (orphaned `personal_notes`, stale
+  `recommendation_scores`, AniList drift, recent sync failure rate), scoped to that
+  one user's own rows instead of every user. `user_id=None` (the admin page's call)
+  is unaffected.
 
 **Out of scope — do not build these:**
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to

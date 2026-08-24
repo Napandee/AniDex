@@ -215,6 +215,14 @@
   "sync_history_col_entries": "Entries touched",
   "sync_history_col_error": "Error",
 
+  "library_health_title": "Library health",
+  "library_health_all_clear": "No issues found in your library.",
+  "library_health_desc": "Signals from your own sync history and data over the last {days} days — the same checks admins can see across every user, scoped to just your account.",
+  "library_health_sync_failures": "{failed} of {total} recent sync runs failed",
+  "library_health_orphaned_notes": "{count} note(s) attached to an anime no longer in your library",
+  "library_health_stale_recs": "{count} recommendation(s) still listed for anime you've already added",
+  "library_health_drift": "{count} entry/entries not updated on AniList in over {days} days",
+
   "sync_export_title": "Data export",
   "sync_export_desc": "Download your full library as JSON — includes AniList data, personal notes, tags, and scores.",
   "sync_export_btn": "Download library.json",

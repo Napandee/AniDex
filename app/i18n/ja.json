@@ -215,6 +215,14 @@
   "sync_history_col_entries": "更新件数",
   "sync_history_col_error": "エラー",
 
+  "library_health_title": "ライブラリの健全性",
+  "library_health_all_clear": "ライブラリに問題は見つかりませんでした。",
+  "library_health_desc": "過去{days}日間のあなた自身の同期履歴とデータから得られたシグナルです — 管理者が全ユーザーに対して確認できるのと同じチェックを、あなた自身のアカウントに限定して表示しています。",
+  "library_health_sync_failures": "直近の同期実行{total}回中{failed}回が失敗しました",
+  "library_health_orphaned_notes": "ライブラリに存在しないアニメに紐づいたメモが{count}件あります",
+  "library_health_stale_recs": "すでに追加済みのアニメのおすすめが{count}件まだ表示されています",
+  "library_health_drift": "{days}日以上AniList側で更新されていないエントリが{count}件あります",
+
   "sync_export_title": "データエクスポート",
   "sync_export_desc": "ライブラリ全体をJSONとしてダウンロードします — AniListデータ、個人的なメモ、タグ、スコアを含みます。",
   "sync_export_btn": "library.jsonをダウンロード",

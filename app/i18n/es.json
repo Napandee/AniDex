@@ -215,6 +215,14 @@
   "sync_history_col_entries": "Entradas afectadas",
   "sync_history_col_error": "Error",
 
+  "library_health_title": "Salud de la biblioteca",
+  "library_health_all_clear": "No se encontraron problemas en tu biblioteca.",
+  "library_health_desc": "Señales de tu propio historial de sincronización y datos de los últimos {days} días — las mismas comprobaciones que los administradores pueden ver de todos los usuarios, limitadas a tu propia cuenta.",
+  "library_health_sync_failures": "{failed} de {total} ejecuciones de sincronización recientes fallaron",
+  "library_health_orphaned_notes": "{count} nota(s) asociada(s) a un anime que ya no está en tu biblioteca",
+  "library_health_stale_recs": "{count} recomendación(es) que aún aparece(n) para anime que ya añadiste",
+  "library_health_drift": "{count} entrada(s) sin actualizar en AniList desde hace más de {days} días",
+
   "sync_export_title": "Exportar datos",
   "sync_export_desc": "Descarga tu biblioteca completa como JSON — incluye datos de AniList, notas personales, etiquetas y puntuaciones.",
   "sync_export_btn": "Descargar library.json",
