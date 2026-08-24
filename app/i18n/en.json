@@ -829,7 +829,7 @@
   "streaming_calendar_legend_owned": "Service you already own",
   "tab_api": "API Access",
   "pat_title": "Personal access tokens",
-  "pat_desc": "Issue a token to let an external MCP client (like Claude Code) read — and, for read+write tokens, make changes to — your own AniDex library, notes, stats, and recommendations. Every token is scoped to your account only.",
+  "pat_desc": "Issue a token to let an external MCP client (like Claude Code) read — and, for read+write tokens, make changes to — your own AniDex library, notes, stats, and recommendations. Read-scope tokens also work for polling /api/ha/status from Home Assistant. Every token is scoped to your account only.",
   "pat_name_placeholder": "Token name (e.g. Claude Code)",
   "pat_scope_label": "Scope",
   "pat_scope_read": "Read only",
