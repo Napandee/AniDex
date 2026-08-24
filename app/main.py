@@ -3691,6 +3691,83 @@ _RELATION_ORDER = ["PREQUEL", "SEQUEL", "PARENT", "SIDE_STORY", "SPIN_OFF",
                    "ALTERNATIVE", "COMPILATION", "CONTAINS", "SUMMARY", "OTHER"]
 
 
+# Cap on "on this day" cards rendered before the rest are silently dropped
+# (issue #338). Same reasoning as MONTH_CHIP_CAP below: a personal library
+# realistically has at most a handful of watch-start/finish dates landing on
+# the same calendar month/day across different years, so this rarely engages
+# — no overflow indicator needed the way the month grid's chip cap has one,
+# since this is a small nostalgia aside, not a primary data view.
+ON_THIS_DAY_CAP = 5
+
+
+def _on_this_day_anniversaries(user_id: int, today_local: date) -> list[dict]:
+    """Issue #338 — watch-start/finish anniversaries landing on today's calendar
+    month/day, computed purely from library_entries.start_date/finish_date
+    (already populated, real dates backfilled from CrunchyExporter history — see
+    schema.sql). No new stored state, matching #164's own "compute on the fly"
+    conclusion for the sibling pace-stat feature.
+
+    Exact calendar-day match only (month+day, any prior year) — not a "this
+    week" window. #338's scope left this an open decision; exact-day keeps the
+    "on this day" framing literal and needs no window-boundary logic. A
+    real-world consequence of matching on month+day directly: a Feb 29
+    start/finish date only ever re-matches on an actual leap year, same as any
+    real Feb 29 anniversary would — not a bug, just what the calendar does.
+
+    An anime whose start_date and finish_date are literally the same day (a
+    movie or an OVA watched start-to-finish in one sitting) gets a single
+    combined 'started_and_finished' event rather than two near-duplicate
+    entries; every other case is a plain 'started' or 'finished' event, and an
+    entry can contribute both (started on this day one year, finished on this
+    day the same-numbered-day a different year) as two separate events.
+
+    years_ago is only ever a positive integer — a date matching today's
+    month/day in the *current* year (years_ago == 0) is just "today", not an
+    anniversary of anything, so it's filtered out here rather than rendered
+    as "0 years ago"."""
+    rows = db.fetchall(
+        """
+        SELECT a.id, a.title_english, a.title_romaji, le.start_date, le.finish_date
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s
+          AND (
+            (le.start_date IS NOT NULL
+             AND EXTRACT(MONTH FROM le.start_date) = %s AND EXTRACT(DAY FROM le.start_date) = %s)
+            OR
+            (le.finish_date IS NOT NULL
+             AND EXTRACT(MONTH FROM le.finish_date) = %s AND EXTRACT(DAY FROM le.finish_date) = %s)
+          )
+        """,
+        (user_id, today_local.month, today_local.day, today_local.month, today_local.day),
+    )
+
+    def _matches_today(d) -> bool:
+        return bool(d) and d.month == today_local.month and d.day == today_local.day
+
+    events = []
+    for row in rows:
+        title = row["title_english"] or row["title_romaji"]
+        started = _matches_today(row["start_date"])
+        finished = _matches_today(row["finish_date"])
+        if started and finished and row["start_date"] == row["finish_date"]:
+            years_ago = today_local.year - row["start_date"].year
+            if years_ago >= 1:
+                events.append({"anime_id": row["id"], "title": title, "kind": "started_and_finished", "years_ago": years_ago})
+            continue
+        if started:
+            years_ago = today_local.year - row["start_date"].year
+            if years_ago >= 1:
+                events.append({"anime_id": row["id"], "title": title, "kind": "started", "years_ago": years_ago})
+        if finished:
+            years_ago = today_local.year - row["finish_date"].year
+            if years_ago >= 1:
+                events.append({"anime_id": row["id"], "title": title, "kind": "finished", "years_ago": years_ago})
+
+    events.sort(key=lambda e: e["years_ago"], reverse=True)
+    return events[:ON_THIS_DAY_CAP]
+
+
 @app.get("/upcoming", response_class=HTMLResponse)
 def upcoming(
     request: Request,
@@ -3822,6 +3899,20 @@ def upcoming(
     # how airing_schedule_cache itself is synced/cached, and no change to `entries` /
     # the List view that consumes it.
     today_local = now.astimezone(tz).date()
+
+    # "On this day" anniversaries (issue #338) — only computed on the actual
+    # default/today view, never while browsing a different week/month or a
+    # date-filtered day list. "On this day" is inherently about *today*; showing
+    # it while week_offset/month_offset have moved the rest of the page
+    # somewhere else, or while date_filter has the list narrowed to one other
+    # day, would be showing an anniversary for a day the user isn't even
+    # looking at anymore.
+    on_this_day = (
+        _on_this_day_anniversaries(user["id"], today_local)
+        if week_offset == 0 and month_offset == 0 and date_filter is None
+        else []
+    )
+
     monday_this_week = today_local - timedelta(days=today_local.weekday())
     week_start = monday_this_week + timedelta(weeks=week_offset)
     week_end = week_start + timedelta(days=7)  # exclusive — next Monday
@@ -3916,6 +4007,7 @@ def upcoming(
             "month_dow_labels": month_dow_labels,
             "date_filter": date_filter,
             "day_entries": date_filter_entries,
+            "on_this_day": on_this_day,
         },
     )
 

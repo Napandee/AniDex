@@ -282,6 +282,11 @@
   "title_upcoming": "Upcoming — Anime Tracker",
   "upcoming_page_title": "Upcoming Episodes",
   "upcoming_page_sub": "New episodes for your watching & planning list.",
+
+  "on_this_day_title": "On this day",
+  "on_this_day_started": "you started watching this {years} year(s) ago today",
+  "on_this_day_finished": "you finished watching this {years} year(s) ago today",
+  "on_this_day_started_and_finished": "you started and finished watching this {years} year(s) ago today",
   "upcoming_episode_label": "Episode {num}",
   "upcoming_episode_of": "of {total}",
   "upcoming_progress": "You're at episode {num}",

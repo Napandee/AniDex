@@ -36,6 +36,27 @@
   <p class="page-sub">{{ t('upcoming_page_sub') }}</p>
 </div>
 
+{# ── "On this day" (issue #338) — only ever passed non-empty on the default
+   view (see the route's week_offset/month_offset/date_filter guard), so no
+   extra check is needed here beyond "is there anything to show". #}
+{% if on_this_day %}
+<div class="onthisday-card">
+  <h2 class="onthisday-title">{{ t('on_this_day_title') }}</h2>
+  <ul class="onthisday-list">
+    {% for e in on_this_day %}
+    <li>
+      <a href="/anime/{{ e.anime_id }}/notes">{{ e.title }}</a>
+      —
+      {% if e.kind == 'started_and_finished' %}{{ t('on_this_day_started_and_finished', years=e.years_ago) }}
+      {% elif e.kind == 'started' %}{{ t('on_this_day_started', years=e.years_ago) }}
+      {% else %}{{ t('on_this_day_finished', years=e.years_ago) }}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if date_filter %}
   <div class="upcoming-day-header">
     <a href="/upcoming?month_offset={{ month_offset }}" class="filter-btn upcoming-grid-nav-btn">&larr; {{ t('upcoming_day_back_btn') }}</a>

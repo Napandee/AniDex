@@ -282,6 +282,11 @@
   "title_upcoming": "आगामी — Anime Tracker",
   "upcoming_page_title": "आगामी एपिसोड",
   "upcoming_page_sub": "आपकी \"देख रहे हैं\" और \"योजना\" सूची के नए एपिसोड।",
+
+  "on_this_day_title": "आज के दिन",
+  "on_this_day_started": "आपने इसे {years} साल पहले आज ही के दिन देखना शुरू किया था",
+  "on_this_day_finished": "आपने इसे {years} साल पहले आज ही के दिन देखना पूरा किया था",
+  "on_this_day_started_and_finished": "आपने इसे {years} साल पहले आज ही के दिन देखना शुरू और पूरा किया था",
   "upcoming_episode_label": "एपिसोड {num}",
   "upcoming_episode_of": "में से {total}",
   "upcoming_progress": "आप एपिसोड {num} पर हैं",
