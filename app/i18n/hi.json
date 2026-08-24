@@ -215,6 +215,14 @@
   "sync_history_col_entries": "प्रभावित प्रविष्टियाँ",
   "sync_history_col_error": "त्रुटि",
 
+  "library_health_title": "लाइब्रेरी स्वास्थ्य",
+  "library_health_all_clear": "आपकी लाइब्रेरी में कोई समस्या नहीं मिली।",
+  "library_health_desc": "पिछले {days} दिनों में आपके अपने सिंक इतिहास और डेटा से मिले संकेत — वही जांचें जो एडमिन हर उपयोगकर्ता में देख सकते हैं, बस आपके अपने खाते तक सीमित।",
+  "library_health_sync_failures": "हाल की {total} सिंक रन में से {failed} विफल रहीं",
+  "library_health_orphaned_notes": "{count} नोट(स) ऐसे एनीमे से जुड़े हैं जो अब आपकी लाइब्रेरी में नहीं है",
+  "library_health_stale_recs": "{count} सिफारिश(ें) अब भी उस एनीमे के लिए दिख रही हैं जिसे आप पहले ही जोड़ चुके हैं",
+  "library_health_drift": "{count} एंट्री AniList पर {days} दिनों से अधिक समय से अपडेट नहीं हुई",
+
   "sync_export_title": "डेटा निर्यात",
   "sync_export_desc": "अपनी पूरी लाइब्रेरी JSON के रूप में डाउनलोड करें — इसमें AniList डेटा, व्यक्तिगत नोट्स, टैग और स्कोर शामिल हैं।",
   "sync_export_btn": "library.json डाउनलोड करें",

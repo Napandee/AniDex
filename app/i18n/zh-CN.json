@@ -215,6 +215,14 @@
   "sync_history_col_entries": "受影响条目数",
   "sync_history_col_error": "错误",
 
+  "library_health_title": "库健康状况",
+  "library_health_all_clear": "你的库中未发现问题。",
+  "library_health_desc": "来自你自己过去 {days} 天同步历史和数据的信号 —— 与管理员可在所有用户中看到的检查相同，仅限于你自己的账户。",
+  "library_health_sync_failures": "最近 {total} 次同步运行中有 {failed} 次失败",
+  "library_health_orphaned_notes": "有 {count} 条笔记关联的动画已不在你的库中",
+  "library_health_stale_recs": "仍有 {count} 条推荐显示的是你已添加的动画",
+  "library_health_drift": "有 {count} 条记录超过 {days} 天未在 AniList 上更新",
+
   "sync_export_title": "数据导出",
   "sync_export_desc": "以 JSON 格式下载你的完整库——包含 AniList 数据、个人笔记、标签和评分。",
   "sync_export_btn": "下载 library.json",

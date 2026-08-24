@@ -2464,12 +2464,23 @@ _SYNC_PROVIDERS = ("crunchyroll", "netflix", "anilist_postgres")
 DATA_QUALITY_FAILURE_WINDOW_DAYS = 30
 
 
-def _data_quality_signals() -> dict:
+def _data_quality_signals(user_id: int | None = None) -> dict:
     """Read-only aggregation for issue #202's admin Data Quality tab. Every section
     here is computed from tables/columns that already exist — sync_log,
     library_entries, recommendation_scores, personal_notes — nothing here is new
     tracking infrastructure, and nothing here writes anything back (display only,
     same contract as _instance_health() above).
+
+    Issue #337: user_id restricts every section to that one user's own rows, for
+    the non-admin personal Settings view (see personal_data_quality below); the
+    default None keeps every query exactly as issue #202 originally wrote it
+    (instance-wide, every user), so the admin page's behavior is unchanged. The
+    returned dict's shape is identical either way — last_sync_by_provider/
+    failure_history stay keyed by user_id even when scoped to one user, since
+    that's just however many keys naturally survive the added filter; callers
+    that only care about one user (personal_data_quality) index in with
+    signals["last_sync_by_provider"].get(user_id, {}) rather than this function
+    changing shape depending on its argument.
 
     Four sections, matching #202's acceptance criteria:
 
@@ -2513,12 +2524,14 @@ def _data_quality_signals() -> dict:
     """
     # ── 1. Last successful sync per provider ────────────────────────────────────
     sync_step_rows = db.fetchall(
-        """
+        f"""
         SELECT user_id, run_at, steps
         FROM sync_log
         WHERE type IN ('full_sync', 'force_full_resync') AND steps IS NOT NULL
+        {"AND user_id = %s" if user_id is not None else ""}
         ORDER BY user_id, run_at DESC
-        """
+        """,
+        (user_id,) if user_id is not None else None,
     )
     last_sync_by_provider: dict[int, dict[str, dict]] = {}
     for row in sync_step_rows:
@@ -2539,13 +2552,14 @@ def _data_quality_signals() -> dict:
     # ── 2. Recent sync failure rate/history ─────────────────────────────────────
     window_start = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_FAILURE_WINDOW_DAYS)
     recent_runs = db.fetchall(
-        """
+        f"""
         SELECT user_id, run_at, status, error_msg, type
         FROM sync_log
         WHERE type IN ('full_sync', 'force_full_resync') AND run_at >= %s
+        {"AND user_id = %s" if user_id is not None else ""}
         ORDER BY user_id, run_at DESC
         """,
-        (window_start,),
+        (window_start, user_id) if user_id is not None else (window_start,),
     )
     failure_history: dict[int, dict] = {}
     for row in recent_runs:
@@ -2560,7 +2574,7 @@ def _data_quality_signals() -> dict:
 
     # ── 3. Orphaned personal_notes ───────────────────────────────────────────────
     orphaned_personal_notes = db.fetchall(
-        """
+        f"""
         SELECT pn.id, pn.user_id, u.email AS user_email, pn.anime_id,
                a.title_romaji, pn.updated_at
         FROM personal_notes pn
@@ -2568,13 +2582,15 @@ def _data_quality_signals() -> dict:
         LEFT JOIN users u ON u.id = pn.user_id
         LEFT JOIN anime a ON a.id = pn.anime_id
         WHERE le.id IS NULL
+        {"AND pn.user_id = %s" if user_id is not None else ""}
         ORDER BY pn.updated_at DESC
-        """
+        """,
+        (user_id,) if user_id is not None else None,
     )
 
     # ── 4. Stale recommendation_scores (see docstring for why this is inverted) ─
     stale_recommendations = db.fetchall(
-        """
+        f"""
         SELECT rs.id, rs.user_id, u.email AS user_email, rs.anime_id,
                a.title_romaji, rs.computed_at, le.status AS library_status
         FROM recommendation_scores rs
@@ -2582,14 +2598,16 @@ def _data_quality_signals() -> dict:
         LEFT JOIN users u ON u.id = rs.user_id
         LEFT JOIN anime a ON a.id = rs.anime_id
         WHERE rs.dismissed = false
+        {"AND rs.user_id = %s" if user_id is not None else ""}
         ORDER BY rs.computed_at DESC
-        """
+        """,
+        (user_id,) if user_id is not None else None,
     )
 
     # ── Drift candidates ─────────────────────────────────────────────────────────
     drift_threshold = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_DRIFT_DAYS)
     drift_candidates = db.fetchall(
-        """
+        f"""
         SELECT le.id, le.user_id, u.email AS user_email, le.anime_id,
                a.title_romaji, le.status, le.anilist_updated_at, le.synced_at
         FROM library_entries le
@@ -2598,9 +2616,11 @@ def _data_quality_signals() -> dict:
         WHERE le.status = ANY(%s)
           AND le.anilist_updated_at IS NOT NULL
           AND le.anilist_updated_at < %s
+          {"AND le.user_id = %s" if user_id is not None else ""}
         ORDER BY le.anilist_updated_at ASC
         """,
-        (list(_DRIFT_STATUSES), drift_threshold),
+        (list(_DRIFT_STATUSES), drift_threshold, user_id) if user_id is not None
+        else (list(_DRIFT_STATUSES), drift_threshold),
     )
 
     return {
@@ -5011,6 +5031,27 @@ def settings_page(
     # exactly what's deployed.
     build_version = _build_version()
 
+    # Issue #337 — personal-scope companion to #202's admin Data Quality tab.
+    # Same _data_quality_signals() computation, filtered to this user's own rows;
+    # last_sync_by_provider/failure_history stay keyed by user_id even when
+    # scoped (see that function's docstring), so unwrap this user's own entry.
+    dq = _data_quality_signals(user_id=user["id"])
+    dq_failure = dq["failure_history"].get(user["id"], {"total": 0, "failed": 0, "failures": []})
+    library_health = {
+        "failure": dq_failure,
+        "failure_window_days": dq["failure_window_days"],
+        "orphaned_notes": dq["orphaned_personal_notes"],
+        "stale_recommendations": dq["stale_recommendations"],
+        "drift_candidates": dq["drift_candidates"],
+        "drift_threshold_days": dq["drift_threshold_days"],
+        "is_healthy": (
+            not dq_failure.get("failed")
+            and not dq["orphaned_personal_notes"]
+            and not dq["stale_recommendations"]
+            and not dq["drift_candidates"]
+        ),
+    }
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -5023,6 +5064,7 @@ def settings_page(
             "last_synced": last_synced,
             "build_version": build_version,
             "build_commit_url": f"{GITHUB_REPO_URL}/commit/{build_version}" if build_version else None,
+            "library_health": library_health,
             "account": {
                 "has_password": bool(user["password_hash"]),
                 "google_linked": bool(user["google_id"]),

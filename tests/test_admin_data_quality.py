@@ -32,6 +32,9 @@ One scenario per acceptance-criteria signal from #202:
      an actively-progressing status is detected as a drift candidate; a similarly
      stale COMPLETED row is not (not an actively-progressing status); a WATCHING
      row updated within the threshold is not.
+  6. (Issue #337) Passing user_id restricts every section above to that one
+     user's own rows, with no cross-user leakage in either direction, and the
+     unscoped (user_id=None) admin path is unaffected.
 """
 
 import os
@@ -300,3 +303,47 @@ def test_drift_candidates_detected(pg_conn, data_quality):
     assert (USER_B, 301) not in drifted_ids
     assert (USER_B, 302) not in drifted_ids
     assert result["drift_threshold_days"] == 30
+
+
+# ---------------------------------------------------------------------------
+# 6. user_id scoping (issue #337) — the personal Settings "library health" card
+# reuses this exact function with user_id set, rather than duplicating any of
+# the queries above. Runs last in this module-scoped-pg_conn file so it can
+# lean on every prior test's already-seeded rows: USER_A owns an orphaned note
+# (anime 100) and a stale recommendation (anime 200); USER_B owns a drift
+# candidate (anime 300) and several sync_log rows. This asserts the *same*
+# real data comes back correctly restricted per-user, not synthetic rows.
+# ---------------------------------------------------------------------------
+
+def test_user_id_scoping_restricts_every_section_to_one_user(pg_conn, data_quality):
+    result_a = data_quality(user_id=USER_A)
+
+    # USER_A's own orphaned note/stale recommendation are still visible...
+    assert (USER_A, 100) in {(r["user_id"], r["anime_id"]) for r in result_a["orphaned_personal_notes"]}
+    assert (USER_A, 200) in {(r["user_id"], r["anime_id"]) for r in result_a["stale_recommendations"]}
+    # ...but nothing belonging to USER_B leaks into a USER_A-scoped call, for
+    # any section, even the ones USER_A has zero rows in (drift_candidates).
+    for section in ("orphaned_personal_notes", "stale_recommendations", "drift_candidates"):
+        assert all(r["user_id"] == USER_A for r in result_a[section]), section
+    assert USER_B not in result_a["last_sync_by_provider"]
+    assert USER_B not in result_a["failure_history"]
+
+    # And the reverse: a USER_B-scoped call sees USER_B's own drift candidate,
+    # but never USER_A's orphaned note or stale recommendation.
+    result_b = data_quality(user_id=USER_B)
+    assert (USER_B, 300) in {(r["user_id"], r["anime_id"]) for r in result_b["drift_candidates"]}
+    for section in ("orphaned_personal_notes", "stale_recommendations", "drift_candidates"):
+        assert all(r["user_id"] == USER_B for r in result_b[section]), section
+    assert USER_A not in result_b["last_sync_by_provider"]
+    assert USER_A not in result_b["failure_history"]
+
+    # The unscoped call (admin path, user_id=None — issue #202's original
+    # behavior) is unchanged by #337's addition: still sees both users. Uses
+    # failure_history rather than last_sync_by_provider here since only USER_A
+    # ever got a sync_log row with a `steps` breakdown (test 1, above) — USER_B's
+    # rows (test 2) are plain ok/error runs with no steps, so USER_B correctly
+    # never appears in last_sync_by_provider regardless of scoping; that's
+    # pre-existing #202 behavior, not something #337 changes.
+    result_all = data_quality()
+    assert USER_A in result_all["failure_history"]
+    assert USER_B in result_all["failure_history"]
