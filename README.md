@@ -6,6 +6,11 @@ AniList handles the catalog. This app adds the personal layer AniList's own UI d
 give a good home to: drop reasons, custom tags, freeform notes, a real "watch next" queue,
 and a recommendation engine scored against your own taste profile.
 
+> **Using an already-running instance?** This README covers installing and deploying
+> AniDex. For how to actually use it once it's up — collections, recommendations,
+> streaming coverage, the MCP server for AI clients, and everything else — see the
+> [user guide](docs/user-guide/index.md).
+
 ## Features
 
 - **Library view** — your full AniList list with star ratings, episode progress, streaming
@@ -246,6 +251,9 @@ first launch).
 Once set, it runs automatically as part of the daily sync — or trigger it anytime via
 the "Sync Now" button on the Settings page (or `POST /api/sync`).
 
+See the [sync providers guide](docs/user-guide/sync-providers.md) for what happens to
+a title that isn't already in your library yet.
+
 ## Netflix sync (optional)
 
 If you watch on Netflix, the app can pull your viewing activity and push progress
@@ -275,7 +283,9 @@ Set both in your `.env` (or in Settings after first launch). `scripts/dev/setup-
 is an interactive helper for (re-)populating these when developing locally.
 
 Once set, it runs automatically as part of the daily sync — or trigger it anytime via
-the "Sync Now" button on the Settings page (or `POST /api/sync`).
+the "Sync Now" button on the Settings page (or `POST /api/sync`). A one-time CSV import
+is also available as a bootstrap alternative for accounts with a lot of history — see
+the [sync providers guide](docs/user-guide/sync-providers.md).
 
 ## Notifications (optional)
 
@@ -297,6 +307,8 @@ they're Settings-only, since they're free-text URLs rather than a fixed provider
 **ntfy** — set a topic (and optionally a non-default server URL and auth token if
 self-hosting ntfy) in Settings. Uses [ntfy.sh](https://ntfy.sh) by default; no signup
 needed, just pick an unguessable topic name and subscribe to it in the ntfy app.
+
+See the [notifications guide](docs/user-guide/notifications.md) for more.
 
 ## Home Assistant integration (optional)
 
@@ -330,6 +342,21 @@ rest:
 Store the raw `adx_pat_...` token in `secrets.yaml` as `anidex_pat: "Bearer adx_pat_..."`
 — the `Authorization` header needs the `Bearer ` prefix included in the secret value
 itself, since `!secret` substitutes the whole header value verbatim.
+
+See the [Home Assistant guide](docs/user-guide/home-assistant.md) for the full setup
+walkthrough, and [the MCP server doc](docs/mcp.md) — personal access tokens are shared
+between this integration and MCP clients.
+
+## MCP server (optional)
+
+AniDex exposes an [MCP](https://modelcontextprotocol.io) server at `/mcp`, running
+inside the same app process, so an AI client (Claude Code, or any other MCP-compatible
+client) can read — and, with a `read_write`-scoped token, write — your own library,
+notes, stats, and recommendation data. Auth uses the same personal access tokens as the
+Home Assistant integration above (**Settings → Personal access tokens**).
+
+See [docs/mcp.md](docs/mcp.md) for the full tool list, scopes, and example client
+config.
 
 ## CI/CD with GitHub Actions (optional)
 
