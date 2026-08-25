@@ -151,6 +151,11 @@ def test_sensitive_key_stored_as_ciphertext_in_raw_db(pg_conn):
         ("telegram_bot_token", "123456789:AAFakeTelegramBotTokenValueHere"),
         ("discord_webhook_url", "https://discord.com/api/webhooks/123456789/fake-webhook-token"),
         ("ntfy_auth_token", "tk_fakeNtfyAuthTokenValue1234567890"),
+        # Issue #335 — these were added to ENCRYPTED_KEYS by #153 itself (the
+        # code path was never actually missing), but never got a round-trip
+        # test of their own until now.
+        ("plex_account_token", "fake_plex_account_token_1234567890abcdef"),
+        ("plex_server_token", "fake_plex_server_token_1234567890abcdef"),
     ],
 )
 def test_every_encrypted_key_round_trips(pg_conn, key, value):
@@ -241,6 +246,11 @@ def test_migration_encrypts_existing_plaintext_and_is_idempotent(pg_conn):
             "INSERT INTO settings (user_id, key, value) VALUES (%s, 'cr_etp_rt', %s)",
             (uid, "plain_etp_rt_cookie_value"),
         )
+        # Issue #335 — plex_account_token/plex_server_token, same treatment.
+        cur.execute(
+            "INSERT INTO settings (user_id, key, value) VALUES (%s, 'plex_account_token', %s)",
+            (uid, "plain_plex_account_token_value"),
+        )
         # A non-sensitive key must never be touched by the migration.
         cur.execute(
             "INSERT INTO settings (user_id, key, value) VALUES (%s, 'timezone', %s)",
@@ -260,11 +270,14 @@ def test_migration_encrypts_existing_plaintext_and_is_idempotent(pg_conn):
 
     assert first_settings["anilist_token"]["migrated"] == 1
     assert first_settings["cr_etp_rt"]["migrated"] == 1
+    assert first_settings["plex_account_token"]["migrated"] == 1
     assert first_totp["migrated"] == 1
 
     with pg_conn.cursor() as cur:
         cur.execute("SELECT value FROM settings WHERE user_id = %s AND key = 'anilist_token'", (uid,))
         al_ciphertext_1 = cur.fetchone()[0]
+        cur.execute("SELECT value FROM settings WHERE user_id = %s AND key = 'plex_account_token'", (uid,))
+        plex_ciphertext_1 = cur.fetchone()[0]
         cur.execute("SELECT value FROM settings WHERE user_id = %s AND key = 'timezone'", (uid,))
         tz_value = cur.fetchone()[0]
         cur.execute("SELECT totp_secret FROM users WHERE id = %s", (uid,))
@@ -272,6 +285,8 @@ def test_migration_encrypts_existing_plaintext_and_is_idempotent(pg_conn):
 
     assert config.is_encrypted(al_ciphertext_1)
     assert config.decrypt_secret(al_ciphertext_1) == "plain_al_token_value"
+    assert config.is_encrypted(plex_ciphertext_1)
+    assert config.decrypt_secret(plex_ciphertext_1) == "plain_plex_account_token_value"
     assert tz_value == "Europe/London"  # untouched, still plaintext
     assert config.is_encrypted(totp_ciphertext_1)
 
@@ -294,6 +309,8 @@ def test_migration_encrypts_existing_plaintext_and_is_idempotent(pg_conn):
     assert second_settings["anilist_token"]["already_encrypted"] >= 1
     assert second_settings["cr_etp_rt"]["migrated"] == 0
     assert second_settings["cr_etp_rt"]["already_encrypted"] >= 1
+    assert second_settings["plex_account_token"]["migrated"] == 0
+    assert second_settings["plex_account_token"]["already_encrypted"] >= 1
     assert second_totp["migrated"] == 0
     assert second_totp["already_encrypted"] >= 1
 
