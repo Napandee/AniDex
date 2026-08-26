@@ -269,7 +269,7 @@ CREATE TABLE status_sync_outbox (
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     anime_id     INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
     source       TEXT NOT NULL DEFAULT 'ui_bulk_edit'
-                     CHECK (source IN ('ui_bulk_edit', 'crunchyroll', 'netflix', 'prime_video')),
+                     CHECK (source IN ('ui_bulk_edit', 'crunchyroll', 'netflix', 'plex', 'primevideo')),
     status       TEXT,
     progress     INTEGER,
     repeat_count INTEGER,

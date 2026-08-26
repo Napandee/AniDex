@@ -1,3 +1,10 @@
+import os
+from pathlib import Path
+
+import psycopg2
+import psycopg2.extras
+import pytest
+
 import anilist_sync_common as common
 from anilist_sync_common import is_plausible_match, seed_search_cache, search_cache_snapshot
 
@@ -402,3 +409,99 @@ def test_find_anilist_id_caches_season_suffix_search_result(monkeypatch):
     assert first == 42
     assert second == 42
     assert calls == ["Saga of Tanya the Evil 2nd Season"]  # only searched once — cached after
+
+
+# ── enqueue_outbox_update against a real Postgres — status_sync_outbox's source
+# CHECK constraint (issue #354/#252 follow-up) ───────────────────────────────
+# Every other enqueue_outbox_update() test above uses _FakeOutboxConn, a pure
+# in-memory stand-in that never touches a real constraint — which is exactly how
+# a real bug shipped and reached production undetected: migrations/010's original
+# CHECK (source IN ('ui_bulk_edit', 'crunchyroll', 'netflix', 'prime_video')) used
+# the wrong spelling for Prime Video (underscore) and omitted 'plex' entirely,
+# while every actual call site (sync_primevideo.py/sync_plex.py) uses the
+# no-underscore spelling. The very first live Prime Video sync to create a
+# genuinely new AniList entry hit this constraint in production. This section
+# exercises the constraint for real, against a real Postgres, for every source
+# string an actual call site uses — see migrations/032_fix_outbox_source_check.sql.
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
+SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
+
+
+def _try_connect():
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        return conn
+    except Exception:
+        return None
+
+
+@pytest.fixture(scope="module")
+def pg_conn():
+    conn = _try_connect()
+    if conn is None:
+        pytest.skip(
+            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
+            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
+        )
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+        cur.execute(SCHEMA_SQL)
+    yield conn
+    conn.close()
+
+
+_next_outbox_user_id = [9000]
+
+
+def _make_outbox_user(pg_conn):
+    _next_outbox_user_id[0] += 1
+    uid = _next_outbox_user_id[0]
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO users (id, auth_provider, auth_provider_id, email, password_hash) "
+            "VALUES (%s, 'local', %s, %s, 'x')",
+            (uid, f"outbox-test-{uid}@example.com", f"outbox-test-{uid}@example.com"),
+        )
+        cur.execute(
+            "INSERT INTO anime (id, title_romaji) VALUES (%s, %s)",
+            (uid, f"Outbox Test Anime {uid}"),
+        )
+    return uid
+
+
+@pytest.mark.parametrize("source", ["ui_bulk_edit", "crunchyroll", "netflix", "plex", "primevideo"])
+def test_enqueue_outbox_update_accepts_every_real_call_site_source(pg_conn, monkeypatch, source):
+    uid = _make_outbox_user(pg_conn)
+    monkeypatch.setattr(common, "USER_ID", uid)
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        common.enqueue_outbox_update(conn, uid, source, status="WATCHING")
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT source FROM status_sync_outbox WHERE user_id = %s AND anime_id = %s",
+            (uid, uid),
+        )
+        row = cur.fetchone()
+    assert row["source"] == source
+
+
+def test_enqueue_outbox_update_rejects_unknown_source(pg_conn, monkeypatch):
+    uid = _make_outbox_user(pg_conn)
+    monkeypatch.setattr(common, "USER_ID", uid)
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with pytest.raises(psycopg2.errors.CheckViolation):
+            common.enqueue_outbox_update(conn, uid, "not_a_real_provider", status="WATCHING")
+    finally:
+        conn.rollback()
+        conn.close()
