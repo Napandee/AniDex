@@ -1094,6 +1094,36 @@ AUTH_PROVIDERS = {"google", "discord"}
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_LOCKOUT_MINUTES = 15
 
+# Aggregate per-IP throttle on /auth/login + /auth/login/2fa (issue #359) — separate
+# from _LOGIN_MAX_ATTEMPTS above, which only tracks failures against ONE account.
+# Without this, an attacker with a list of valid invited emails could fire unlimited
+# attempts spread across many different accounts from a single IP with no aggregate
+# limit at all. Threshold is deliberately much higher than the per-account budget —
+# this exists to catch that spread-across-many-accounts pattern, not to double-punish
+# a single legitimate user's typos, and needs enough headroom that a household/office
+# NAT with several real users logging in around the same time doesn't get caught.
+_IP_LOGIN_MAX_ATTEMPTS = 30
+_IP_LOGIN_WINDOW_MINUTES = 15
+# In-memory only, keyed by best-effort client IP (see _client_ip below) — matches this
+# app's single-uvicorn-process deployment (no --workers flag, see Dockerfile), same
+# tradeoff already accepted for _totp_setup_state further down. A spoofed
+# X-Forwarded-For here only lets an attacker dodge their own throttle; it can't be
+# used to bypass anything else, which is a materially different risk than the "never
+# used for access-control" caveat on _client_ip's own docstring (written for a
+# cosmetic display use, not this).
+_ip_login_attempts: dict[str, list[float]] = {}
+
+
+def _ip_login_rate_limited(ip: str | None) -> bool:
+    if ip is None:
+        return False
+    now = time.monotonic()
+    window_start = now - (_IP_LOGIN_WINDOW_MINUTES * 60)
+    attempts = [t for t in _ip_login_attempts.get(ip, []) if t > window_start]
+    attempts.append(now)
+    _ip_login_attempts[ip] = attempts
+    return len(attempts) > _IP_LOGIN_MAX_ATTEMPTS
+
 # ── TOTP two-factor authentication (issue #83) ──────────────────────────────────
 # Local-account-only, deliberately unrelated to the OAuth login/callback routes above
 # (out of scope per the issue — Google/Discord already get the provider's own 2FA).
@@ -1872,6 +1902,17 @@ def auth_login_page(request: Request, error: str = ""):
 
 @app.post("/auth/login")
 def auth_login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
+    if _ip_login_rate_limited(_client_ip(request)):
+        return templates.TemplateResponse(
+            request,
+            "auth_login.html",
+            {
+                "error": "Too many login attempts from this network. Try again later.",
+                "oauth_google_configured": oauth_configured("google"),
+                "oauth_discord_configured": oauth_configured("discord"),
+            },
+            status_code=429,
+        )
     email = email.strip().lower()
     # Match by email regardless of auth_provider — an OAuth-originated account can
     # have a local password set from Settings too (see #11), and auth_provider is
@@ -1956,6 +1997,13 @@ def auth_login_2fa_page(request: Request, error: str = ""):
 
 @app.post("/auth/login/2fa")
 def auth_login_2fa_submit(request: Request, code: str = Form(...)):
+    if _ip_login_rate_limited(_client_ip(request)):
+        return templates.TemplateResponse(
+            request,
+            "auth_login_2fa.html",
+            {"error": "Too many login attempts from this network. Try again later."},
+            status_code=429,
+        )
     pending_id = request.session.get(_PENDING_2FA_SESSION_KEY)
     if not pending_id:
         return RedirectResponse(url="/auth/login", status_code=303)

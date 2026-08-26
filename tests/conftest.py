@@ -38,6 +38,25 @@ if "SETTINGS_ENCRYPTION_KEY" not in os.environ:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _reset_ip_login_rate_limit_state():
+    """app.main._ip_login_attempts (issue #359's IP-aggregate login throttle) is
+    process-global, in-memory state — module caching means every test file's
+    `import app.main as m` returns the same object, so /auth/login attempts made by
+    unrelated tests earlier in the same pytest run would otherwise accumulate toward
+    the same per-IP budget (most tests share the TestClient's default IP, since only
+    tests written with the throttle specifically in mind pass X-Forwarded-For) and
+    start spuriously 429ing completely unrelated login-driven tests partway through
+    the suite. Reset it before every test rather than relying on each file's own
+    fixtures to remember to."""
+    m = sys.modules.get("app.main")
+    if m is not None:
+        m._ip_login_attempts.clear()
+    yield
+
 # ── CSRF-transparent TestClient (issue #312) ────────────────────────────────
 #
 # Issue #312 added a global CSRF-token requirement on every state-changing route
