@@ -577,6 +577,26 @@ CREATE TABLE plex_sync_state (
 );
 
 -- =========================================================================
+-- PRIME VIDEO SYNC STATE (issue #17) — tracks last-known Prime Video progress per
+-- user, per series. Owned by sync_primevideo.py — never written to by the web app.
+-- Same shape as cr_sync_state/plex_sync_state, not netflix_sync_state: Prime Video's
+-- watch-history API returns an exact "Episode N: <title>" string per watched episode
+-- (confirmed live, see notes/2026-08-14-netflix-prime-sync-research.md), so progress
+-- is tracked as an absolute last_seen_episode, not a delta count.
+-- =========================================================================
+
+CREATE TABLE primevideo_sync_state (
+    user_id                INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anilist_id              INTEGER NOT NULL,
+    series_title            TEXT,                            -- for human readability
+    last_seen_episode       INTEGER NOT NULL DEFAULT 0,
+    last_seen_watched_at    TIMESTAMPTZ,
+    rewatch_in_progress     BOOLEAN NOT NULL DEFAULT FALSE,
+    last_synced_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, anilist_id)
+);
+
+-- =========================================================================
 -- STREAMING COVERAGE (issue #182) — "services I own", scored against the library by
 -- episodes-remaining. See migrations/016_streaming_coverage.sql for the schema-choice
 -- rationale (free TEXT service name validated against app/main.py's STREAMING_SITES

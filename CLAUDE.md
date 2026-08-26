@@ -135,26 +135,33 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `USER_ID` env var, either by the manual "Sync Now" trigger (that user only) or the
   built-in scheduler's loop over every user with credentials configured (sequential, one
   user's failure caught and logged without blocking the rest — see `_scheduled_full_sync`
-  in `app/main.py`). Chains three steps: CR→AniList progress sync (`sync_crunchyroll.py`,
-  skipped if no CR credentials configured for that user) → Netflix→AniList progress sync
-  (`sync_netflix.py`, skipped if no Netflix credentials configured) → AniList→Postgres
-  sync (`sync_anilist.py`). Both `sync_crunchyroll.py` and `sync_netflix.py` fetch their
+  in `app/main.py`). Chains steps: AniList→Postgres sync (`sync_anilist.py`, runs first,
+  #99) → CR→AniList progress sync (`sync_crunchyroll.py`) → Netflix→AniList progress sync
+  (`sync_netflix.py`) → Plex→AniList progress sync (`sync_plex.py`) → Prime Video→AniList
+  progress sync (`sync_primevideo.py`, issue #17, endpoint confirmed live 2026-08-26 —
+  see `notes/2026-08-14-netflix-prime-sync-research.md`) — each of the four provider
+  steps independently skipped if that provider's credentials aren't configured for the
+  user. `sync_crunchyroll.py`/`sync_netflix.py`/`sync_primevideo.py` fetch their
   respective service's watch history directly (cookie-authenticated API clients, no
-  vendored third-party CLI, no intermediate history file) — newest-first, stopping at a
-  Postgres-backed per-user watermark (`cr_sync_state.last_seen_watched_at` /
-  `netflix_sync_state.last_seen_watched_at`) so a routine sync only walks genuinely new
-  activity. Upserts into `anime` / `library_entries` / `airing_schedule_cache` /
-  `cr_sync_state` / `netflix_sync_state`, all scoped to that user except
-  `anime`/`airing_schedule_cache` which stay global. Progress/status pushes back to
-  AniList are no longer synchronous `SaveMediaListEntry` calls made inline during the
-  sync — both scripts call `enqueue_outbox_update()` (`scripts/anilist_sync_common.py`)
-  to write a `status_sync_outbox` row instead, delivered by the app's single shared
-  outbox worker (`app/outbox.py`), unified with the UI's own bulk-edit outbox (#18) so
-  every AniList write source is decoupled and rate-limited together (#100). There is no
-  separate sync container. A fourth provider, Prime Video, is stubbed only
-  (`scripts/sync_primevideo.py` is a documented `NotImplementedError` placeholder, not
-  wired into `run_full_sync.py`) pending issue #17, gated on a manual capture of Amazon's
-  private API.
+  vendored third-party CLI, no intermediate history file); `sync_plex.py` uses a
+  server-scoped `X-Plex-Token` instead (OAuth PIN connect flow, `app/plex_auth.py`) —
+  all four walk newest-first, stopping at a Postgres-backed per-user watermark
+  (`cr_sync_state`/`netflix_sync_state`/`plex_sync_state`/`primevideo_sync_state`'s
+  `last_seen_watched_at`) so a routine sync only walks genuinely new activity.
+  Crunchyroll/Plex/Prime Video track progress as an absolute episode number
+  (`last_seen_episode`, parsed directly from each provider's own episode metadata —
+  Prime Video's watch-history response includes an exact `"Episode N: <title>"` string
+  per watched episode, confirmed live); Netflix has no absolute episode-ordinal field at
+  all, so `sync_netflix.py` alone falls back to a distinct-new-episode delta count (see
+  its own module docstring for why). Upserts into `anime` / `library_entries` /
+  `airing_schedule_cache` / the four provider `*_sync_state` tables, all scoped to that
+  user except `anime`/`airing_schedule_cache` which stay global. Progress/status pushes
+  back to AniList are no longer synchronous `SaveMediaListEntry` calls made inline during
+  the sync — every provider script calls `enqueue_outbox_update()`
+  (`scripts/anilist_sync_common.py`) to write a `status_sync_outbox` row instead,
+  delivered by the app's single shared outbox worker (`app/outbox.py`), unified with the
+  UI's own bulk-edit outbox (#18) so every AniList write source is decoupled and
+  rate-limited together (#100). There is no separate sync container.
   **Create-vs-skip contract for an unmatched title (issue #252):** when a provider sync
   resolves a title to a real AniList `media_id` but that anime has no existing
   `library_entries` row for the user, the decision depends on `full_pull` — whether
@@ -179,11 +186,11 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   `ensure_anime_stub()` for the local `anime` row a synthetic entry's foreign keys
   require (the global `anime` table only ever gets a row for media already on
   *someone's* list — a title nobody has tracked yet has no local row to reference until
-  this stub creates one). **Any future provider sync script — Prime Video (#17) or
-  Plex/Jellyfin (#150–153) — must implement this same full_pull-gated create-vs-skip
-  pattern from day one** (reuse `resolve_or_create_user_list_entry()` rather than
-  reintroducing an unconditional skip), not ship the original bug and need this same
-  fix retrofitted later.
+  this stub creates one). Plex (#153) and Prime Video (#17) both already implement this
+  pattern, reusing `resolve_or_create_user_list_entry()` directly rather than
+  reintroducing an unconditional skip. **Any future provider sync script — Jellyfin
+  (#150–153) — must implement this same full_pull-gated create-vs-skip pattern from day
+  one**, not ship the original bug and need this same fix retrofitted later.
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.

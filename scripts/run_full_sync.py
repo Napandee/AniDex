@@ -289,6 +289,28 @@ def _do_plex(plex_server_token: str, plex_server_base_url: str, credentials_env:
             "full_pull": result["full_pull"], "entries_fetched": result["entries_fetched"]}
 
 
+def _do_primevideo(primevideo_cookie_header: str, credentials_env: dict,
+                    force_full_resync: bool = False) -> dict:
+    if not primevideo_cookie_header:
+        log("Prime Video — no credentials configured, skipping")
+        return {"status": "skipped", **_EMPTY_STEP_RESULT}
+
+    log("Prime Video — syncing → AniList" + (" (forced full resync)" if force_full_resync else ""))
+    extra_env = {**credentials_env, "PRIMEVIDEO_COOKIE_HEADER": primevideo_cookie_header}
+    if force_full_resync:
+        extra_env["FORCE_FULL_RESYNC"] = "1"
+    result = run(
+        [sys.executable, str(SCRIPTS_DIR / "sync_primevideo.py")],
+        extra_env=extra_env,
+        timeout=PROVIDER_STEP_TIMEOUT,
+    )
+    if not result["ok"]:
+        return {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": "Prime Video → AniList sync failed"}
+
+    return {"status": "ok", "entries_updated": result["entries_updated"], "error_msg": None,
+            "full_pull": result["full_pull"], "entries_fetched": result["entries_fetched"]}
+
+
 def _do_anilist_postgres(credentials_env: dict) -> dict:
     log("AniList — syncing → Postgres")
     result = run(
@@ -334,6 +356,7 @@ def main() -> None:
     netflix_profile_guid   = settings.get("netflix_profile_guid")   or os.environ.get("NETFLIX_PROFILE_GUID", "")
     plex_server_token     = settings.get("plex_server_token")     or os.environ.get("PLEX_SERVER_TOKEN", "")
     plex_server_base_url  = settings.get("plex_server_base_url")  or os.environ.get("PLEX_SERVER_BASE_URL", "")
+    primevideo_cookie_header = settings.get("primevideo_cookie_header") or os.environ.get("PRIMEVIDEO_COOKIE_HEADER", "")
 
     if not anilist_token or not anilist_username:
         msg = "AniList credentials not configured. Set them in Settings."
@@ -359,6 +382,7 @@ def main() -> None:
     _run_step(log_id, steps, "crunchyroll", lambda: _do_crunchyroll(cr_etp_rt, credentials_env, force_full_resync))
     _run_step(log_id, steps, "netflix", lambda: _do_netflix(netflix_cookie_header, netflix_profile_guid, credentials_env, force_full_resync))
     _run_step(log_id, steps, "plex", lambda: _do_plex(plex_server_token, plex_server_base_url, credentials_env, force_full_resync))
+    _run_step(log_id, steps, "primevideo", lambda: _do_primevideo(primevideo_cookie_header, credentials_env, force_full_resync))
 
     overall_status = _compute_overall_status(steps)
     anilist_step = next(s for s in steps if s["service"] == "anilist_postgres")

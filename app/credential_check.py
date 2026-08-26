@@ -46,6 +46,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 from anilist_sync_common import gql  # noqa: E402
 from sync_crunchyroll import CrunchyrollHistory  # noqa: E402
 from sync_netflix import NetflixHistory  # noqa: E402
+from sync_primevideo import PrimeVideoHistory  # noqa: E402
 
 # Cheap enough to run on every "Test connection" click: perChunk=1 still
 # requires AniList to resolve the username and return *a* page, so a bad
@@ -93,5 +94,17 @@ def check_netflix(cookie_header: str, profile_guid: str) -> tuple[bool, str]:
     try:
         client._fetch_page(1)
         return True, "Netflix session and profile guid are valid."
+    except Exception as e:
+        return False, str(e)
+
+
+def check_primevideo(cookie_header: str) -> tuple[bool, str]:
+    cookie_header = (cookie_header or "").strip()
+    if not cookie_header:
+        return False, "No Prime Video cookie header is set."
+    client = PrimeVideoHistory(cookie_header)
+    try:
+        client._fetch_page(None)
+        return True, "Prime Video session is valid."
     except Exception as e:
         return False, str(e)
