@@ -174,25 +174,134 @@ is exactly the failure mode incremental, low-frequency (e.g. daily) syncing avoi
 
 ## What's still unresolved
 
-- **Prime Video's exact endpoint.** Follow-up research (2026-08-14, second pass) found strong
-  structural evidence — via reading `twocaretcat/watch-history-exporter-for-amazon-prime-video`'s
-  actual source, not just its description — that `primevideo.com/settings/watch-history` is
-  backed by a cookie-authenticated, paginated JSON API (`widgets` → `widgetType: "watch-history"`
-  → date-sectioned `titles` keyed by Amazon's `gti` identifiers), structurally the same shape
-  as Netflix's Shakti viewing-activity response. That script only *intercepts* the browser's own
-  `fetch()` calls rather than hardcoding the URL, so the literal endpoint path/query params are
-  still not confirmed from any published source — general web search across several query
-  angles (endpoint-name guesses, "reverse engineering" + Prime Video, Amazon's Video
-  Central/Avails API docs — which turned out to be for content-provider partners, unrelated to
-  consumer watch history) didn't surface anyone's write-up of the actual request. **Next step**:
-  capture it directly — open `primevideo.com/settings/watch-history` in a real logged-in
-  browser, open devtools' Network tab, scroll to trigger pagination, and read off the request
-  the page itself makes (URL, method, headers, query params). This is a live-session task, not
-  something further desk research can resolve. Once captured, the Netflix cookie-replay
-  approach should translate directly — same shape (paginated, most-recent-first, cookie
-  auth), same case for prioritizing it over Selenium-based scraping for the same
-  login-automation-avoidance reason.
 - Real per-service rate limits / device-lock thresholds aren't documented anywhere found — the
   Netflix device-lock report above is qualitative ("frequent requests"), not a number. Worth
   staying conservative (daily sync cadence, small watermark-bounded requests) rather than
   trying to find the actual threshold empirically.
+- ~~Server-side replay not yet confirmed~~ **RESOLVED 2026-08-26** — ran
+  `scripts/dev/probe_primevideo_history.py` against a live account. Plain `httpx` with the
+  captured cookie header works cleanly: no TLS-fingerprint/bot-detection block, no CAPTCHA, no
+  403. Walked 3 pages, all HTTP 200, real watch history returned including real anime titles
+  (MADE IN ABYSS, The Demon Sword Master of Excalibur Academy, From Old Country Bumpkin to
+  Master Swordsman II) — confirms the cookie-replay approach is viable end-to-end, not just
+  theoretically plausible.
+- ~~Not yet confirmed: whether page 1 comes through this endpoint~~ **RESOLVED** — a cold call
+  with no `nextToken` at all returned HTTP 200 with real page-1 data. This endpoint serves the
+  *entire* history, not just scroll-triggered pages 2+. Simpler than assumed: no special
+  first-page-is-inline-HTML case to handle, `sync_primevideo.py` can always call this one
+  endpoint, optionally with a `nextToken`, full stop.
+- **New finding from the deeper walk**: a season's episodes can split across **pagination
+  boundaries**, not just across date-sections within one page — confirmed live:
+  "REACHER (TV) - SEASON 01" (`gti amzn1.dv.gti.d62095f9-...`) shows episodes 8 down to 2 on
+  page 2, and episode 1 only appears on page 3. This matters less than it first sounds for the
+  *steady-state incremental* case (walk newest-first, stop at the stored watermark, and for
+  each season `gti` seen take the max parsed episode number among newly-seen events, then
+  `progress = max(existing_AniList_progress, that_number)` — never needs full-season
+  aggregation, same "never regress progress" discipline already used for CR/Netflix) — but it
+  does matter for the **very first sync** (`full_pull=True`, no watermark yet), which has to
+  walk deep enough into history and aggregate every occurrence of a season's `gti` across
+  every page to find its true max episode, the same class of problem Crunchyroll's
+  max-aggregated-history fetch already solves, not a new one.
+
+## Status: ready for implementation
+
+Every open question in this file is now resolved. `scripts/sync_primevideo.py` can be built for
+real against the confirmed endpoint/pagination/response shape above, reusing
+`resolve_or_create_user_list_entry()`/`ensure_anime_stub()`/`enqueue_outbox_update()` from
+`anilist_sync_common.py` per issue #17's rewritten scope — see that issue for the full
+acceptance criteria.
+
+## Prime Video endpoint — CONFIRMED (2026-08-26, live capture)
+
+Captured directly from a real logged-in browser session (devtools `fetch()` interception,
+following the `twocaretcat` tool's own technique) against `primevideo.com/settings/watch-history`.
+
+**Request**: `GET /api/getWatchHistorySettingsPage?widgetArgs=<urlencoded JSON>`
+
+`widgetArgs` is `{"nextToken": "<base64>"}`. `nextToken` itself base64-decodes to:
+
+```json
+{"version": "V2", "paginationInfo": "<base64>"}
+```
+
+...which base64-decodes again to a **DynamoDB-shaped** cursor (the `{"S": "..."}` wrapper is
+literally DynamoDB's own AttributeValue string-type serialization — this endpoint reads
+straight off a DynamoDB table, "hot storage" in Amazon's own naming):
+
+```json
+{
+  "timeStamp": 1787737926.27...,
+  "hotStoragePaginationToken": {
+    "TimeInterval": {"S": "2026-07-12-21"},
+    "lastModifiedDate": {"S": "2026-07-12T21:46:54.426580404Z"},
+    "lastTitleId": {"S": "amzn1.dv.gti.77650506-dee2-4b53-a87e-189f8ed5cd9c"}
+  }
+}
+```
+
+This is a genuine keyset cursor — `lastModifiedDate` + `lastTitleId` is the natural watermark
+pair for `primevideo_sync_state`, more precise than Netflix's date-only watermark.
+
+**Auth**: cookies only, same as Netflix/Crunchyroll — no bearer token seen. The page's own JS
+sends `x-requested-with: XMLHttpRequest` on the request; `x-amzn-requestid` and
+`X-Amzn-Client-TTL-Seconds` are almost certainly *response* headers (standard AWS API Gateway
+tracing/cache-control headers), not something the client needs to send — confirm this doesn't
+matter once `probe_primevideo_history.py` is actually run, rather than assuming.
+
+**Response shape** — the widget of interest is `widgets[]` where `widgetType == "watch-history"`:
+
+```
+content.content.titles: [
+  { date: "August 2, 2026",         # human date-section header, newest-first
+    titles: [
+      { gti, title: {href, text}, titleType: "movie"|"season", time: <epoch ms>,
+        children: [
+          { gti, title: {href, text: "Episode N: <ep title>"}, titleType: "episode",
+            time: <epoch ms>, children: [] },
+          ...
+        ] },
+      ...
+    ] },
+  ...
+]
+content.content.nextToken: "<base64, same shape as the request's own nextToken>"
+```
+
+Key structural findings that matter for implementation:
+
+- **Newest-first, date-sectioned** — confirms the same watermark-bounded incremental-fetch
+  design already decided above works directly; no design change needed there.
+- **A season's `gti` recurs across MULTIPLE date-sections** if watched across multiple days —
+  confirmed live: one season (`gti amzn1.dv.gti.d62095f9-...`, "REACHER (TV) - SEASON 01")
+  appears under 5 different date-sections, each time with only that day's newly-watched
+  episodes under `children`. **Progress for a season is not readable from any single entry** —
+  it has to be computed by aggregating `children[]` across every occurrence of that season's
+  `gti` (within the fetched page range), not read off one row the way Crunchyroll's
+  max-aggregated history allows in a single field.
+- **Each episode carries its own exact `gti`, watch timestamp, and `title.text` in the literal
+  form `"Episode N: <episode title>"`.** This is materially better than Netflix's shape —
+  Netflix has no absolute episode-ordinal field at all (hence its fragile "count distinct new
+  episodes" delta heuristic, see `sync_netflix.py`'s docstring). Prime Video's episode number
+  can be parsed directly from `title.text` via a simple `^Episode (\d+):` match and used as an
+  **absolute** progress value, matching Crunchyroll's approach rather than Netflix's — a
+  materially safer design than what was originally assumed here ("mirror Netflix's shape").
+- **Movies** (`titleType: "movie"`) are standalone, `children: []`, matching the existing
+  movie-vs-series branch already established for Netflix/CR (progress=1/COMPLETED, not
+  WATCHING).
+- **Season title text is inconsistent** — same show can show as `"Reacher"` for one season's
+  `gti` and `"REACHER (TV) - SEASON 01"` for a different season's `gti` of what's presumably
+  the same underlying show, and at least one observed entry showed only `"Season 3"` with no
+  show name attached at all. This is the same class of problem #159 (CR season-mismatch) and
+  the existing `season_suffix_candidates()`/`is_plausible_match()` guard in
+  `anilist_sync_common.py` already exist to handle — expect to lean on them directly, and don't
+  be surprised if some Prime Video entries simply fail to resolve to an AniList id and get
+  skipped, same as CR/Netflix already do today for anything that doesn't match.
+- Two different `gti`s for what's presumably the same show's two different seasons is actually
+  a *good* structural match for AniList's own per-season-media-entry model — each Prime Video
+  season `gti` should map to at most one AniList media id, same as Crunchyroll already assumes.
+
+**Not yet confirmed**: whether page 1 (no `nextToken`) also comes through this same endpoint,
+or arrives inline in the initial page HTML with this endpoint only firing on scroll (page 2+).
+Every capture so far already had a `nextToken` present (mid-pagination) — worth checking
+directly against `scripts/dev/probe_primevideo_history.py`'s first request (call with no
+`nextToken` at all and see what comes back) rather than needing another browser capture.
