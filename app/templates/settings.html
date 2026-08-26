@@ -1114,17 +1114,23 @@ document.querySelectorAll('[data-cred-test]').forEach(btn => {
 }());
 
 // ── Per-service status chips (shared by the live banner and the history table) ──
-// Kept in sync manually with scripts/run_full_sync.py's step order — extend when
-// Prime Video (#49) lands.
+// Kept in sync manually with scripts/run_full_sync.py's step order.
+window.CRED_STATUS = {{ cred_status_json|safe }};
 const SERVICE_ORDER = ['crunchyroll', 'netflix', 'plex', 'primevideo', 'anilist_postgres'];
 function fmtService(s) {
-  return { crunchyroll: 'Crunchyroll', netflix: 'Netflix', plex: 'Plex', anilist_postgres: 'AniList library refresh', prime_video: 'Prime Video' }[s] || s;
+  return { crunchyroll: 'Crunchyroll', netflix: 'Netflix', plex: 'Plex', anilist_postgres: 'AniList library refresh', primevideo: 'Prime Video' }[s] || s;
 }
 function renderStepChips(steps) {
   const bySvc = Object.fromEntries((steps || []).map(s => [s.service, s]));
   // Known services first (canonical order); any unrecognized ones appended so a
   // newly-shipped backend service doesn't just disappear before the frontend catches up.
-  const order = [...SERVICE_ORDER, ...Object.keys(bySvc).filter(s => !SERVICE_ORDER.includes(s))];
+  // Issue #350 — a provider the user never configured (cred_status === 'not_connected')
+  // is dropped entirely rather than shown as a grey dot indistinguishable-at-a-glance
+  // from a real problem; anilist_postgres is exempt since it's not a toggleable
+  // provider. A provider that IS configured but currently failing (needs_attention)
+  // still shows its chip — that's exactly the signal this filter must not hide.
+  const order = [...SERVICE_ORDER, ...Object.keys(bySvc).filter(s => !SERVICE_ORDER.includes(s))]
+    .filter(svc => svc === 'anilist_postgres' || !window.CRED_STATUS || window.CRED_STATUS[svc] !== 'not_connected');
   return '<span class="step-chips">' + order.map(svc => {
     const s = bySvc[svc];
     const status = s ? s.status : 'pending';

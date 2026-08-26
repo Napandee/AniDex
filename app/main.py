@@ -5147,12 +5147,18 @@ def settings_page(
         ),
     }
 
+    # Issue #350 — same window.I18N-style embed pattern as i18n_json above, so
+    # renderStepChips() can filter out chips for providers the user never
+    # configured instead of showing a grey dot for every possible provider.
+    cred_status_json = json.dumps(cred_status, ensure_ascii=False).replace("<", "\\u003c")
+
     return templates.TemplateResponse(
         request,
         "settings.html",
         {
             "settings": current,
             "cred_status": cred_status,
+            "cred_status_json": cred_status_json,
             "timezones": COMMON_TIMEZONES,
             "languages": i18n.SUPPORTED_LOCALES,
             "language_labels": i18n.LOCALE_LABELS,
