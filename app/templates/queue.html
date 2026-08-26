@@ -130,7 +130,8 @@
       <div class="queue-actions">
         <button class="btn-mark-watched"
                 data-anime-id="{{ e.id }}"
-                data-episodes="{{ e.episodes or '' }}">✓ {{ t('queue_watched_btn') }}</button>
+                data-episodes="{{ e.episodes or '' }}"
+                data-progress="{{ e.progress or 0 }}">✓ {{ t('queue_watched_btn') }}</button>
         {% if e.status == 'PAUSED' %}
         <button class="btn-move-planning"
                 data-anime-id="{{ e.id }}">→ {{ t('queue_move_planning_btn') }}</button>

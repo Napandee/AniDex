@@ -332,6 +332,7 @@
   "queue_rewatch_singular": "Rewatched {count} time",
   "queue_rewatch_plural": "Rewatched {count} times",
   "queue_watched_btn": "Watched",
+  "queue_watched_confirm": "Mark all {num} remaining episodes as watched and set status to Completed?",
   "queue_notes_edit_title": "Edit notes / set priority",
   "queue_notes_link_label": "Notes",
   "queue_move_planning_btn": "Move to Planning",
