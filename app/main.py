@@ -1670,14 +1670,18 @@ templates.context_processors.append(_nav_context)
 
 def _instance_config_get(key: str) -> str:
     row = db.fetchone("SELECT value FROM instance_config WHERE key = %s", (key,))
-    return row["value"] if row else ""
+    value = row["value"] if row else ""
+    if key in config.INSTANCE_ENCRYPTED_KEYS:
+        return config.decrypt_secret(value)
+    return value
 
 
 def _instance_config_set(key: str, value: str) -> None:
+    stored_value = config.encrypt_secret(value) if key in config.INSTANCE_ENCRYPTED_KEYS else value
     db.execute(
         "INSERT INTO instance_config (key, value) VALUES (%s, %s) "
         "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-        (key, value),
+        (key, stored_value),
     )
 
 

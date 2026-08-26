@@ -372,6 +372,153 @@ def test_migration_picks_up_issue_319_notification_keys(pg_conn):
     assert config.decrypt_secret(ciphertext) == "plain_telegram_token"
 
 
+# ── instance_config (issue #357) — OAuth client_secret encryption ───────────
+
+
+def test_instance_config_secret_stored_as_ciphertext_in_raw_db(pg_conn):
+    import app.main as m
+
+    plaintext = "fake-google-oauth-client-secret-abc123"
+    m._instance_config_set("google_client_secret", plaintext)
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = %s", ("google_client_secret",))
+        raw_value = cur.fetchone()[0]
+
+    assert raw_value != plaintext
+    assert config.is_encrypted(raw_value)
+    assert m._instance_config_get("google_client_secret") == plaintext
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("google_client_secret", "fake_google_client_secret_1234567890"),
+        ("discord_client_secret", "fake_discord_client_secret_1234567890"),
+    ],
+)
+def test_every_instance_encrypted_key_round_trips(pg_conn, key, value):
+    import app.main as m
+
+    m._instance_config_set(key, value)
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = %s", (key,))
+        raw_value = cur.fetchone()[0]
+
+    assert raw_value != value, f"{key} was stored as plaintext"
+    assert m._instance_config_get(key) == value
+
+
+def test_instance_config_non_sensitive_key_stays_plaintext(pg_conn):
+    import app.main as m
+
+    m._instance_config_set("google_client_id", "not-a-secret-client-id.apps.googleusercontent.com")
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = %s", ("google_client_id",))
+        raw_value = cur.fetchone()[0]
+
+    assert raw_value == "not-a-secret-client-id.apps.googleusercontent.com"
+    assert m._instance_config_get("google_client_id") == "not-a-secret-client-id.apps.googleusercontent.com"
+
+
+def test_instance_config_missing_key_returns_empty_string(pg_conn):
+    import app.main as m
+
+    assert m._instance_config_get("google_client_secret_never_set_anywhere") == ""
+
+
+def test_instance_encrypted_keys_allowlist_matches_confirmed_call_sites():
+    # Locks in the confirmed-against-app/main.py's admin_oauth_settings allowlist
+    # from #357 — guards against silent drift if a future OAuth provider/field
+    # adds a sensitive instance_config key without updating INSTANCE_ENCRYPTED_KEYS.
+    assert config.INSTANCE_ENCRYPTED_KEYS == {
+        "google_client_secret",
+        "discord_client_secret",
+    }
+
+
+# ── Migration script — instance_config (issue #357) ──────────────────────────
+
+
+def test_migration_encrypts_existing_instance_config_and_is_idempotent(pg_conn):
+    import migrate_encrypt_credentials as mig
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO instance_config (key, value) VALUES ('google_client_secret', %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            ("plain_google_client_secret_value",),
+        )
+        # A non-sensitive instance_config key must never be touched by the migration.
+        cur.execute(
+            "INSERT INTO instance_config (key, value) VALUES ('sync_daily_time', %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            ("04:30",),
+        )
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        first = mig.migrate_instance_config(conn, dry_run=False)
+    finally:
+        conn.close()
+
+    assert first["google_client_secret"]["migrated"] == 1
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = 'google_client_secret'")
+        ciphertext_1 = cur.fetchone()[0]
+        cur.execute("SELECT value FROM instance_config WHERE key = 'sync_daily_time'")
+        sync_time_value = cur.fetchone()[0]
+
+    assert config.is_encrypted(ciphertext_1)
+    assert config.decrypt_secret(ciphertext_1) == "plain_google_client_secret_value"
+    assert sync_time_value == "04:30"  # untouched, still plaintext
+
+    # Idempotency: running again must not re-encrypt.
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        second = mig.migrate_instance_config(conn, dry_run=False)
+    finally:
+        conn.close()
+
+    assert second["google_client_secret"]["migrated"] == 0
+    assert second["google_client_secret"]["already_encrypted"] >= 1
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = 'google_client_secret'")
+        ciphertext_2 = cur.fetchone()[0]
+
+    assert ciphertext_2 == ciphertext_1, "re-running the migration must not re-encrypt an already-encrypted value"
+    assert config.decrypt_secret(ciphertext_2) == "plain_google_client_secret_value"
+
+
+def test_instance_config_migration_dry_run_writes_nothing(pg_conn):
+    import migrate_encrypt_credentials as mig
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO instance_config (key, value) VALUES ('discord_client_secret', %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            ("plain_discord_client_secret_value",),
+        )
+
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        counts = mig.migrate_instance_config(conn, dry_run=True)
+    finally:
+        conn.close()
+
+    assert counts["discord_client_secret"]["migrated"] == 1
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT value FROM instance_config WHERE key = 'discord_client_secret'")
+        raw_value = cur.fetchone()[0]
+
+    assert raw_value == "plain_discord_client_secret_value"  # dry-run must not have written anything
+
+
 def test_migration_dry_run_writes_nothing(pg_conn):
     import migrate_encrypt_credentials as mig
 

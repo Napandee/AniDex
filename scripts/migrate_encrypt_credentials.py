@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-One-off data migration for issue #310 (extended by #319) — encrypts already-live
-plaintext values for every key in app.config.ENCRYPTED_KEYS (anilist_token,
-cr_etp_rt, netflix_cookie_header, netflix_profile_guid, telegram_bot_token,
-discord_webhook_url, ntfy_auth_token) and the users.totp_secret column, in
-place, using the Fernet key from SETTINGS_ENCRYPTION_KEY. This loop iterates
-config.ENCRYPTED_KEYS itself rather than a hardcoded key list, so #319's three
-additional keys needed no changes here — only the allowlist in app/config.py.
+One-off data migration for issue #310 (extended by #319, #357) — encrypts
+already-live plaintext values for every key in app.config.ENCRYPTED_KEYS
+(anilist_token, cr_etp_rt, netflix_cookie_header, netflix_profile_guid,
+telegram_bot_token, discord_webhook_url, ntfy_auth_token), every key in
+app.config.INSTANCE_ENCRYPTED_KEYS (google_client_secret, discord_client_secret
+in the instance_config table), and the users.totp_secret column, in place,
+using the Fernet key from SETTINGS_ENCRYPTION_KEY. These loops iterate
+config.ENCRYPTED_KEYS/config.INSTANCE_ENCRYPTED_KEYS themselves rather than a
+hardcoded key list, so a future key added to either allowlist needs no changes
+here — only the allowlist in app/config.py.
 Code-level encrypt/decrypt on the read/write paths (app/config.py, and the TOTP
 setup/verify call sites in app/main.py) ships alongside this script in the same
 PR — this script only exists to bring values that were already written to the
@@ -14,7 +17,8 @@ database *before* that code shipped up to the same encrypted-at-rest state.
 
 This is a genuine transformation of live, currently-working credentials (a real
 AniList OAuth token, real Crunchyroll/Netflix session cookies, a real TOTP
-secret), not a routine additive migration — per this repo's CLAUDE.md migration
+secret, a real Google/Discord OAuth client_secret), not a routine additive
+migration — per this repo's CLAUDE.md migration
 guardrails, back up the database first and get EXPLICIT confirmation before
 running this against a real production database. This script must not be run
 by an agent against anything other than a local throwaway Postgres instance
@@ -81,6 +85,34 @@ def migrate_settings(conn, dry_run: bool) -> dict:
     return counts
 
 
+def migrate_instance_config(conn, dry_run: bool) -> dict:
+    counts = {key: {"migrated": 0, "already_encrypted": 0} for key in config.INSTANCE_ENCRYPTED_KEYS}
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT key, value FROM instance_config WHERE key = ANY(%s)",
+            (list(config.INSTANCE_ENCRYPTED_KEYS),),
+        )
+        rows = cur.fetchall()
+
+    for row in rows:
+        key = row["key"]
+        value = row["value"]
+        if config.is_encrypted(value):
+            counts[key]["already_encrypted"] += 1
+            continue
+        counts[key]["migrated"] += 1
+        if not dry_run:
+            encrypted = config.encrypt_secret(value)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE instance_config SET value = %s WHERE key = %s",
+                    (encrypted, key),
+                )
+    if not dry_run:
+        conn.commit()
+    return counts
+
+
 def migrate_totp_secrets(conn, dry_run: bool) -> dict:
     counts = {"migrated": 0, "already_encrypted": 0}
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -117,6 +149,7 @@ def main() -> None:
     conn = psycopg2.connect(db.DATABASE_URL)
     try:
         settings_counts = migrate_settings(conn, args.dry_run)
+        instance_config_counts = migrate_instance_config(conn, args.dry_run)
         totp_counts = migrate_totp_secrets(conn, args.dry_run)
     except Exception:
         conn.rollback()
@@ -127,6 +160,11 @@ def main() -> None:
     print("=== settings (issue #310 ENCRYPTED_KEYS) ===")
     total_migrated = 0
     for key, c in settings_counts.items():
+        print(f"  {key}: migrated={c['migrated']}  already_encrypted={c['already_encrypted']}")
+        total_migrated += c["migrated"]
+
+    print("\n=== instance_config (issue #357 INSTANCE_ENCRYPTED_KEYS) ===")
+    for key, c in instance_config_counts.items():
         print(f"  {key}: migrated={c['migrated']}  already_encrypted={c['already_encrypted']}")
         total_migrated += c["migrated"]
 
