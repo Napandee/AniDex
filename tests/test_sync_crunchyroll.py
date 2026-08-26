@@ -230,60 +230,10 @@ def test_compute_fetch_watermark_none_when_no_state_recorded():
     assert cr.compute_fetch_watermark({1: {"last_seen_watched_at": None}}) is None
 
 
-# ── Walk-completeness tracking (issue #97) ───────────────────────────────────
-# Minimal in-memory stand-in for a psycopg2 connection — just enough to cover
-# load_walk_complete/_set_walk_complete's single-key settings SQL, not a
-# general-purpose DB fake.
-class _FakeWalkConn:
-    def __init__(self, initial_value=None):
-        self.value = initial_value  # None = "no row for this key yet"
-        self.committed = False
-        self._last_select = None
-
-    def cursor(self):
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-    def execute(self, query, params):
-        q = query.strip()
-        if q.startswith("SELECT"):
-            self._last_select = self.value
-        elif q.startswith("INSERT"):
-            self.value = params[-1]
-
-    def fetchone(self):
-        return {"value": self._last_select} if self._last_select is not None else None
-
-    def commit(self):
-        self.committed = True
-
-
-def test_load_walk_complete_defaults_to_has_existing_state_when_never_set():
-    # No settings row yet — an existing account with real sync state shouldn't
-    # get hit with a surprise full re-walk the first time this ships.
-    assert cr.load_walk_complete(_FakeWalkConn(initial_value=None), has_existing_state=True) is True
-    # A genuinely first-ever sync (no prior state) starts as not-complete.
-    assert cr.load_walk_complete(_FakeWalkConn(initial_value=None), has_existing_state=False) is False
-
-
-def test_load_walk_complete_reads_explicit_stored_value():
-    assert cr.load_walk_complete(_FakeWalkConn(initial_value="true"), has_existing_state=False) is True
-    assert cr.load_walk_complete(_FakeWalkConn(initial_value="false"), has_existing_state=True) is False
-
-
-def test_set_walk_complete_persists_and_commits():
-    conn = _FakeWalkConn()
-    cr._set_walk_complete(conn, True)
-    assert conn.value == "true"
-    assert conn.committed is True
-
-    cr._set_walk_complete(conn, False)
-    assert conn.value == "false"
+# ── Walk-completeness tracking (issue #97, moved to anilist_sync_common.py and
+# tightened by #387) — see tests/test_anilist_sync_common.py for
+# load_walk_complete()/set_walk_complete() coverage; sync_crunchyroll.py just
+# imports and calls the shared implementation now, nothing left to test here.
 
 
 # ── Persistent title-search cache (issue #115) ───────────────────────────────
@@ -336,6 +286,62 @@ def test_save_title_search_cache_entry_persists_and_commits():
 
     cr.save_title_search_cache_entry(conn, "Frieren", 154587)
     assert conn.store == {"Some Western Show": None, "Frieren": 154587}
+
+
+# ── DRY_RUN mode (issue #387, Part 2) — this script had none before; every
+# conn-taking write function must safely no-op with conn=None, and the reads
+# must return an empty/from-scratch shape, matching sync_netflix.py's existing
+# DRY_RUN precedent exactly.
+
+def test_load_title_search_cache_empty_when_conn_is_none():
+    assert cr.load_title_search_cache(None) == {}
+
+
+def test_save_title_search_cache_entry_noop_when_conn_is_none():
+    cr.save_title_search_cache_entry(None, "Some Western Show", None)  # must not raise
+
+
+def test_load_title_overrides_empty_when_conn_is_none():
+    assert cr.load_title_overrides(None) == {}
+
+
+def test_save_cr_state_noop_when_conn_is_none():
+    cr.save_cr_state(None, 154587, "Attack on Titan", 5, False)  # must not raise
+
+
+def test_save_watermark_noop_when_conn_is_none():
+    cr.save_watermark(None, 154587, "Attack on Titan", datetime.now(timezone.utc))  # must not raise
+
+
+def test_update_logs_instead_of_enqueueing_when_dry_run(monkeypatch):
+    monkeypatch.setattr(cr, "DRY_RUN", True)
+    called = []
+    monkeypatch.setattr(cr, "enqueue_outbox_update", lambda *a, **kw: called.append((a, kw)))
+    cr._update(None, 154587, status="WATCHING", progress=3)
+    assert called == []  # the real AniList-push path was never touched
+
+
+def test_save_state_logs_instead_of_saving_when_dry_run(monkeypatch):
+    monkeypatch.setattr(cr, "DRY_RUN", True)
+    called = []
+    monkeypatch.setattr(cr, "save_cr_state", lambda *a, **kw: called.append((a, kw)))
+    cr._save_state(None, 154587, "Attack on Titan", 5, False)
+    assert called == []
+
+
+def test_update_and_save_state_call_through_when_not_dry_run(monkeypatch):
+    # DRY_RUN defaults False in a normal test run — the wrappers must still
+    # actually delegate, not silently swallow every call.
+    assert cr.DRY_RUN is False
+    enqueue_called = []
+    monkeypatch.setattr(cr, "enqueue_outbox_update", lambda *a, **kw: enqueue_called.append((a, kw)))
+    cr._update(object(), 154587, status="WATCHING")
+    assert len(enqueue_called) == 1
+
+    save_called = []
+    monkeypatch.setattr(cr, "save_cr_state", lambda *a, **kw: save_called.append((a, kw)))
+    cr._save_state(object(), 154587, "Attack on Titan", 5, False)
+    assert len(save_called) == 1
 
 
 # ── CrunchyrollHistory.fetch_since — the actual incremental-fetch fix (#45) ───

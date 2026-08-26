@@ -57,8 +57,8 @@ from dotenv import load_dotenv
 
 from anilist_sync_common import (
     enqueue_outbox_update, find_anilist_id, is_plausible_match,
-    load_user_list_from_db, resolve_or_create_user_list_entry, season_suffix_candidates,
-    seed_search_cache,
+    load_user_list_from_db, load_walk_complete, resolve_or_create_user_list_entry,
+    season_suffix_candidates, seed_search_cache, set_walk_complete,
 )
 
 load_dotenv()
@@ -67,6 +67,11 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 PLEX_SERVER_TOKEN = os.environ.get("PLEX_SERVER_TOKEN", "")
 PLEX_SERVER_BASE_URL = os.environ.get("PLEX_SERVER_BASE_URL", "").rstrip("/")
+
+# Issue #387, Part 2 — same DRY_RUN pattern sync_netflix.py already had (this script
+# had none until now — see anilist_sync_common.py's load_walk_complete() docstring for
+# why every provider script needing this matters, not just Prime Video).
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
 # Issue #21's pattern (Force Full Resync) — not yet wired into a UI button for Plex
 # (see issue #153's "Out of scope"), but the sync script supports it from day one so
@@ -93,7 +98,11 @@ def log(msg):
 
 def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
     """Same SYNC_RESULT contract every scripts/sync_*.py uses — see
-    sync_netflix.py's identical helper for why (issue #46)."""
+    sync_netflix.py's identical helper for why (issue #46). Not emitted in
+    DRY_RUN — that mode is a local investigation tool, never invoked through
+    run_full_sync.py."""
+    if DRY_RUN:
+        return
     print(
         f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
         flush=True,
@@ -257,6 +266,8 @@ def load_plex_state(conn) -> dict[int, dict]:
 
 
 def save_plex_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO plex_sync_state (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
@@ -274,6 +285,8 @@ def save_watermark(conn, anilist_id: int, title: str, watched_at: datetime):
     """Fetch-side watermark bookkeeping only — mirrors sync_crunchyroll.py's
     save_watermark() exactly, see its docstring for why this stays column-disjoint
     from save_plex_state()."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO plex_sync_state (user_id, anilist_id, series_title, last_seen_watched_at, last_synced_at)
@@ -292,36 +305,19 @@ def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
     return max(values) if values else None
 
 
-def load_walk_complete(conn, has_existing_state: bool) -> bool:
-    """Whether we've ever confirmed reviewing this account's full Plex history —
-    same issue #97/#104 pattern as sync_crunchyroll.py/sync_netflix.py."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT value FROM settings WHERE user_id = %s AND key = 'plex_walk_complete'",
-            (USER_ID,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return has_existing_state
-    return row["value"].strip().lower() in ("1", "true", "yes")
-
-
-def _set_walk_complete(conn, complete: bool):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO settings (user_id, key, value) VALUES (%s, 'plex_walk_complete', %s)
-            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
-        """, (USER_ID, "true" if complete else "false"))
-    conn.commit()
-
-
 def load_title_search_cache(conn) -> dict[str, int | None]:
+    """Global (not per-user) AniList title-search cache (issue #115). `conn` may
+    be None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
+    if conn is None:
+        return {}
     with conn.cursor() as cur:
         cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
         return {row["title"]: row["media_id"] for row in cur.fetchall()}
 
 
 def save_title_search_cache_entry(conn, title: str, media_id: int | None):
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
@@ -338,7 +334,26 @@ def save_title_search_cache_entry(conn, title: str, media_id: int | None):
 # reasoning behind each branch; not re-derived here to avoid the two drifting.
 
 def _update(conn, anilist_id: int, **kwargs):
-    enqueue_outbox_update(conn, anilist_id, "plex", **kwargs)
+    """enqueue_outbox_update(), routed through DRY_RUN — see its module-level
+    docstring. Issue #100 — no longer pushes to AniList directly/synchronously;
+    enqueues to status_sync_outbox for the app's shared outbox worker to
+    deliver."""
+    if DRY_RUN:
+        log(f"    [dry-run] would enqueue outbox update({anilist_id}, {kwargs})")
+    else:
+        enqueue_outbox_update(conn, anilist_id, "plex", **kwargs)
+
+
+def _save_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    """save_plex_state(), routed through DRY_RUN for a consistent log line —
+    see _update()'s docstring. save_plex_state() itself already guards conn is
+    None (safe to call directly), this wrapper exists purely so process()'s
+    DRY_RUN output says what it would have saved, matching sync_netflix.py's
+    pattern."""
+    if DRY_RUN:
+        log(f"    [dry-run] would save state: anilist_id={anilist_id} last_ep={last_ep} rewatch={rewatch}")
+    else:
+        save_plex_state(conn, anilist_id, title, last_ep, rewatch)
 
 
 def process(title: str, plex_ep: int, entry: dict, plex_state: dict | None, conn) -> str:
@@ -353,57 +368,57 @@ def process(title: str, plex_ep: int, entry: dict, plex_state: dict | None, conn
 
     if status is None:
         _update(conn, anilist_id, progress=plex_ep, status="WATCHING")
-        save_plex_state(conn, anilist_id, title, plex_ep, False)
+        _save_state(conn, anilist_id, title, plex_ep, False)
         return f"new AniList entry created → WATCHING ep {plex_ep}"
 
     if plex_state is None and status == "COMPLETED":
-        save_plex_state(conn, anilist_id, title, plex_ep, False)
+        _save_state(conn, anilist_id, title, plex_ep, False)
         return "first-sync (COMPLETED) — state recorded, no change"
 
     if status == "REPEATING" and not rewatch_active:
         if plex_ep > al_ep:
             _update(conn, anilist_id, progress=plex_ep)
-            save_plex_state(conn, anilist_id, title, plex_ep, True)
+            _save_state(conn, anilist_id, title, plex_ep, True)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {plex_ep}"
-        save_plex_state(conn, anilist_id, title, plex_ep, True)
+        _save_state(conn, anilist_id, title, plex_ep, True)
         return "rewatch detected (already REPEATING) — state recorded"
 
     if status == "COMPLETED" and plex_ep < (last_ep or total or 999) and not rewatch_active:
         _update(conn, anilist_id, progress=plex_ep, status="REPEATING")
-        save_plex_state(conn, anilist_id, title, plex_ep, True)
+        _save_state(conn, anilist_id, title, plex_ep, True)
         return f"rewatch started → REPEATING ep {plex_ep}"
 
     if rewatch_active and plex_ep < last_ep:
         _update(conn, anilist_id, progress=plex_ep)
-        save_plex_state(conn, anilist_id, title, plex_ep, True)
+        _save_state(conn, anilist_id, title, plex_ep, True)
         return f"new rewatch pass detected (was at {last_ep}) → progress reset to {plex_ep}"
 
     if plex_ep <= last_ep and not rewatch_active:
         if plex_ep <= al_ep:
-            save_plex_state(conn, anilist_id, title, last_ep, rewatch_active)
+            _save_state(conn, anilist_id, title, last_ep, rewatch_active)
             return f"no change (Plex={plex_ep}, last_seen={last_ep})"
 
     if rewatch_active and total and plex_ep >= total:
         _update(conn, anilist_id, progress=plex_ep, status="COMPLETED", repeat=repeat + 1)
-        save_plex_state(conn, anilist_id, title, plex_ep, False)
+        _save_state(conn, anilist_id, title, plex_ep, False)
         return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
 
     if rewatch_active and plex_ep > al_ep:
         _update(conn, anilist_id, progress=plex_ep)
-        save_plex_state(conn, anilist_id, title, plex_ep, True)
+        _save_state(conn, anilist_id, title, plex_ep, True)
         return f"rewatch progress {al_ep} → {plex_ep}"
 
     if status == "DROPPED" and plex_ep > last_ep:
         _update(conn, anilist_id, progress=plex_ep, status="CURRENT")
-        save_plex_state(conn, anilist_id, title, plex_ep, False)
+        _save_state(conn, anilist_id, title, plex_ep, False)
         return f"resumed after DROP → CURRENT ep {plex_ep}"
 
     if plex_ep > al_ep:
         _update(conn, anilist_id, progress=plex_ep)
-        save_plex_state(conn, anilist_id, title, plex_ep, False)
+        _save_state(conn, anilist_id, title, plex_ep, False)
         return f"progress {al_ep} → {plex_ep}"
 
-    save_plex_state(conn, anilist_id, title, max(plex_ep, last_ep), rewatch_active)
+    _save_state(conn, anilist_id, title, max(plex_ep, last_ep), rewatch_active)
     return f"AniList ({al_ep}) already at or ahead of Plex ({plex_ep})"
 
 
@@ -416,15 +431,25 @@ def main():
         log("ERROR: Plex credentials not configured (PLEX_SERVER_TOKEN / PLEX_SERVER_BASE_URL)")
         sys.exit(1)
 
-    conn = db_connect()
-    ensure_table(conn)
-    state_map = load_plex_state(conn)
-    log(f"Loaded Plex sync state for {len(state_map)} series")
+    if DRY_RUN:
+        # No DB touched at all in dry-run — not even the CREATE TABLE IF NOT EXISTS
+        # fallback. Treated as a from-scratch first sync (no watermark), which is
+        # also the most useful dry-run shape: it exercises the fetch/parse/match/
+        # process path (including the create-decision plausibility gate, issue
+        # #387) against your full real history without writing anything.
+        log("[dry-run] skipping database entirely — no reads, no writes")
+        conn = None
+        state_map: dict[int, dict] = {}
+    else:
+        conn = db_connect()
+        ensure_table(conn)
+        state_map = load_plex_state(conn)
+        log(f"Loaded Plex sync state for {len(state_map)} series")
 
-    walk_complete = load_walk_complete(conn, has_existing_state=bool(state_map))
+    walk_complete = load_walk_complete(conn, "plex", USER_ID)
     if walk_complete and FORCE_FULL_RESYNC:
         log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        _set_walk_complete(conn, False)
+        set_walk_complete(conn, "plex", USER_ID, False)
         walk_complete = False
         watermark = None
     elif walk_complete:
@@ -440,16 +465,18 @@ def main():
         raw_items, reached_true_end = client.fetch_since(watermark)
     except Exception as e:
         log(f"ERROR: Plex fetch failed: {e}")
-        conn.close()
+        if conn:
+            conn.close()
         sys.exit(1)
     log(f"Fetched {len(raw_items)} new history rows")
 
     if not raw_items:
         if reached_true_end:
-            _set_walk_complete(conn, True)
+            set_walk_complete(conn, "plex", USER_ID, True)
             log("Reached true end of Plex history — full walk marked complete")
         log("No new activity — nothing to do")
-        conn.close()
+        if conn:
+            conn.close()
         _emit_result(0, len(raw_items), full_pull)
         sys.exit(0)
 
@@ -483,9 +510,12 @@ def main():
             skipped += 1
             continue
 
-        decision = resolve_or_create_user_list_entry(media_id, title, user_list, full_pull, conn)
+        decision = resolve_or_create_user_list_entry(
+            media_id, title, user_list, full_pull, conn,
+            watched_format=watched["watched_format"], watched_episode_count=watched["episode"],
+        )
         if decision == "skip":
-            log(f"  ✗ Not in your AniList: '{title}'")
+            log(f"  ✗ Not in your AniList (or an implausible/unvalidated match): '{title}'")
             skipped += 1
             continue
         if decision == "create":
@@ -494,6 +524,12 @@ def main():
         entry = dict(user_list[media_id])
         entry["anilist_id"] = media_id
 
+        # Issue #387 — a "create" decision above already validated plausibility
+        # against real AniList metadata inside resolve_or_create_user_list_entry();
+        # this second check only ever matters for the "existing" decision (real
+        # AniList data from the local mirror, not a synthetic placeholder) — kept
+        # as a harmless, redundant safety net on the create path rather than
+        # branching around it.
         if not is_plausible_match(entry, watched["watched_format"], watched["episode"]):
             log(f"  ✗ Implausible match, skipping: '{title}' "
                 f"(AniList format={entry.get('format')}, total_eps={entry.get('total_episodes')}; "
@@ -515,12 +551,14 @@ def main():
             skipped += 1
 
     if reached_true_end:
-        _set_walk_complete(conn, True)
+        set_walk_complete(conn, "plex", USER_ID, True)
         log("Reached true end of Plex history — full walk marked complete")
 
-    conn.close()
+    if conn:
+        conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
-        f"({index_hits} index hits, {search_hits} API searches)")
+        f"({index_hits} index hits, {search_hits} API searches)"
+        + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
     _emit_result(updated, len(raw_items), full_pull)
 
 

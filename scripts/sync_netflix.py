@@ -70,7 +70,8 @@ from dotenv import load_dotenv
 
 from anilist_sync_common import (
     enqueue_outbox_update, find_anilist_id, is_plausible_match,
-    load_user_list_from_db, resolve_or_create_user_list_entry, seed_search_cache,
+    load_user_list_from_db, load_walk_complete, resolve_or_create_user_list_entry,
+    seed_search_cache, set_walk_complete,
 )
 
 load_dotenv()
@@ -392,44 +393,6 @@ def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
     return max(values) if values else None
 
 
-def load_walk_complete(conn, has_existing_state: bool) -> bool:
-    """Whether we've ever confirmed reviewing this account's full Netflix history
-    (issue #97) — distinct from compute_fetch_watermark()'s per-series max(),
-    which only tells us the newest point we've matched, not whether unreviewed
-    older history might still exist. A partial/interrupted full walk otherwise
-    leaves the per-series max looking complete when it isn't, silently causing a
-    later incremental sync to stop looking further back forever.
-
-    Defaults to `has_existing_state` when never explicitly set, so existing
-    accounts with an already-working incremental sync aren't hit with a
-    surprise full re-walk the first time this ships — only genuinely first-ever
-    syncs start as not-complete, matching today's existing "no watermark = full
-    pull" first-sync behavior. `conn` may be None in DRY_RUN, matching that
-    mode's existing "treated as a from-scratch first sync" framing."""
-    if conn is None:
-        return False
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT value FROM settings WHERE user_id = %s AND key = 'netflix_walk_complete'",
-            (USER_ID,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return has_existing_state
-    return row["value"].strip().lower() in ("1", "true", "yes")
-
-
-def _set_walk_complete(conn, complete: bool):
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO settings (user_id, key, value) VALUES (%s, 'netflix_walk_complete', %s)
-            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
-        """, (USER_ID, "true" if complete else "false"))
-    conn.commit()
-
-
 def load_title_search_cache(conn) -> dict[str, int | None]:
     """Global (not per-user) AniList title-search cache (issue #115) — a search
     result for a given title string is the same regardless of which user or
@@ -616,10 +579,10 @@ def main():
         nf_state_map = load_nf_state(conn)
         log(f"Loaded Netflix sync state for {len(nf_state_map)} series")
 
-    walk_complete = load_walk_complete(conn, has_existing_state=bool(nf_state_map))
+    walk_complete = load_walk_complete(conn, "netflix", USER_ID)
     if walk_complete and FORCE_FULL_RESYNC:
         log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        _set_walk_complete(conn, False)  # persisted before the (possibly slow) fetch/process below,
+        set_walk_complete(conn, "netflix", USER_ID, False)  # persisted before the (possibly slow) fetch/process below,
         walk_complete = False            # so an interruption leaves an honest "not complete" state
         watermark = None
     elif walk_complete:
@@ -648,7 +611,7 @@ def main():
         # Issue #104 — safe to mark complete here even though the processing loop
         # below never ran: there's nothing to process, so nothing can be stranded.
         if reached_true_end:
-            _set_walk_complete(conn, True)
+            set_walk_complete(conn, "netflix", USER_ID, True)
             log("Reached true end of Netflix history — full walk marked complete")
         log("No new activity — nothing to do")
         if conn:
@@ -693,21 +656,15 @@ def main():
             skipped += 1
             continue
 
-        # Issue #252 — incremental sync: genuinely new watch activity for a title
-        # that isn't tracked yet should originate a new AniList entry instead of
-        # being silently dropped forever. Full-pull runs (initial connect or a
-        # Force Full Resync, #21) keep the original skip behavior. conn may be
-        # None here in DRY_RUN — resolve_or_create_user_list_entry() skips the DB
-        # write in that case but still exercises the same decision. See its
-        # docstring for the full contract.
-        decision = resolve_or_create_user_list_entry(media_id, title, user_list, full_pull, conn)
-        if decision == "skip":
-            log(f"  ✗ Not in your AniList: '{title}'")
-            skipped += 1
-            continue
-        if decision == "create":
-            log(f"  + Not yet tracked — creating a new AniList entry: '{title}'")
-
+        # Issue #387 — moved ahead of resolve_or_create_user_list_entry(): that
+        # call now needs a real watched_episode_count to validate a create
+        # decision, and Netflix's own formula for what that count WOULD be
+        # (see watched_ep below) only depends on new_count/agg — never on
+        # user_list/the decision itself — so computing it first is safe and
+        # doesn't change anything about the "existing" path below, which still
+        # recomputes watched_ep from the real entry["progress"] exactly as
+        # before. nf_state_map lookups are Netflix's own state, independent of
+        # AniList-tracking status either way.
         nf_state = nf_state_map.get(media_id)
         per_series_watermark = nf_state.get("last_seen_watched_at") if nf_state else None
         new_count, watched_at = _new_episode_count(agg["items"], per_series_watermark)
@@ -718,6 +675,30 @@ def main():
             # (or, under a future full re-fetch, because the whole history
             # came back). Not genuine new activity for this series — skip.
             continue
+
+        # Issue #252 — incremental sync: genuinely new watch activity for a title
+        # that isn't tracked yet should originate a new AniList entry instead of
+        # being silently dropped forever. Full-pull runs (initial connect or a
+        # Force Full Resync, #21) keep the original skip behavior. conn may be
+        # None here in DRY_RUN — resolve_or_create_user_list_entry() skips the DB
+        # write in that case but still exercises the same decision. See its
+        # docstring for the full contract. watched_episode_count here is what
+        # watched_ep would be for a brand-new entry specifically (progress
+        # starts at 0 for a synthetic placeholder, so 0 + new_count == new_count)
+        # — issue #387's create-path plausibility gate only ever consults this
+        # value when the decision is actually "create", so it doesn't need to
+        # match the "existing" path's own (different) watched_ep formula below.
+        decision = resolve_or_create_user_list_entry(
+            media_id, title, user_list, full_pull, conn,
+            watched_format=agg["watched_format"],
+            watched_episode_count=(1 if agg["watched_format"] == "MOVIE" else new_count),
+        )
+        if decision == "skip":
+            log(f"  ✗ Not in your AniList (or an implausible/unvalidated match): '{title}'")
+            skipped += 1
+            continue
+        if decision == "create":
+            log(f"  + Not yet tracked — creating a new AniList entry: '{title}'")
 
         entry = dict(user_list[media_id])
         entry["anilist_id"] = media_id
@@ -733,6 +714,12 @@ def main():
             "episode": watched_ep,
         }
 
+        # Issue #387 — a "create" decision above already validated plausibility
+        # against real AniList metadata inside resolve_or_create_user_list_entry();
+        # this second check only ever matters for the "existing" decision (real
+        # AniList data from the local mirror, not a synthetic placeholder) — kept
+        # as a harmless, redundant safety net on the create path rather than
+        # branching around it.
         if not is_plausible_match(entry, watched["watched_format"], watched_ep or None):
             log(f"  ✗ Implausible match, skipping: '{title}' "
                 f"(AniList format={entry.get('format')}, total_eps={entry.get('total_episodes')}; "
@@ -757,7 +744,7 @@ def main():
     # later sync would trust walk_complete and never re-walk to pick up what was
     # fetched but never reached.
     if reached_true_end:
-        _set_walk_complete(conn, True)
+        set_walk_complete(conn, "netflix", USER_ID, True)
         log("Reached true end of Netflix history — full walk marked complete")
 
     if conn:

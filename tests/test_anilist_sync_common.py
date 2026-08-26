@@ -250,16 +250,38 @@ def test_ensure_anime_stub_inserts_minimal_row_on_conflict_do_nothing():
     assert params == (20678, "The Testament of Sister New Devil")
 
 
-# ── resolve_or_create_user_list_entry — issue #252 ──────────────────────────
-# The real bug: incremental CR/Netflix sync resolved a title correctly (e.g. via
-# the title-search cache) but the anime wasn't on the user's AniList list, so it
-# was silently skipped forever. Reproduces issue #252's Context section shape:
-# a title resolves to a media_id with no existing user_list/library_entries row.
+# ── resolve_or_create_user_list_entry — issue #252, create-path gate hardened
+# by #387 ────────────────────────────────────────────────────────────────────
+# The real bug (#252): incremental CR/Netflix sync resolved a title correctly
+# (e.g. via the title-search cache) but the anime wasn't on the user's AniList
+# list, so it was silently skipped forever. Reproduces issue #252's Context
+# section shape: a title resolves to a media_id with no existing
+# user_list/library_entries row.
+#
+# The second bug (#387): the create path used to build its synthetic entry with
+# format=None/total_episodes=None regardless of the real candidate, which made
+# is_plausible_match()'s checks silently no-op on exactly the highest-risk path.
+# resolve_or_create_user_list_entry() now fetches real AniList metadata
+# (fetch_anilist_media_metadata()) before deciding to create — every test below
+# monkeypatches that function rather than hitting the real AniList API, both for
+# test isolation and because a real network dependency in this test would be
+# flaky/slow and could fail with no internet in CI.
 
-def test_full_pull_unmatched_title_still_skips():
+def _mock_metadata(monkeypatch, result):
+    """result is a dict (a "found" real AniList media) or None (fetch failed).
+    Also resets the module-level cache so consecutive tests with the same
+    media_id don't see a stale cached value from an earlier test."""
+    monkeypatch.setattr(common, "_media_metadata_cache", {})
+    monkeypatch.setattr(common, "fetch_anilist_media_metadata", lambda media_id: result)
+
+
+def test_full_pull_unmatched_title_still_skips(monkeypatch):
     # Regression coverage for the deliberately-unchanged case: the initial
     # full-history walk (or a user-triggered Force Full Resync, #20/#21) must
-    # NOT auto-create — same behavior as before this issue.
+    # NOT auto-create — same behavior as before this issue. full_pull short-
+    # circuits before the metadata fetch even happens.
+    called = []
+    monkeypatch.setattr(common, "fetch_anilist_media_metadata", lambda media_id: called.append(media_id))
     user_list = {}
     conn = _FakeOutboxConn()
     decision = common.resolve_or_create_user_list_entry(
@@ -268,11 +290,19 @@ def test_full_pull_unmatched_title_still_skips():
     assert decision == "skip"
     assert user_list == {}
     assert conn.queries == []  # no anime stub written
+    assert called == []  # metadata fetch never even attempted
 
 
-def test_incremental_unmatched_title_creates_synthetic_entry():
-    # The fix: a normal day-to-day incremental sync (full_pull=False) for a title
-    # that resolved correctly but isn't tracked yet creates a new entry instead.
+def test_incremental_unmatched_title_creates_synthetic_entry(monkeypatch):
+    # The #252 fix: a normal day-to-day incremental sync (full_pull=False) for a
+    # title that resolved correctly but isn't tracked yet creates a new entry
+    # instead — provided (#387) it also passes real-metadata + title-similarity
+    # validation. Real romaji here deliberately matches the searched title
+    # closely, so this test isolates the "create when genuinely plausible" path.
+    _mock_metadata(monkeypatch, {
+        "format": "TV", "episodes": 12,
+        "title_romaji": "The Testament of Sister New Devil", "title_english": "",
+    })
     user_list = {}
     conn = _FakeOutboxConn()
     decision = common.resolve_or_create_user_list_entry(
@@ -281,7 +311,7 @@ def test_incremental_unmatched_title_creates_synthetic_entry():
     assert decision == "create"
     assert user_list[20678] == {
         "status": None, "progress": 0, "repeat": 0,
-        "total_episodes": None, "format": None,
+        "total_episodes": 12, "format": "TV",
         "title": "The Testament of Sister New Devil",
     }
     # The anime stub is written before the caller's own outbox enqueue, so the
@@ -291,10 +321,16 @@ def test_incremental_unmatched_title_creates_synthetic_entry():
     assert params == (20678, "The Testament of Sister New Devil")
 
 
-def test_incremental_unmatched_title_dry_run_skips_db_write():
-    # sync_netflix.py's DRY_RUN mode passes conn=None — no DB write, but the
-    # synthetic entry is still added so the rest of DRY_RUN's logging/process()
-    # path exercises the same decision a real run would make.
+def test_incremental_unmatched_title_dry_run_skips_db_write(monkeypatch):
+    # DRY_RUN mode (all four provider scripts, #387 Part 2) passes conn=None —
+    # no DB write, but the synthetic entry is still added so the rest of
+    # DRY_RUN's logging/process() path exercises the same decision a real run
+    # would make. The metadata fetch itself is a read — it still happens for
+    # real under DRY_RUN (mocked here only for test isolation, same as above).
+    _mock_metadata(monkeypatch, {
+        "format": "TV", "episodes": 12,
+        "title_romaji": "The Testament of Sister New Devil", "title_english": "",
+    })
     user_list = {}
     decision = common.resolve_or_create_user_list_entry(
         20678, "The Testament of Sister New Devil", user_list, full_pull=False, conn=None,
@@ -303,7 +339,11 @@ def test_incremental_unmatched_title_dry_run_skips_db_write():
     assert user_list[20678]["status"] is None
 
 
-def test_already_tracked_title_returns_existing_and_does_not_touch_user_list():
+def test_already_tracked_title_returns_existing_and_does_not_touch_user_list(monkeypatch):
+    # decision == "existing" returns before the metadata fetch — an
+    # already-tracked title never needs create-path validation at all.
+    called = []
+    monkeypatch.setattr(common, "fetch_anilist_media_metadata", lambda media_id: called.append(media_id))
     user_list = {154587: {"status": "CURRENT", "progress": 3, "repeat": 0,
                            "total_episodes": 24, "format": "TV", "title": "Attack on Titan"}}
     conn = _FakeOutboxConn()
@@ -313,6 +353,237 @@ def test_already_tracked_title_returns_existing_and_does_not_touch_user_list():
     assert decision == "existing"
     assert user_list[154587]["status"] == "CURRENT"  # untouched
     assert conn.queries == []
+    assert called == []
+
+
+def test_create_skips_when_metadata_fetch_fails(monkeypatch):
+    # A transient AniList API error can't be validated — conservative default is
+    # skip, not create (the title is picked up again on the next sync).
+    _mock_metadata(monkeypatch, None)
+    user_list = {}
+    conn = _FakeOutboxConn()
+    decision = common.resolve_or_create_user_list_entry(
+        99999, "Some Show", user_list, full_pull=False, conn=conn,
+    )
+    assert decision == "skip"
+    assert user_list == {}
+    assert conn.queries == []
+
+
+# ── Real 2026-08-26 incident data (issue #387) — the actual root-cause fix.
+# Confirmed live against the real AniList API during that day's investigation;
+# hardcoded here as fixtures so the fix is proven against the real failure, not
+# just synthetic cases. See TITLE_SIMILARITY_THRESHOLD's own comment in
+# anilist_sync_common.py for the full table + why this check has to exist:
+# AniList's search always returns its closest guess, never confirms confidence,
+# so "found a media_id" alone was never proof it was the RIGHT one.
+
+_INCIDENT_REJECT_CASES = [
+    # (watched_title, watched_format, watched_episode_count, real AniList metadata)
+    ("Wind River", "MOVIE", 1, {
+        "format": "SPECIAL", "episodes": 4,
+        "title_romaji": "Otona Joshi no Anime Time", "title_english": "",
+    }),
+    ("The Guest", "MOVIE", 1, {
+        "format": "TV_SHORT", "episodes": 25,
+        "title_romaji": "Gregory Horror Show: The Second Guest", "title_english": "",
+    }),
+    ("The Proposal", "MOVIE", 1, {
+        "format": None, "episodes": None,
+        "title_romaji": "Ousama no Propose", "title_english": "",
+    }),
+    ("The Boys", "TV", 8, {
+        "format": "TV", "episodes": 40,
+        "title_romaji": "Wakakusa Monogatari: Nan to Jo-sensei",
+        "title_english": "Little Women II: Jo's Boys",
+    }),
+]
+
+_INCIDENT_ACCEPT_CASES = [
+    ("Beck", "TV", 1, {
+        "format": "TV", "episodes": 26,
+        "title_romaji": "BECK", "title_english": "Beck: Mongolian Chop Squad",
+    }),
+    ("Ghost in The Shell: Stand Alone Complex", "TV", 2, {
+        "format": "TV", "episodes": 26,
+        "title_romaji": "Koukaku Kidoutai: STAND ALONE COMPLEX",
+        "title_english": "Ghost in the Shell: Stand Alone Complex",
+    }),
+]
+
+
+@pytest.mark.parametrize("watched_title,watched_format,watched_ep,metadata", _INCIDENT_REJECT_CASES)
+def test_real_incident_false_positives_are_rejected(monkeypatch, watched_title, watched_format, watched_ep, metadata):
+    _mock_metadata(monkeypatch, metadata)
+    user_list = {}
+    conn = _FakeOutboxConn()
+    decision = common.resolve_or_create_user_list_entry(
+        12345, watched_title, user_list, full_pull=False, conn=conn,
+        watched_format=watched_format, watched_episode_count=watched_ep,
+    )
+    assert decision == "skip"
+    assert user_list == {}
+    assert conn.queries == []  # no anime stub written — the ordering fix (#387)
+
+
+@pytest.mark.parametrize("watched_title,watched_format,watched_ep,metadata", _INCIDENT_ACCEPT_CASES)
+def test_real_incident_legitimate_matches_are_accepted(monkeypatch, watched_title, watched_format, watched_ep, metadata):
+    _mock_metadata(monkeypatch, metadata)
+    user_list = {}
+    conn = _FakeOutboxConn()
+    decision = common.resolve_or_create_user_list_entry(
+        12345, watched_title, user_list, full_pull=False, conn=conn,
+        watched_format=watched_format, watched_episode_count=watched_ep,
+    )
+    assert decision == "create"
+    assert user_list[12345]["format"] == metadata["format"]
+    assert user_list[12345]["total_episodes"] == metadata["episodes"]
+
+
+def test_unknown_metadata_with_low_similarity_is_rejected(monkeypatch):
+    # "The Proposal" case again, isolated: format/episodes both unknown is
+    # itself treated as a signal against creating (a real, already-watched
+    # anime almost always has real publisher metadata by now), not neutral.
+    _mock_metadata(monkeypatch, {
+        "format": None, "episodes": None,
+        "title_romaji": "Ousama no Propose", "title_english": "",
+    })
+    user_list = {}
+    decision = common.resolve_or_create_user_list_entry(
+        12345, "The Proposal", user_list, full_pull=False, conn=_FakeOutboxConn(),
+        watched_format="MOVIE", watched_episode_count=1,
+    )
+    assert decision == "skip"
+
+
+def test_unknown_metadata_with_near_exact_title_is_still_accepted(monkeypatch):
+    # The stricter UNKNOWN_METADATA_TITLE_SIMILARITY_THRESHOLD is an extra
+    # caution, not an unconditional reject — a near-exact title match on an
+    # unknown-format/episode candidate should still be trusted.
+    _mock_metadata(monkeypatch, {
+        "format": None, "episodes": None,
+        "title_romaji": "Some Very Specific Show Title", "title_english": "",
+    })
+    user_list = {}
+    decision = common.resolve_or_create_user_list_entry(
+        12345, "Some Very Specific Show Title", user_list, full_pull=False, conn=_FakeOutboxConn(),
+    )
+    assert decision == "create"
+
+
+def test_existing_path_ignores_title_similarity_entirely(monkeypatch):
+    # The title-similarity gate only ever applies to the create decision — an
+    # already-tracked entry (the user put it there themselves) is untouched by
+    # it, matching is_plausible_match()'s own unchanged behavior for that path.
+    called = []
+    monkeypatch.setattr(common, "fetch_anilist_media_metadata", lambda media_id: called.append(media_id))
+    user_list = {154587: {"status": "CURRENT", "progress": 3, "repeat": 0,
+                           "total_episodes": 24, "format": "TV", "title": "Attack on Titan"}}
+    decision = common.resolve_or_create_user_list_entry(
+        154587, "A Completely Unrelated Search Query", user_list, full_pull=False, conn=_FakeOutboxConn(),
+    )
+    assert decision == "existing"
+    assert called == []  # never even reaches the title-similarity check
+
+
+# ── _title_similarity / _normalize_title (issue #387) ───────────────────────
+
+def test_title_similarity_exact_match_after_normalization():
+    assert common._title_similarity("Beck", ["BECK", None]) == 1.0
+
+
+def test_title_similarity_ignores_punctuation_and_case():
+    assert common._title_similarity(
+        "Ghost in The Shell: Stand Alone Complex",
+        ["Koukaku Kidoutai: STAND ALONE COMPLEX", "Ghost in the Shell: Stand Alone Complex"],
+    ) == 1.0
+
+
+def test_title_similarity_takes_the_better_of_romaji_or_english():
+    # Low similarity to the english alt but exact to romaji — best-of, not
+    # first-of or average-of.
+    assert common._title_similarity("Beck", ["BECK", "Beck: Mongolian Chop Squad"]) == 1.0
+
+
+def test_title_similarity_unrelated_titles_score_low():
+    assert common._title_similarity("Wind River", ["Otona Joshi no Anime Time", None]) < 0.4
+
+
+def test_title_similarity_empty_candidates_score_zero():
+    assert common._title_similarity("Anything", [None, ""]) == 0.0
+
+
+def test_title_similarity_empty_watched_title_score_zero():
+    assert common._title_similarity("", ["Anything"]) == 0.0
+
+
+# ── load_walk_complete / set_walk_complete — issue #97/#104, moved to this
+# shared module and hardened by #387 (each provider script used to have its
+# own copy, and each one's fallback — "if sync-state rows already exist,
+# assume the walk completed" — was the actual trigger of the 2026-08-26
+# incident). Minimal in-memory stand-in for a psycopg2 connection, same shape
+# as the per-script _FakeWalkConn these tests replace.
+class _FakeWalkConn:
+    def __init__(self, initial_value=None):
+        self.value = initial_value  # None = "no row for this key yet"
+        self.committed = False
+        self._last_select = None
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params):
+        q = query.strip()
+        if q.startswith("SELECT"):
+            self._last_select = self.value
+        elif q.startswith("INSERT"):
+            self.value = params[-1]
+
+    def fetchone(self):
+        return {"value": self._last_select} if self._last_select is not None else None
+
+    def commit(self):
+        self.committed = True
+
+
+def test_load_walk_complete_false_when_never_set_even_with_existing_state():
+    # Issue #387 — the exact fix: no explicit flag row means "not complete,"
+    # full stop, regardless of whether sync-state rows already exist for this
+    # provider. This IS the fix for the incident (the old has_existing_state
+    # fallback used to return True here).
+    assert common.load_walk_complete(_FakeWalkConn(initial_value=None), "primevideo", 1) is False
+
+
+def test_load_walk_complete_reads_explicit_stored_value():
+    assert common.load_walk_complete(_FakeWalkConn(initial_value="true"), "netflix", 1) is True
+    assert common.load_walk_complete(_FakeWalkConn(initial_value="false"), "netflix", 1) is False
+
+
+def test_load_walk_complete_false_when_conn_is_none():
+    # DRY_RUN mode — treated as a from-scratch first sync, matching every other
+    # DRY_RUN-guarded read.
+    assert common.load_walk_complete(None, "plex", 1) is False
+
+
+def test_set_walk_complete_persists_and_commits():
+    conn = _FakeWalkConn()
+    common.set_walk_complete(conn, "crunchyroll", 1, True)
+    assert conn.value == "true"
+    assert conn.committed is True
+
+    common.set_walk_complete(conn, "crunchyroll", 1, False)
+    assert conn.value == "false"
+
+
+def test_set_walk_complete_noop_when_conn_is_none():
+    # Must not raise — DRY_RUN passes conn=None through to every state writer.
+    common.set_walk_complete(None, "crunchyroll", 1, True)
 
 
 # ── Season-aware matching (issue #159) ───────────────────────────────────────

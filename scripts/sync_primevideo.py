@@ -63,8 +63,8 @@ from dotenv import load_dotenv
 
 from anilist_sync_common import (
     enqueue_outbox_update, find_anilist_id, is_plausible_match,
-    load_user_list_from_db, resolve_or_create_user_list_entry, season_suffix_candidates,
-    seed_search_cache,
+    load_user_list_from_db, load_walk_complete, resolve_or_create_user_list_entry,
+    season_suffix_candidates, seed_search_cache, set_walk_complete,
 )
 
 load_dotenv()
@@ -72,6 +72,12 @@ load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]
 USER_ID = int(os.environ["USER_ID"])
 PRIMEVIDEO_COOKIE_HEADER = os.environ.get("PRIMEVIDEO_COOKIE_HEADER", "")
+
+# Issue #387, Part 2 — same DRY_RUN pattern sync_netflix.py already had (this script
+# had none until now, which is exactly why today's #352 debugging had no safe way to
+# exercise a real fetch against the live account without risking real DB writes — see
+# the walk-complete fix's docstring in anilist_sync_common.py for how that played out).
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
 # Issue #21's pattern (Force Full Resync), wired in from day one per this issue's own
 # scope — #20/#21's precedent already exists, no reason to defer this to a follow-up
@@ -83,6 +89,7 @@ MAX_PAGES = 200  # safety cap — matches sync_crunchyroll.py/sync_netflix.py/sy
 _BASE_URL = "https://www.primevideo.com/api/getWatchHistorySettingsPage"
 
 _SEASON_RE = re.compile(r"^(.*?)[\s,\-]+Season\s*0*(\d+)\b", re.IGNORECASE)
+_BARE_SEASON_RE = re.compile(r"^Season\s*0*\d+$", re.IGNORECASE)
 _EPISODE_RE = re.compile(r"^Episode\s+(\d+)\b", re.IGNORECASE)
 
 
@@ -92,7 +99,11 @@ def log(msg):
 
 def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
     """Same SYNC_RESULT contract every scripts/sync_*.py uses — see
-    sync_netflix.py's identical helper for why (issue #46)."""
+    sync_netflix.py's identical helper for why (issue #46). Not emitted in
+    DRY_RUN — that mode is a local investigation tool, never invoked through
+    run_full_sync.py."""
+    if DRY_RUN:
+        return
     print(
         f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
         flush=True,
@@ -233,13 +244,26 @@ def _parse_season_and_title(display_title: str | None) -> tuple[str, int]:
     """Extracts (base_title, season_number) from Prime Video's inconsistently
     formatted season display text — see module docstring for the observed
     variants. Falls back to (display_title, 1) when no "Season N" pattern is
-    found at all, and to (original full string, 1) when the pattern matches
-    but leaves nothing usable as a title (the bare "Season 3" case, no show
-    name attached) — that case simply won't resolve against AniList and gets
-    skipped downstream, same as any other unmatched title."""
+    found at all, and to ("", 1) — genuinely unusable, skipped by
+    parse_items()'s `if not title: continue` guard — for the bare "Season 3"
+    case (no show name attached at all).
+
+    Issue #387: that bare-"Season N" case used to fall through to the same
+    (display_title, 1) fallback as any other unparseable title, returning the
+    literal string "Season 3" as if it were a real series name. The intent
+    (per this docstring, unchanged since #17) was always that a title with
+    nothing usable "simply won't resolve against AniList and gets skipped" —
+    but AniList's search is fuzzy, not exact, and a live incident confirmed
+    the literal query "Season 3" actually found "Dorohedoro Season 3" (a real,
+    unrelated anime) as a false-positive hit, auto-created as a new AniList
+    entry. _BARE_SEASON_RE now catches this shape explicitly and returns an
+    empty title so it's skipped upstream of ever reaching AniList's search at
+    all, rather than relying on the search finding nothing."""
     text = (display_title or "").strip()
     if not text:
         return text, 1
+    if _BARE_SEASON_RE.match(text):
+        return "", 1
     m = _SEASON_RE.match(text)
     if not m:
         return text, 1
@@ -328,6 +352,8 @@ def load_pv_state(conn) -> dict[int, dict]:
 
 
 def save_pv_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO primevideo_sync_state (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
@@ -345,6 +371,8 @@ def save_watermark(conn, anilist_id: int, title: str, watched_at: datetime):
     """Fetch-side watermark bookkeeping only — mirrors sync_crunchyroll.py's/
     sync_plex.py's save_watermark() exactly, see their docstrings for why this
     stays column-disjoint from save_pv_state()."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO primevideo_sync_state (user_id, anilist_id, series_title, last_seen_watched_at, last_synced_at)
@@ -363,37 +391,19 @@ def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
     return max(values) if values else None
 
 
-def load_walk_complete(conn, has_existing_state: bool) -> bool:
-    """Whether we've ever confirmed reviewing this account's full Prime Video
-    history — same issue #97/#104 pattern as sync_crunchyroll.py/sync_netflix.py/
-    sync_plex.py."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT value FROM settings WHERE user_id = %s AND key = 'primevideo_walk_complete'",
-            (USER_ID,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return has_existing_state
-    return row["value"].strip().lower() in ("1", "true", "yes")
-
-
-def _set_walk_complete(conn, complete: bool):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO settings (user_id, key, value) VALUES (%s, 'primevideo_walk_complete', %s)
-            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
-        """, (USER_ID, "true" if complete else "false"))
-    conn.commit()
-
-
 def load_title_search_cache(conn) -> dict[str, int | None]:
+    """Global (not per-user) AniList title-search cache (issue #115). `conn` may
+    be None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
+    if conn is None:
+        return {}
     with conn.cursor() as cur:
         cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
         return {row["title"]: row["media_id"] for row in cur.fetchall()}
 
 
 def save_title_search_cache_entry(conn, title: str, media_id: int | None):
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
@@ -409,7 +419,25 @@ def save_title_search_cache_entry(conn, title: str, media_id: int | None):
 # Netflix's delta-count shape. Not re-derived here to avoid the three drifting.
 
 def _update(conn, anilist_id: int, **kwargs):
-    enqueue_outbox_update(conn, anilist_id, "primevideo", **kwargs)
+    """enqueue_outbox_update(), routed through DRY_RUN — see its module-level
+    docstring. Issue #100 — no longer pushes to AniList directly/synchronously;
+    enqueues to status_sync_outbox for the app's shared outbox worker to
+    deliver."""
+    if DRY_RUN:
+        log(f"    [dry-run] would enqueue outbox update({anilist_id}, {kwargs})")
+    else:
+        enqueue_outbox_update(conn, anilist_id, "primevideo", **kwargs)
+
+
+def _save_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    """save_pv_state(), routed through DRY_RUN for a consistent log line — see
+    _update()'s docstring. save_pv_state() itself already guards conn is None
+    (safe to call directly), this wrapper exists purely so process()'s DRY_RUN
+    output says what it would have saved, matching sync_netflix.py's pattern."""
+    if DRY_RUN:
+        log(f"    [dry-run] would save state: anilist_id={anilist_id} last_ep={last_ep} rewatch={rewatch}")
+    else:
+        save_pv_state(conn, anilist_id, title, last_ep, rewatch)
 
 
 def process(title: str, pv_ep: int, entry: dict, pv_state: dict | None, conn) -> str:
@@ -424,57 +452,57 @@ def process(title: str, pv_ep: int, entry: dict, pv_state: dict | None, conn) ->
 
     if status is None:
         _update(conn, anilist_id, progress=pv_ep, status="WATCHING")
-        save_pv_state(conn, anilist_id, title, pv_ep, False)
+        _save_state(conn, anilist_id, title, pv_ep, False)
         return f"new AniList entry created → WATCHING ep {pv_ep}"
 
     if pv_state is None and status == "COMPLETED":
-        save_pv_state(conn, anilist_id, title, pv_ep, False)
+        _save_state(conn, anilist_id, title, pv_ep, False)
         return "first-sync (COMPLETED) — state recorded, no change"
 
     if status == "REPEATING" and not rewatch_active:
         if pv_ep > al_ep:
             _update(conn, anilist_id, progress=pv_ep)
-            save_pv_state(conn, anilist_id, title, pv_ep, True)
+            _save_state(conn, anilist_id, title, pv_ep, True)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {pv_ep}"
-        save_pv_state(conn, anilist_id, title, pv_ep, True)
+        _save_state(conn, anilist_id, title, pv_ep, True)
         return "rewatch detected (already REPEATING) — state recorded"
 
     if status == "COMPLETED" and pv_ep < (last_ep or total or 999) and not rewatch_active:
         _update(conn, anilist_id, progress=pv_ep, status="REPEATING")
-        save_pv_state(conn, anilist_id, title, pv_ep, True)
+        _save_state(conn, anilist_id, title, pv_ep, True)
         return f"rewatch started → REPEATING ep {pv_ep}"
 
     if rewatch_active and pv_ep < last_ep:
         _update(conn, anilist_id, progress=pv_ep)
-        save_pv_state(conn, anilist_id, title, pv_ep, True)
+        _save_state(conn, anilist_id, title, pv_ep, True)
         return f"new rewatch pass detected (was at {last_ep}) → progress reset to {pv_ep}"
 
     if pv_ep <= last_ep and not rewatch_active:
         if pv_ep <= al_ep:
-            save_pv_state(conn, anilist_id, title, last_ep, rewatch_active)
+            _save_state(conn, anilist_id, title, last_ep, rewatch_active)
             return f"no change (Prime Video={pv_ep}, last_seen={last_ep})"
 
     if rewatch_active and total and pv_ep >= total:
         _update(conn, anilist_id, progress=pv_ep, status="COMPLETED", repeat=repeat + 1)
-        save_pv_state(conn, anilist_id, title, pv_ep, False)
+        _save_state(conn, anilist_id, title, pv_ep, False)
         return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
 
     if rewatch_active and pv_ep > al_ep:
         _update(conn, anilist_id, progress=pv_ep)
-        save_pv_state(conn, anilist_id, title, pv_ep, True)
+        _save_state(conn, anilist_id, title, pv_ep, True)
         return f"rewatch progress {al_ep} → {pv_ep}"
 
     if status == "DROPPED" and pv_ep > last_ep:
         _update(conn, anilist_id, progress=pv_ep, status="CURRENT")
-        save_pv_state(conn, anilist_id, title, pv_ep, False)
+        _save_state(conn, anilist_id, title, pv_ep, False)
         return f"resumed after DROP → CURRENT ep {pv_ep}"
 
     if pv_ep > al_ep:
         _update(conn, anilist_id, progress=pv_ep)
-        save_pv_state(conn, anilist_id, title, pv_ep, False)
+        _save_state(conn, anilist_id, title, pv_ep, False)
         return f"progress {al_ep} → {pv_ep}"
 
-    save_pv_state(conn, anilist_id, title, max(pv_ep, last_ep), rewatch_active)
+    _save_state(conn, anilist_id, title, max(pv_ep, last_ep), rewatch_active)
     return f"AniList ({al_ep}) already at or ahead of Prime Video ({pv_ep})"
 
 
@@ -487,15 +515,25 @@ def main():
         log("ERROR: Prime Video credentials not configured (PRIMEVIDEO_COOKIE_HEADER)")
         sys.exit(1)
 
-    conn = db_connect()
-    ensure_table(conn)
-    state_map = load_pv_state(conn)
-    log(f"Loaded Prime Video sync state for {len(state_map)} series")
+    if DRY_RUN:
+        # No DB touched at all in dry-run — not even the CREATE TABLE IF NOT EXISTS
+        # fallback. Treated as a from-scratch first sync (no watermark), which is
+        # also the most useful dry-run shape: it exercises the fetch/parse/match/
+        # process path (including the create-decision plausibility gate, issue
+        # #387) against your full real history without writing anything.
+        log("[dry-run] skipping database entirely — no reads, no writes")
+        conn = None
+        state_map: dict[int, dict] = {}
+    else:
+        conn = db_connect()
+        ensure_table(conn)
+        state_map = load_pv_state(conn)
+        log(f"Loaded Prime Video sync state for {len(state_map)} series")
 
-    walk_complete = load_walk_complete(conn, has_existing_state=bool(state_map))
+    walk_complete = load_walk_complete(conn, "primevideo", USER_ID)
     if walk_complete and FORCE_FULL_RESYNC:
         log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        _set_walk_complete(conn, False)
+        set_walk_complete(conn, "primevideo", USER_ID, False)
         walk_complete = False
         watermark = None
     elif walk_complete:
@@ -511,16 +549,18 @@ def main():
         raw_items, reached_true_end = client.fetch_since(watermark)
     except Exception as e:
         log(f"ERROR: Prime Video fetch failed: {e}")
-        conn.close()
+        if conn:
+            conn.close()
         sys.exit(1)
     log(f"Fetched {len(raw_items)} new history rows")
 
     if not raw_items:
         if reached_true_end:
-            _set_walk_complete(conn, True)
+            set_walk_complete(conn, "primevideo", USER_ID, True)
             log("Reached true end of Prime Video history — full walk marked complete")
         log("No new activity — nothing to do")
-        conn.close()
+        if conn:
+            conn.close()
         _emit_result(0, len(raw_items), full_pull)
         sys.exit(0)
 
@@ -556,9 +596,12 @@ def main():
             skipped += 1
             continue
 
-        decision = resolve_or_create_user_list_entry(media_id, title, user_list, full_pull, conn)
+        decision = resolve_or_create_user_list_entry(
+            media_id, title, user_list, full_pull, conn,
+            watched_format=watched["watched_format"], watched_episode_count=watched["episode"],
+        )
         if decision == "skip":
-            log(f"  ✗ Not in your AniList: '{title}'")
+            log(f"  ✗ Not in your AniList (or an implausible/unvalidated match): '{title}'")
             skipped += 1
             continue
         if decision == "create":
@@ -567,6 +610,13 @@ def main():
         entry = dict(user_list[media_id])
         entry["anilist_id"] = media_id
 
+        # Issue #387 — a "create" decision above already validated plausibility
+        # against real AniList metadata inside resolve_or_create_user_list_entry();
+        # this second check only ever matters for the "existing" decision (an
+        # already-tracked entry, whose format/total_episodes are real AniList
+        # data pulled from the local mirror, not a synthetic placeholder) — kept
+        # as a harmless, redundant safety net on the create path rather than
+        # branching around it.
         if not is_plausible_match(entry, watched["watched_format"], watched["episode"]):
             log(f"  ✗ Implausible match, skipping: '{title}' "
                 f"(AniList format={entry.get('format')}, total_eps={entry.get('total_episodes')}; "
@@ -588,12 +638,14 @@ def main():
             skipped += 1
 
     if reached_true_end:
-        _set_walk_complete(conn, True)
+        set_walk_complete(conn, "primevideo", USER_ID, True)
         log("Reached true end of Prime Video history — full walk marked complete")
 
-    conn.close()
+    if conn:
+        conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
-        f"({index_hits} index hits, {search_hits} API searches)")
+        f"({index_hits} index hits, {search_hits} API searches)"
+        + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
     _emit_result(updated, len(raw_items), full_pull)
 
 
