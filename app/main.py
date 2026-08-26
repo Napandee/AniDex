@@ -118,12 +118,27 @@ def _run_sync_task(
             [sys.executable, script],
             capture_output=True, text=True, timeout=1500, env=env,
         )
+        # Issue #353 — always log the captured output, not just on an outright
+        # subprocess failure. run_full_sync.py's own exit code is 0 for BOTH "ok"
+        # and "partial" overall status (partial means some provider step failed
+        # but anilist_postgres itself succeeded) — this used to only log output on
+        # a non-zero exit, so a partial run's real per-step error detail (the
+        # actual exception/HTTP status/traceback run_full_sync.py's own run()
+        # already captured, not just sync_log.steps[]'s generic wrapper message)
+        # was captured here and then silently discarded. Confirmed the hard way in
+        # production (issue #352) — docker logs had zero mention of a real 403
+        # until that sync was manually re-run just to observe it live.
+        output = (result.stdout or "") + (result.stderr or "")
         if result.returncode == 0:
             state["last_result"] = "ok"
-            log.info("Sync completed for user %s: %s", user_id, script)
+            if "overall status: partial" in output:
+                log.warning("Sync completed with a partial failure for user %s (%s):\n%s",
+                            user_id, script, output[-4000:])
+            else:
+                log.info("Sync completed for user %s: %s", user_id, script)
         else:
             state["last_result"] = "error"
-            log.error("Sync failed for user %s (%s) stderr: %s", user_id, script, result.stderr[-800:])
+            log.error("Sync failed for user %s (%s):\n%s", user_id, script, output[-4000:])
     except Exception as e:
         state["last_result"] = "error"
         log.error("Sync exception for user %s (%s): %s", user_id, script, e)
