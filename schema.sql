@@ -85,8 +85,14 @@ CREATE TABLE invites (
 
 -- Admin-mediated password reset links (no email infrastructure — admin generates the
 -- link and hands it to the user directly, matching the invite-only trust model).
+--
+-- token_hash (issue #358, migration 033): SHA256(token) hex digest via
+-- sessions.hash_token(), never the raw opaque token itself — same rationale/pattern
+-- as sessions.session_token_hash (issue #311, migration 030): a DB-read-only leak
+-- within the token's 1-hour window would otherwise be a direct, no-guessing account
+-- takeover.
 CREATE TABLE password_resets (
-    token       TEXT PRIMARY KEY,
+    token_hash  TEXT PRIMARY KEY,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at  TIMESTAMPTZ NOT NULL,
