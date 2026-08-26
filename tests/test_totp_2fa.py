@@ -480,12 +480,15 @@ def test_password_reset_does_not_clear_totp_code_lockout(client, pg_conn, local_
     assert totp_locked_until is not None
 
     # Admin-mediated password reset (issue's existing flow) — insert a usable token
-    # directly, same as admin_reset_password would.
+    # directly, same as admin_reset_password would. Stored hashed (issue #358),
+    # same as the real insert path — the URL/lookup still uses the raw token.
+    from app.sessions import hash_token as _hash_token
+
     token = "test-reset-token-totp-lockout"
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO password_resets (token, user_id, expires_at) VALUES (%s, %s, now() + interval '1 hour')",
-            (token, user_id),
+            "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (%s, %s, now() + interval '1 hour')",
+            (_hash_token(token), user_id),
         )
     reset_resp = client.post(
         f"/auth/reset-password/{token}", data={"password": "a brand new password 123"}, follow_redirects=False

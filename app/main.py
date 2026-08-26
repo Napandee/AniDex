@@ -2044,10 +2044,14 @@ def auth_register_submit(request: Request, email: str = Form(...), password: str
 
 
 def _valid_reset_token(token: str):
-    """Returns the password_resets row if the token is usable, else None."""
+    """Returns the password_resets row if the token is usable, else None.
+
+    Looks up by SHA256(token) (issue #358) — the raw token is never stored, same
+    hash-and-lookup pattern as sessions.hash_token(), reusing that exact function
+    rather than a second hashing convention."""
     row = db.fetchone(
-        "SELECT * FROM password_resets WHERE token = %s AND used_at IS NULL AND expires_at > now()",
-        (token,),
+        "SELECT * FROM password_resets WHERE token_hash = %s AND used_at IS NULL AND expires_at > now()",
+        (sessions.hash_token(token),),
     )
     return row
 
@@ -2084,7 +2088,10 @@ def auth_reset_password_submit(request: Request, token: str, password: str = For
         "UPDATE users SET password_hash = %s, failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
         (password_hash, reset["user_id"]),
     )
-    db.execute("UPDATE password_resets SET used_at = now() WHERE token = %s", (token,))
+    db.execute(
+        "UPDATE password_resets SET used_at = now() WHERE token_hash = %s",
+        (sessions.hash_token(token),),
+    )
 
     return RedirectResponse(url="/auth/login", status_code=303)
 
@@ -2884,8 +2891,8 @@ def admin_reset_password(request: Request, user_id: int):
 
     token = secrets.token_urlsafe(32)
     db.execute(
-        "INSERT INTO password_resets (token, user_id, expires_at) VALUES (%s, %s, now() + interval '1 hour')",
-        (token, user_id),
+        "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (%s, %s, now() + interval '1 hour')",
+        (sessions.hash_token(token), user_id),
     )
     admin_user = get_current_user(request)
     _log_admin_action(
