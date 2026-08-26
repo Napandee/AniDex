@@ -51,6 +51,19 @@ ENCRYPTED_KEYS = {
     "primevideo_cookie_header",
 }
 
+# Issue #357 — instance_config (not the per-user `settings` table above) also holds
+# a real credential: the Google/Discord OAuth client_secret, written by
+# app/main.py's admin_oauth_settings route. It was never covered by ENCRYPTED_KEYS
+# because that set/the encrypt_secret()/decrypt_secret() calls below only ever get
+# consulted against `settings` rows — a DB leak would have exposed this one value
+# in the clear while every other credential in the same leak was ciphertext.
+# client_id values are not secret and stay plaintext on purpose (same reasoning as
+# anilist_username elsewhere: useful to a human glancing at the table).
+INSTANCE_ENCRYPTED_KEYS = {
+    "google_client_secret",
+    "discord_client_secret",
+}
+
 _SETTINGS_ENCRYPTION_KEY = os.environ.get("SETTINGS_ENCRYPTION_KEY")
 if not _SETTINGS_ENCRYPTION_KEY:
     raise RuntimeError(
