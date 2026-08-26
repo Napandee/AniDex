@@ -46,6 +46,9 @@ ENCRYPTED_KEYS = {
     # glancing at the settings table.
     "plex_account_token",
     "plex_server_token",
+    # Issue #17 — Prime Video's cookie-replay credential, same shape/exposure risk
+    # as netflix_cookie_header above.
+    "primevideo_cookie_header",
 }
 
 _SETTINGS_ENCRYPTION_KEY = os.environ.get("SETTINGS_ENCRYPTION_KEY")

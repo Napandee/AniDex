@@ -26,8 +26,11 @@ def _result(ok, entries_updated=None, entries_fetched=None, full_pull=None):
 
 
 def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True, plex_ok=True,
-             cr_configured=True, netflix_configured=True, plex_configured=False, timeout_step=None,
-             cr_result=None, netflix_result=None, anilist_result=None, plex_result=None):
+             primevideo_ok=True,
+             cr_configured=True, netflix_configured=True, plex_configured=False,
+             primevideo_configured=False, timeout_step=None,
+             cr_result=None, netflix_result=None, anilist_result=None, plex_result=None,
+             primevideo_result=None):
     settings = {
         "anilist_token": "tok",
         "anilist_username": "user",
@@ -36,6 +39,7 @@ def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True, plex_
         "netflix_profile_guid": "guid" if netflix_configured else "",
         "plex_server_token": "srv-tok" if plex_configured else "",
         "plex_server_base_url": "https://example.plex.direct:32400" if plex_configured else "",
+        "primevideo_cookie_header": "cookie" if primevideo_configured else "",
     }
     monkeypatch.setattr(rfs, "load_settings", lambda: settings)
 
@@ -67,12 +71,16 @@ def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True, plex_
             raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
         if "sync_plex" in joined and timeout_step == "plex":
             raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
+        if "sync_primevideo" in joined and timeout_step == "primevideo":
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
         if "sync_crunchyroll" in joined:
             return cr_result if cr_result is not None else _result(cr_ok)
         if "sync_netflix" in joined:
             return netflix_result if netflix_result is not None else _result(netflix_ok)
         if "sync_plex" in joined:
             return plex_result if plex_result is not None else _result(plex_ok)
+        if "sync_primevideo" in joined:
+            return primevideo_result if primevideo_result is not None else _result(primevideo_ok)
         if "sync_anilist" in joined:
             return anilist_result if anilist_result is not None else _result(anilist_ok)
         return _result(True)
@@ -95,7 +103,10 @@ def test_all_steps_configured_and_ok(monkeypatch):
     assert exc.value.code == 0
     result = finish_calls[0]
     assert result["status"] == "ok"
-    assert _statuses(result["steps"]) == {"crunchyroll": "ok", "netflix": "ok", "plex": "skipped", "anilist_postgres": "ok"}
+    assert _statuses(result["steps"]) == {
+        "crunchyroll": "ok", "netflix": "ok", "plex": "skipped", "primevideo": "skipped",
+        "anilist_postgres": "ok",
+    }
 
 
 def test_netflix_failure_does_not_block_anilist_pull(monkeypatch):
@@ -123,7 +134,10 @@ def test_no_provider_credentials_skips_but_anilist_still_runs(monkeypatch):
     assert exc.value.code == 0
     result = finish_calls[0]
     assert result["status"] == "ok"
-    assert _statuses(result["steps"]) == {"crunchyroll": "skipped", "netflix": "skipped", "plex": "skipped", "anilist_postgres": "ok"}
+    assert _statuses(result["steps"]) == {
+        "crunchyroll": "skipped", "netflix": "skipped", "plex": "skipped", "primevideo": "skipped",
+        "anilist_postgres": "ok",
+    }
     # skipped steps never call run() at all — only the anilist step should have
     assert all("sync_anilist" in " ".join(str(c) for c in cmd) for cmd, _timeout in calls)
 
@@ -141,7 +155,10 @@ def test_plex_runs_when_configured(monkeypatch):
     assert exc.value.code == 0
     result = finish_calls[0]
     assert result["status"] == "ok"
-    assert _statuses(result["steps"]) == {"crunchyroll": "ok", "netflix": "ok", "plex": "ok", "anilist_postgres": "ok"}
+    assert _statuses(result["steps"]) == {
+        "crunchyroll": "ok", "netflix": "ok", "plex": "ok", "primevideo": "skipped",
+        "anilist_postgres": "ok",
+    }
     assert any("sync_plex" in " ".join(str(c) for c in cmd) for cmd, _timeout in calls)
 
 
@@ -156,6 +173,42 @@ def test_plex_failure_does_not_block_anilist_pull(monkeypatch):
     assert result["status"] == "partial"
     statuses = _statuses(result["steps"])
     assert statuses["plex"] == "error"
+    assert statuses["anilist_postgres"] == "ok"
+
+
+def test_primevideo_runs_when_configured(monkeypatch):
+    # Issue #17 — primevideo is wired as a fifth independent step, same shape as
+    # crunchyroll/netflix/plex: only runs when settings has primevideo_cookie_header,
+    # and its own failure/success doesn't affect the other steps (issue #62's
+    # guarantee, extended to a fourth provider).
+    calls, finish_calls, start_log_calls = _capture(monkeypatch, primevideo_configured=True)
+
+    with pytest.raises(SystemExit) as exc:
+        rfs.main()
+
+    assert exc.value.code == 0
+    result = finish_calls[0]
+    assert result["status"] == "ok"
+    assert _statuses(result["steps"]) == {
+        "crunchyroll": "ok", "netflix": "ok", "plex": "skipped", "primevideo": "ok",
+        "anilist_postgres": "ok",
+    }
+    assert any("sync_primevideo" in " ".join(str(c) for c in cmd) for cmd, _timeout in calls)
+
+
+def test_primevideo_failure_does_not_block_anilist_pull(monkeypatch):
+    calls, finish_calls, start_log_calls = _capture(
+        monkeypatch, primevideo_configured=True, primevideo_ok=False,
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        rfs.main()
+
+    assert exc.value.code == 0
+    result = finish_calls[0]
+    assert result["status"] == "partial"
+    statuses = _statuses(result["steps"])
+    assert statuses["primevideo"] == "error"
     assert statuses["anilist_postgres"] == "ok"
 
 

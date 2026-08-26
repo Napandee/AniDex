@@ -156,6 +156,9 @@ def test_sensitive_key_stored_as_ciphertext_in_raw_db(pg_conn):
         # test of their own until now.
         ("plex_account_token", "fake_plex_account_token_1234567890abcdef"),
         ("plex_server_token", "fake_plex_server_token_1234567890abcdef"),
+        # Issue #17 — Prime Video cookie-replay credential, added to ENCRYPTED_KEYS
+        # from day one this time (see #335's lesson about Plex's keys).
+        ("primevideo_cookie_header", "fake_primevideo_cookie_header_1234567890"),
     ],
 )
 def test_every_encrypted_key_round_trips(pg_conn, key, value):
@@ -198,6 +201,8 @@ def test_encrypted_keys_allowlist_matches_confirmed_call_sites():
         # Issue #153 — Plex OAuth PIN connect flow (app/plex_auth.py).
         "plex_account_token",
         "plex_server_token",
+        # Issue #17 — Prime Video cookie-replay credential.
+        "primevideo_cookie_header",
     }
 
 

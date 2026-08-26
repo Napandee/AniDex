@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import sync_crunchyroll as cr_mod
 import sync_netflix as nf_mod
+import sync_primevideo as pv_mod
 import anilist_sync_common as asc_mod
 
 from app import credential_check as cc
@@ -160,6 +161,39 @@ def test_check_netflix_invalid_credential(monkeypatch):
     ok, detail = cc.check_netflix("stale-cookie", "profile-guid-123")
     assert ok is False
     assert "build_id" in detail.lower() or "expired" in detail.lower()
+
+
+# ── check_primevideo ──────────────────────────────────────────────────────────
+
+def test_check_primevideo_blank_fails_without_network(monkeypatch):
+    def fail_if_called(*a, **k):
+        raise AssertionError("should never hit the network for a blank credential")
+
+    monkeypatch.setattr(pv_mod.httpx.Client, "get", fail_if_called)
+    ok, detail = cc.check_primevideo("")
+    assert ok is False
+    assert "no prime video" in detail.lower()
+
+
+def test_check_primevideo_valid_credential(monkeypatch):
+    def fake_get(self, url, **kwargs):
+        assert "getWatchHistorySettingsPage" in url
+        return _FakeResponse(200, {"widgets": [{"widgetType": "watch-history"}]})
+
+    monkeypatch.setattr(pv_mod.httpx.Client, "get", fake_get)
+    ok, detail = cc.check_primevideo("session-id=abc; ubid-main=def")
+    assert ok is True
+    assert "valid" in detail.lower()
+
+
+def test_check_primevideo_invalid_credential(monkeypatch):
+    def fake_get(self, url, **kwargs):
+        return _FakeResponse(403, text="not authorized")
+
+    monkeypatch.setattr(pv_mod.httpx.Client, "get", fake_get)
+    ok, detail = cc.check_primevideo("stale-cookie")
+    assert ok is False
+    assert "403" in detail
 
 
 # ── Route-level coverage (real Postgres + real TestClient) ──────────────────

@@ -5115,6 +5115,9 @@ def settings_page(
             bool(current.get("plex_server_token")) and bool(current.get("plex_server_base_url")),
             "plex", user["id"],
         ),
+        "primevideo": _credential_connection_status(
+            bool(current.get("primevideo_cookie_header")), "primevideo", user["id"],
+        ),
     }
 
     # Issue #204 — same GIT_SHA value the admin-only Operability tab already
@@ -5304,6 +5307,21 @@ def settings_save_credentials_netflix(
     return RedirectResponse(url="/settings?saved=credentials_netflix", status_code=303)
 
 
+@app.post("/settings/credentials/primevideo")
+def settings_save_credentials_primevideo(
+    request: Request,
+    primevideo_cookie_header: str = Form(""),
+):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    if primevideo_cookie_header.strip():
+        config.set_value(user["id"], "primevideo_cookie_header", primevideo_cookie_header.strip())
+
+    return RedirectResponse(url="/settings?saved=credentials_primevideo", status_code=303)
+
+
 @app.post("/settings/plex/connect")
 async def settings_plex_connect(request: Request):
     """Issue #153 — starts a Plex OAuth PIN connect attempt. Returns the pin id
@@ -5389,7 +5407,7 @@ async def test_credential(provider: str, request: Request):
     if denied:
         return denied
 
-    if provider not in ("anilist", "crunchyroll", "netflix"):
+    if provider not in ("anilist", "crunchyroll", "netflix", "primevideo"):
         return JSONResponse({"ok": False, "message": "Unknown provider."}, status_code=404)
 
     try:
@@ -5405,8 +5423,10 @@ async def test_credential(provider: str, request: Request):
         ok, detail = credential_check.check_anilist(_field("anilist_username"), _field("anilist_token"))
     elif provider == "crunchyroll":
         ok, detail = credential_check.check_crunchyroll(_field("cr_etp_rt"))
-    else:
+    elif provider == "netflix":
         ok, detail = credential_check.check_netflix(_field("netflix_cookie_header"), _field("netflix_profile_guid"))
+    else:
+        ok, detail = credential_check.check_primevideo(_field("primevideo_cookie_header"))
 
     return JSONResponse({"ok": ok, "detail": detail})
 

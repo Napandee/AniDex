@@ -216,6 +216,7 @@
     {% set cr_expanded = (cred_status.crunchyroll == 'needs_attention') or (saved == 'credentials_crunchyroll') %}
     {% set nf_expanded = (cred_status.netflix == 'needs_attention') or (saved == 'credentials_netflix') %}
     {% set plex_expanded = (cred_status.plex == 'needs_attention') or (saved in ('plex_connected', 'plex_disconnected')) %}
+    {% set pv_expanded = (cred_status.primevideo == 'needs_attention') or (saved == 'credentials_primevideo') %}
     <div class="settings-section settings-section--first">
       <h2 class="settings-section-title">{{ t('sync_credentials_title') }}</h2>
       <p class="settings-section-desc">{{ t('sync_credentials_help') }}</p>
@@ -405,6 +406,50 @@
               <span class="cred-test-result" id="plex-connect-status" hidden></span>
             </div>
             {% endif %}
+          </div></div></div>
+        </div>
+
+        {# ── Prime Video — optional, collapsed by default ──────────────── #}
+        <div class="cred-card" data-provider="primevideo">
+          <button type="button" class="cred-card-header" data-cred-toggle="cred-body-primevideo" aria-expanded="{{ 'true' if pv_expanded else 'false' }}">
+            <span class="cred-icon cred-icon--primevideo">PV</span>
+            <span class="cred-name">{{ t('sync_primevideo_subtitle') }}</span>
+            <span class="status-chip status-chip--cred-{{ cred_status.primevideo }}">{{ t('cred_status_' + cred_status.primevideo) }}</span>
+            <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="cred-card-body help-disclosure-panel{{ ' open' if pv_expanded else '' }}" id="cred-body-primevideo"><div><div>
+            {% if saved == 'credentials_primevideo' %}<p class="settings-success">{{ t('sync_credentials_saved_primevideo') }}</p>{% endif %}
+            {% if cred_status.primevideo == 'needs_attention' %}<p class="cred-attention-note">{{ t('cred_needs_attention_note') }}</p>{% endif %}
+
+            <form method="post" action="/settings/credentials/primevideo" class="cred-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-field">
+                <label class="form-label" for="primevideo_cookie_header">{{ t('sync_primevideo_cookie_label') }}</label>
+                <input class="form-input form-input--secret" type="password" id="primevideo_cookie_header"
+                       name="primevideo_cookie_header" placeholder="{% if settings.primevideo_cookie_header %}{{ t('sync_token_set') }}{% else %}{{ t('sync_token_not_set') }}{% endif %}"
+                       autocomplete="new-password">
+                <button type="button" class="btn-reveal" data-target="primevideo_cookie_header">Show</button>
+              </div>
+
+              <button type="button" class="cred-guide-toggle" data-cred-toggle="cred-guide-primevideo" aria-expanded="false">
+                <svg class="cred-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                {{ t('cred_guide_toggle') }}
+              </button>
+              <div class="cred-guide help-disclosure-panel" id="cred-guide-primevideo"><div><div>
+                <ol class="cred-guide-steps">
+                  <li>{{ t('cred_guide_primevideo_step1') }}</li>
+                  <li>{{ t('cred_guide_primevideo_step2') }}</li>
+                  <li>{{ t('cred_guide_primevideo_step3') }}</li>
+                  <li>{{ t('cred_guide_primevideo_step4') }}</li>
+                </ol>
+              </div></div></div>
+
+              <div class="cred-form-actions">
+                <button type="button" class="btn-test" data-cred-test="primevideo" data-cred-fields="primevideo_cookie_header">{{ t('cred_test_btn') }}</button>
+                <span class="cred-test-result" data-cred-result="primevideo" hidden></span>
+                <button type="submit" class="btn-save">{{ t('settings_save_button') }}</button>
+              </div>
+            </form>
           </div></div></div>
         </div>
 
@@ -1070,7 +1115,7 @@ document.querySelectorAll('[data-cred-test]').forEach(btn => {
 // ── Per-service status chips (shared by the live banner and the history table) ──
 // Kept in sync manually with scripts/run_full_sync.py's step order — extend when
 // Prime Video (#49) lands.
-const SERVICE_ORDER = ['crunchyroll', 'netflix', 'plex', 'anilist_postgres'];
+const SERVICE_ORDER = ['crunchyroll', 'netflix', 'plex', 'primevideo', 'anilist_postgres'];
 function fmtService(s) {
   return { crunchyroll: 'Crunchyroll', netflix: 'Netflix', plex: 'Plex', anilist_postgres: 'AniList library refresh', prime_video: 'Prime Video' }[s] || s;
 }
