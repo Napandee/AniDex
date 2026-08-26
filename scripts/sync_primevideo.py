@@ -116,6 +116,18 @@ class PrimeVideoHistory:
             headers={
                 "accept": "*/*",
                 "x-requested-with": "XMLHttpRequest",
+                # Chromium Client Hints + Fetch Metadata headers — a real browser
+                # sends these on every XHR/fetch automatically. Confirmed the hard
+                # way (issue #352): this class originally omitted all six, and the
+                # live sync started 403ing shortly after scripts/dev/probe_primevideo_history.py
+                # (which does send them) succeeded with the exact same cookie —
+                # not cookie expiry, a WAF check on these specific headers.
+                "sec-ch-ua": '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Linux"',
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
                 "referer": "https://www.primevideo.com/settings/watch-history",
                 "user-agent": (
                     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
