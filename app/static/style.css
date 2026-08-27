@@ -758,6 +758,13 @@ main {
   aspect-ratio: 2/3;
   object-fit: cover;
   display: block;
+  /* Issue #368 — AniList-sourced cover URLs can go stale/404 (see CLAUDE.md's
+     Data Source note); without this a failed load's native broken-image icon +
+     alt text spills out past the card's rounded corners. overflow:hidden clips
+     it, the background gives a neutral placeholder once script.js's onerror
+     handler hides the broken <img> itself. */
+  overflow: hidden;
+  background: var(--bg-surface-alt);
 }
 
 .progress-bar-wrap {
@@ -2140,6 +2147,12 @@ body.auth-page main {
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
+  /* Issue #368 — worst case for a failed cover load: the native broken-image
+     icon + alt text is disproportionately large against this 44px thumbnail
+     and visibly overflows the row. Same overflow/background/onerror fix as
+     .cover above. */
+  overflow: hidden;
+  background: var(--bg-surface-alt);
 }
 
 .upcoming-info { display: flex; flex-direction: column; gap: 0.2rem; }

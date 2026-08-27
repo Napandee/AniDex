@@ -125,7 +125,7 @@
         {% if e.next_episode_filler_status %}
         <span class="badge-filler badge-filler-{{ e.next_episode_filler_status }}">{{ t('queue_filler_badge', num=e.next_episode_number, status=t('filler_status_' + e.next_episode_filler_status)) }}</span>
         {% endif %}
-        <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+        <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}" aria-label="{{ t('link_view_anilist') }}">↗</a>
       </div>
       <div class="queue-actions">
         <button class="btn-mark-watched"
@@ -218,7 +218,7 @@
           {% if e.repeat_count %}
           <span class="rewatch-badge" title="{% if e.repeat_count == 1 %}{{ t('queue_rewatch_singular', count=e.repeat_count) }}{% else %}{{ t('queue_rewatch_plural', count=e.repeat_count) }}{% endif %}">↺ {{ e.repeat_count }}×</span>
           {% endif %}
-          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}" aria-label="{{ t('link_view_anilist') }}">↗</a>
         </div>
         <div class="queue-actions">
           <button class="btn-start-rewatch" data-anime-id="{{ e.id }}">{{ t('queue_rewatch_start_btn') }}</button>
