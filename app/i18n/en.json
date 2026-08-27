@@ -684,6 +684,10 @@
   "admin_build_version_unknown": "unknown (not baked into this image)",
   "admin_db_size": "Database size",
   "admin_rows_suffix": "rows",
+  "admin_pending_migrations": "Pending migrations",
+  "admin_pending_migrations_warning": "{count} migration(s) not yet applied to this database — see migrations/ and CLAUDE.md's manual-apply steps",
+  "admin_pending_migrations_none": "None — up to date",
+  "admin_pending_migrations_unknown": "Unknown (marker not set yet)",
 
   "admin_audit_log_title": "Audit log",
   "admin_audit_log_desc": "Chronological record of admin actions (invites, OAuth settings, privacy defaults, password resets, user deactivation). Most recent first.",

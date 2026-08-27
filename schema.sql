@@ -664,6 +664,24 @@ CREATE TABLE sync_log (
                                              --   "full_pull": bool|null, "entries_fetched": int|null}, ...]
 );
 
+-- Single-row marker: highest migration number actually confirmed applied to this
+-- database (issue #380, migration 035). Compared against app/main.py's
+-- LATEST_MIGRATION constant on Admin > Instance Health to surface a real "the
+-- deployed code expects a migration that hasn't been run here yet" warning —
+-- confirmed live to be a real, silent-failure-prone gap (migration 028 sat
+-- unapplied on prod for a while with nobody aware). No seed row here, unlike
+-- filler_data_license's own singleton pattern this mirrors structurally —
+-- schema.sql has no precedent for seed INSERTs at all, and a fresh install has
+-- nothing pending by definition, so app/main.py's read side treats a missing
+-- row the same as "nothing to warn about" rather than needing one. See
+-- scripts/mark_migration_applied.sh, which upserts this row on first real use
+-- regardless of whether one already exists.
+CREATE TABLE migration_state (
+    id                          INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    highest_applied_migration  INTEGER NOT NULL,
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- =========================================================================
 -- INDEXES
 -- =========================================================================

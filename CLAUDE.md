@@ -252,6 +252,20 @@ deliberate, separate step from the code deploy. `schema.sql` is the fresh-instal
 schema; migrations exist only for the upgrade path. Per the guardrail below, always back
 up first and get explicit confirmation before running one against real data.
 
+**Applying a migration also means bumping the tracking marker (issue #380).**
+`migration_state` (migration 035) is a single-row table holding the highest
+migration number confirmed applied to that specific database; `app/main.py`'s
+`LATEST_MIGRATION` constant is what the deployed code expects. Admin > Instance
+Health compares the two and warns when they're out of sync — the fix for a real
+incident (2026-08-27): `028_plex_sync_state.sql` sat unapplied on production for
+a while with nobody aware, only caught by accident. Use
+`scripts/mark_migration_applied.sh <N>` instead of the raw `docker exec ... psql`
+command above whenever possible — it applies the SQL file AND bumps the marker in
+one step, so the marker can't be forgotten the way this whole gap was. Whenever a
+new migration file is added to the repo, bump `LATEST_MIGRATION` in the same
+PR/commit — `pr-validate.yml` reminds you (a non-blocking CI annotation), it
+doesn't enforce it.
+
 **002 needs a variable, not a plain stdin pipe.** `002_backfill_and_tighten.sql`
 backfills every pre-multi-user row to the instance owner's new `user_id` via a
 `:owner_id` psql variable used throughout the file — it must be run with

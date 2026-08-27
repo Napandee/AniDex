@@ -2499,6 +2499,17 @@ async def _impersonation_audit_middleware(request: Request, call_next):
 
 GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 
+# Issue #380 — the number of the newest migration file this deployed code expects
+# to have been applied. Bump this by hand whenever a new migrations/00N_*.sql file
+# is added, in the SAME PR/commit that adds it — pr-validate.yml's new-migration-
+# file check reminds you, it doesn't enforce it (this repo's migrations are a
+# deliberate manual apply step, not something CI can verify was actually run
+# against a real database). Compared against migration_state.highest_applied_migration
+# on Admin > Instance Health; see that table's comment in schema.sql/migration 035
+# for the real incident (migration 028 silently unapplied on prod) this exists to
+# catch going forward.
+LATEST_MIGRATION = 35
+
 
 def _build_version() -> str | None:
     """The short git SHA baked into the image via the Dockerfile's GIT_SHA build
@@ -2508,6 +2519,26 @@ def _build_version() -> str | None:
     not two."""
     git_sha = os.environ.get("GIT_SHA", "").strip()
     return git_sha[:12] if git_sha else None
+
+
+def _pending_migration_count() -> int | None:
+    """Issue #380 — how far migration_state.highest_applied_migration trails
+    LATEST_MIGRATION, i.e. how many migration files the deployed code expects
+    that haven't been confirmed applied to THIS database yet. Returns None
+    (not 0) when it can't tell — no migration_state row yet (fresh install off
+    schema.sql, nothing pending by definition — see that table's comment) or
+    the table itself doesn't exist yet (an instance mid-upgrade that hasn't
+    reached migration 035 itself, the exact kind of gap this feature exists to
+    catch — silently swallowed here rather than raising and breaking the whole
+    Instance Health page over it). Never writes — same read-only contract as
+    the rest of _instance_health()."""
+    try:
+        row = db.fetchone("SELECT highest_applied_migration FROM migration_state WHERE id = 1")
+    except Exception:
+        return None
+    if row is None:
+        return None
+    return max(0, LATEST_MIGRATION - row["highest_applied_migration"])
 
 
 def _instance_health() -> dict:
@@ -2527,6 +2558,7 @@ def _instance_health() -> dict:
             "anime": db.fetchone("SELECT COUNT(*) AS n FROM anime")["n"],
             "users": db.fetchone("SELECT COUNT(*) AS n FROM users")["n"],
         },
+        "pending_migrations": _pending_migration_count(),
     }
 
 
