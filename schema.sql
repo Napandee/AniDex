@@ -682,7 +682,7 @@ CREATE TABLE migration_state (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Scheduled automatic backups (issue #372, migration 036) — each row is one
+-- Scheduled automatic backups (issue #372, migration 037) — each row is one
 -- full-instance backup zip (same content admin_export_all builds on demand),
 -- stored in Postgres rather than on the app container's own filesystem, since
 -- the app container has no persistent volume mounted for arbitrary files today

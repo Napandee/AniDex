@@ -1,4 +1,4 @@
--- Migration 036: add instance_backups (issue #372 — scheduled automatic backups).
+-- Migration 037: add instance_backups (issue #372 — scheduled automatic backups).
 --
 -- Stores each scheduled backup's zip content directly in Postgres (bytea) rather than
 -- on the app container's own filesystem: the app container has no persistent volume
@@ -11,7 +11,7 @@
 -- Purely additive (new table only) — per CLAUDE.md's guardrail, fine to run directly,
 -- but back up first anyway per this repo's standing practice for any migration
 -- touching a live database. Remember to also bump app/main.py's LATEST_MIGRATION and
--- run scripts/mark_migration_applied.sh 36 (issue #380) when this is actually applied.
+-- run scripts/mark_migration_applied.sh 37 (issue #380) when this is actually applied.
 
 BEGIN;
 
