@@ -343,6 +343,17 @@ def _users_with_sync_credentials() -> list[dict]:
     )
 
 
+# Issue #374 — how big an airing_at change counts as "meaningful" enough to notify
+# about, rather than every hourly refresh's inevitable minute-level jitter in
+# AniList's own reported times. The cache itself refreshes hourly (see
+# _refresh_airing_schedule below), so anything smaller than that cadence isn't
+# reliably distinguishable from noise; 1 hour was chosen as the smallest threshold
+# that's still clearly bigger than that noise floor. Not configurable in v1 — the
+# issue didn't specify a value, and a fixed sensible default beats blocking on a
+# UI for it.
+_AIRING_SHIFT_THRESHOLD = timedelta(hours=1)
+
+
 def _refresh_airing_schedule() -> None:
     """Hourly job: refresh airing_schedule_cache once for the union of every user's
     WATCHING/PLANNING RELEASING anime — a global table, so this replaces what used
@@ -352,7 +363,17 @@ def _refresh_airing_schedule() -> None:
     daily full sync, so anime added via a manual sync or "Add Anime" outside that
     window still get picked up within the hour — offset to minute=45 so a fresh
     cache is in place before _check_airing_episodes' minute=0 run each hour.
+
+    Issue #374 — captures the cache's state immediately before the subprocess
+    upserts it, so the diff below is exactly "what this one refresh changed," not a
+    comparison against some older/stale baseline. This only adds a before/after
+    comparison around the existing refresh — scripts/sync_airing_schedule.py's own
+    fetch/upsert logic is untouched, per that issue's own scope note.
     """
+    before = {
+        (r["anime_id"], r["episode"]): r["airing_at"]
+        for r in db.fetchall("SELECT anime_id, episode, airing_at FROM airing_schedule_cache")
+    }
     try:
         result = subprocess.run(
             [sys.executable, _AIRING_SCHEDULE_SCRIPT],
@@ -360,8 +381,51 @@ def _refresh_airing_schedule() -> None:
         )
         if result.returncode != 0:
             log.error("Airing schedule refresh failed: %s", result.stderr[-800:])
+            return
     except Exception as e:
         log.error("Airing schedule refresh exception: %s", e)
+        return
+
+    try:
+        _notify_airing_schedule_shifts(before)
+    except Exception as e:
+        log.error("Airing schedule shift-notification exception: %s", e)
+
+
+def _notify_airing_schedule_shifts(before: dict) -> None:
+    """Issue #374 — notify each affected user when a tracked title's next-episode
+    air date shifted by at least _AIRING_SHIFT_THRESHOLD since the last refresh.
+    `before` is this run's pre-refresh snapshot; only keys present in both before
+    and after are comparable (a brand-new (anime_id, episode) row is new data, not
+    a "shift," and isn't notification-worthy under this issue's scope)."""
+    after_rows = db.fetchall("SELECT anime_id, episode, airing_at FROM airing_schedule_cache")
+    shifted = []
+    for r in after_rows:
+        old_at = before.get((r["anime_id"], r["episode"]))
+        if old_at is not None and abs(r["airing_at"] - old_at) >= _AIRING_SHIFT_THRESHOLD:
+            shifted.append((r["anime_id"], r["episode"], old_at, r["airing_at"]))
+    if not shifted:
+        return
+
+    for anime_id, episode, old_at, new_at in shifted:
+        watchers = db.fetchall(
+            """
+            SELECT le.user_id, a.title_english, a.title_romaji
+            FROM library_entries le
+            JOIN anime a ON a.id = le.anime_id
+            WHERE le.anime_id = %s AND le.status IN ('WATCHING', 'PLANNING')
+            """,
+            (anime_id,),
+        )
+        for w in watchers:
+            title = w["title_english"] or w["title_romaji"]
+            direction = "delayed" if new_at > old_at else "moved earlier"
+            notify(
+                w["user_id"],
+                "Air date changed",
+                f"{title} — Ep {episode} {direction}: "
+                f"{old_at.strftime('%a %d %b %H:%M UTC')} → {new_at.strftime('%a %d %b %H:%M UTC')}",
+            )
 
 
 def _refresh_filler_data() -> None:
@@ -454,6 +518,106 @@ def _weekly_airing_digest() -> None:
             dt = r["airing_at"].strftime("%a %d %b %H:%M UTC") if r["airing_at"] else ""
             lines.append(f"• {title} — Ep {r['episode']} ({dt})")
         notify(user_id, "Anime this week", "\n".join(lines))
+
+
+def _compute_monthly_recap(user_id: int, month_start: date, month_end: date) -> dict | None:
+    """Issue #375 — reuses the same finish_date-scoped completion/genre pattern
+    stats_data()'s by_year/genre breakdowns already use (see that route), scoped
+    to one calendar month instead. Deliberately does NOT compute a monthly
+    "episodes watched" count — unlike a per-completion finish_date, there is no
+    per-day/per-month progress signal without new instrumentation (CLAUDE.md/
+    issue #10 already ruled that out for the stats page itself), so this stays
+    honest about what's actually knowable rather than inventing a number.
+    Returns None when there's nothing to report (no completions that month) —
+    the caller skips sending a digest in that case rather than nudging someone
+    toward an empty summary."""
+    completed = db.fetchall(
+        """
+        SELECT a.title_english, a.title_romaji, a.episodes, a.genres
+        FROM library_entries le
+        JOIN anime a ON a.id = le.anime_id
+        WHERE le.user_id = %s AND le.status = 'COMPLETED'
+          AND le.finish_date BETWEEN %s AND %s
+        """,
+        (user_id, month_start, month_end),
+    )
+    if not completed:
+        return None
+
+    genre_counts: dict[str, int] = {}
+    total_episodes = 0
+    for row in completed:
+        total_episodes += row["episodes"] or 0
+        for g in (row["genres"] or []):
+            genre_counts[g] = genre_counts.get(g, 0) + 1
+    top_genre = max(genre_counts, key=genre_counts.get) if genre_counts else None
+
+    return {
+        "completions": len(completed),
+        "total_episodes": total_episodes,
+        "top_genre": top_genre,
+        "titles": [r["title_english"] or r["title_romaji"] for r in completed],
+    }
+
+
+def _scheduled_monthly_recap() -> None:
+    """First-of-month job: each user's own recap of last month's completions."""
+    today = date.today()
+    last_month_end = today.replace(day=1) - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    month_label = last_month_start.strftime("%B %Y")
+
+    for user in db.fetchall("SELECT id FROM users"):
+        user_id = user["id"]
+        recap = _compute_monthly_recap(user_id, last_month_start, last_month_end)
+        if recap is None:
+            continue
+        lines = [f"📅 {month_label} recap", f"{recap['completions']} completed, {recap['total_episodes']} episodes"]
+        if recap["top_genre"]:
+            lines.append(f"Top genre: {recap['top_genre']}")
+        lines.append("")
+        lines.extend(f"• {t}" for t in recap["titles"][:8])
+        if len(recap["titles"]) > 8:
+            lines.append(f"…and {len(recap['titles']) - 8} more")
+        notify(user_id, f"Your {month_label} recap", "\n".join(lines))
+
+
+# Issue #372 — how many scheduled backups to keep. Not specified by the issue
+# (only that off-instance delivery is out of scope); 14 daily backups is two
+# weeks of rollback headroom without letting the table grow unbounded — a
+# hardcoded default rather than a v1 retention-config UI, per the issue's own
+# "don't build a configurable retention UI for v1" framing.
+_BACKUP_RETENTION_COUNT = 14
+
+
+def _scheduled_instance_backup() -> None:
+    """Scheduled counterpart to admin_export_all's on-demand full-instance zip
+    (issue #90) — same content, same per-user export query, just run on a cron
+    trigger and persisted instead of streamed as a download. Stored as a bytea
+    row in Postgres rather than a file on the app container's own filesystem —
+    see migration 036's header comment for why (no persistent app-container
+    volume exists today; adding one would be a deploy-pipeline change, which
+    CLAUDE.md's guardrail says needs explicit confirmation first)."""
+    users = db.fetchall("SELECT id FROM users ORDER BY id")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for u in users:
+            export = _export_user_library(u["id"])
+            zf.writestr(f"{u['id']}.json", json.dumps(export, default=str, ensure_ascii=False, indent=2))
+    content = buf.getvalue()
+
+    db.execute(
+        "INSERT INTO instance_backups (size_bytes, user_count, content) VALUES (%s, %s, %s)",
+        (len(content), len(users), content),
+    )
+    db.execute(
+        """
+        DELETE FROM instance_backups
+        WHERE id NOT IN (SELECT id FROM instance_backups ORDER BY created_at DESC LIMIT %s)
+        """,
+        (_BACKUP_RETENTION_COUNT,),
+    )
+    log.info("Scheduled backup complete: %d users, %d bytes", len(users), len(content))
 
 
 # Issue #196 — periodic nudge pointing users at the living "year so far" page
@@ -597,6 +761,7 @@ def _apply_schedule() -> None:
     daily_time = _instance_config_get("sync_daily_time") or "04:30"
     rec_day    = _instance_config_get("sync_recommender_day") or "sun"
     rec_time   = _instance_config_get("sync_recommender_time") or "05:00"
+    backup_time = _instance_config_get("backup_daily_time") or "02:00"
 
     try:
         d_hour, d_min = daily_time.split(":")
@@ -604,6 +769,10 @@ def _apply_schedule() -> None:
     except ValueError:
         d_hour, d_min = "4", "30"
         r_hour, r_min = "5", "0"
+    try:
+        b_hour, b_min = backup_time.split(":")
+    except ValueError:
+        b_hour, b_min = "2", "0"
 
     _scheduler.add_job(
         _scheduled_full_sync,
@@ -652,6 +821,20 @@ def _apply_schedule() -> None:
         _scheduled_wrapped_year_end_reminder,
         CronTrigger(month=12, day=20, hour=9, minute=0, timezone="UTC"),
         id="wrapped_year_end_reminder", replace_existing=True,
+    )
+    # Issue #375 — first of every month, well after weekly_digest's Monday-morning
+    # slot so the two don't compete for attention on the same day.
+    _scheduler.add_job(
+        _scheduled_monthly_recap,
+        CronTrigger(day=1, hour=8, minute=0, timezone="UTC"),
+        id="monthly_recap", replace_existing=True,
+    )
+    # Issue #372 — admin-configurable like daily_sync/weekly_recommender above,
+    # via the same Instance Config form/instance_config keys.
+    _scheduler.add_job(
+        _scheduled_instance_backup,
+        CronTrigger(hour=b_hour, minute=b_min, timezone="UTC"),
+        id="instance_backup", replace_existing=True,
     )
 
 
@@ -2508,7 +2691,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 35
+LATEST_MIGRATION = 36
 
 
 def _build_version() -> str | None:
@@ -2775,7 +2958,18 @@ def admin_page(request: Request, saved: str = ""):
         "sync_daily_time": _instance_config_get("sync_daily_time") or "04:30",
         "sync_recommender_day": _instance_config_get("sync_recommender_day") or "sun",
         "sync_recommender_time": _instance_config_get("sync_recommender_time") or "05:00",
+        "backup_daily_time": _instance_config_get("backup_daily_time") or "02:00",
     }
+
+    # Issue #372 — most recent backups, newest first, for the Admin Instance
+    # Config tab's list/download UI. size_bytes/created_at only — the actual
+    # bytea content is fetched on demand by the download route, never loaded
+    # here just to render a list.
+    recent_backups = db.fetchall(
+        "SELECT id, created_at, size_bytes, user_count FROM instance_backups "
+        "ORDER BY created_at DESC LIMIT %s",
+        (_BACKUP_RETENTION_COUNT,),
+    )
 
     now = datetime.now(timezone.utc)
 
@@ -2859,6 +3053,8 @@ def admin_page(request: Request, saved: str = ""):
             "day_labels": DAY_LABELS,
             "next_daily_sync": _next_run_time("daily_sync"),
             "next_recommender": _next_run_time("weekly_recommender"),
+            "next_backup": _next_run_time("instance_backup"),
+            "recent_backups": recent_backups,
             "saved": saved,
         },
     )
@@ -5851,6 +6047,7 @@ def settings_save_schedule(
     sync_daily_time: str = Form("04:30"),
     sync_recommender_day: str = Form("sun"),
     sync_recommender_time: str = Form("05:00"),
+    backup_daily_time: str = Form("02:00"),
 ):
     # Sync schedule is instance-wide (one cron trigger regardless of user count), so it
     # goes to instance_config rather than a per-user settings row — admin-only, since a
@@ -5876,6 +6073,13 @@ def settings_save_schedule(
     except Exception:
         sync_recommender_time = "05:00"
     _instance_config_set("sync_recommender_time", sync_recommender_time)
+
+    try:
+        h, m = backup_daily_time.split(":")
+        assert 0 <= int(h) <= 23 and 0 <= int(m) <= 59
+    except Exception:
+        backup_daily_time = "02:00"
+    _instance_config_set("backup_daily_time", backup_daily_time)
 
     # Apply new schedule immediately — no restart needed
     _apply_schedule()
@@ -7897,6 +8101,29 @@ def admin_export_all(request: Request):
         content=buf.getvalue(),
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename=anidex_export_all_{timestamp}.zip"},
+    )
+
+
+@app.get("/admin/backups/{backup_id}/download")
+def admin_download_backup(request: Request, backup_id: int):
+    """Issue #372 — download one of the scheduled backups instance_backups holds,
+    same zip shape admin_export_all builds on demand above (one {user_id}.json
+    per user), just persisted on a cron trigger instead of streamed live."""
+    denied = _require_admin(request)
+    if denied:
+        return denied
+
+    row = db.fetchone(
+        "SELECT created_at, content FROM instance_backups WHERE id = %s", (backup_id,)
+    )
+    if not row:
+        raise HTTPException(status_code=404)
+
+    timestamp = row["created_at"].strftime("%Y%m%d_%H%M%S")
+    return Response(
+        content=bytes(row["content"]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=anidex_backup_{timestamp}.zip"},
     )
 
 

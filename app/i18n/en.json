@@ -670,7 +670,16 @@
   "admin_next_run_hint": "— next run",
   "admin_weekly_recommender_label": "Weekly recommender",
   "admin_schedule_at": "at",
+  "admin_backup_schedule_label": "Daily backup time (HH:MM UTC)",
   "admin_save_schedule_btn": "Save schedule",
+
+  "admin_backups_title": "Scheduled backups",
+  "admin_backups_desc": "A full-instance export, taken automatically at the time above. Kept for the most recent 14 backups.",
+  "admin_backups_col_created": "Created",
+  "admin_backups_col_users": "Users",
+  "admin_backups_col_size": "Size",
+  "admin_backups_download_btn": "Download",
+  "admin_backups_empty": "No scheduled backups yet.",
 
   "admin_privacy_defaults_title": "Privacy defaults",
   "admin_privacy_defaults_help": "Instance-wide hidden tags/genres for cross-user visibility features — unioned with each user's own hidden-tags list from Settings, never replaces it. Opt-in only: leave empty and nothing is hidden by default.",

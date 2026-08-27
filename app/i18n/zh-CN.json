@@ -670,7 +670,16 @@
   "admin_next_run_hint": "— 下次运行",
   "admin_weekly_recommender_label": "每周推荐器",
   "admin_schedule_at": "于",
+  "admin_backup_schedule_label": "每日备份时间（HH:MM UTC）",
   "admin_save_schedule_btn": "保存计划",
+
+  "admin_backups_title": "计划备份",
+  "admin_backups_desc": "在上方时间自动生成的完整实例导出。保留最近的 14 份备份。",
+  "admin_backups_col_created": "创建时间",
+  "admin_backups_col_users": "用户数",
+  "admin_backups_col_size": "大小",
+  "admin_backups_download_btn": "下载",
+  "admin_backups_empty": "尚无计划备份。",
 
   "admin_privacy_defaults_title": "隐私默认设置",
   "admin_privacy_defaults_help": "用于跨用户可见性功能的实例范围隐藏标签/类型——与每个用户在设置中自己的隐藏标签列表取并集，绝不会替换它。仅为可选启用：留空则默认不隐藏任何内容。",

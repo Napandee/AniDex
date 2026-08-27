@@ -670,7 +670,16 @@
   "admin_next_run_hint": "— अगला रन",
   "admin_weekly_recommender_label": "साप्ताहिक रिकमेंडर",
   "admin_schedule_at": "पर",
+  "admin_backup_schedule_label": "दैनिक बैकअप समय (HH:MM UTC)",
   "admin_save_schedule_btn": "शेड्यूल सहेजें",
+
+  "admin_backups_title": "शेड्यूल किए गए बैकअप",
+  "admin_backups_desc": "ऊपर दिए गए समय पर स्वचालित रूप से लिया गया पूरा इंस्टेंस एक्सपोर्ट। सबसे हाल के 14 बैकअप रखे जाते हैं।",
+  "admin_backups_col_created": "बनाया गया",
+  "admin_backups_col_users": "उपयोगकर्ता",
+  "admin_backups_col_size": "आकार",
+  "admin_backups_download_btn": "डाउनलोड करें",
+  "admin_backups_empty": "अभी तक कोई शेड्यूल किया गया बैकअप नहीं है।",
 
   "admin_privacy_defaults_title": "गोपनीयता डिफ़ॉल्ट",
   "admin_privacy_defaults_help": "क्रॉस-यूज़र दृश्यता सुविधाओं के लिए इंस्टेंस-वाइड छिपाए गए टैग/जॉनर — सेटिंग्स में हर उपयोगकर्ता की अपनी छिपे-टैग सूची के साथ मिलाए जाते हैं, उसे बदलते नहीं। केवल वैकल्पिक: खाली छोड़ें तो डिफ़ॉल्ट रूप से कुछ भी नहीं छिपेगा।",

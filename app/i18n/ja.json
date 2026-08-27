@@ -670,7 +670,16 @@
   "admin_next_run_hint": "— 次回実行",
   "admin_weekly_recommender_label": "週次レコメンダー",
   "admin_schedule_at": "・",
+  "admin_backup_schedule_label": "毎日のバックアップ時刻（HH:MM UTC）",
   "admin_save_schedule_btn": "スケジュールを保存",
+
+  "admin_backups_title": "スケジュールされたバックアップ",
+  "admin_backups_desc": "上記の時刻に自動的に取得されるインスタンス全体のエクスポートです。直近14件が保存されます。",
+  "admin_backups_col_created": "作成日時",
+  "admin_backups_col_users": "ユーザー数",
+  "admin_backups_col_size": "サイズ",
+  "admin_backups_download_btn": "ダウンロード",
+  "admin_backups_empty": "スケジュールされたバックアップはまだありません。",
 
   "admin_privacy_defaults_title": "プライバシーのデフォルト",
   "admin_privacy_defaults_help": "ユーザー間表示機能のためのインスタンス全体の非表示タグ／ジャンル — 各ユーザー自身の設定の非表示タグリストと統合され、置き換えることはありません。オプトインのみ：空欄のままならデフォルトでは何も非表示になりません。",
