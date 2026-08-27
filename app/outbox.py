@@ -49,6 +49,23 @@ def wake() -> None:
     _wake_event.set()
 
 
+def _record_rate_limit(source: str, retry_after_seconds: int) -> None:
+    """Issue #381 — visibility-only marker for Admin > Instance Health, read via
+    app.main's _anilist_rate_limit_status(). Never changes retry behavior itself
+    (that's the existing MAX_ATTEMPTS/BASE_BACKOFF logic below, untouched)."""
+    db.execute(
+        """
+        INSERT INTO anilist_rate_limit_state (id, source, retry_after_seconds, observed_at)
+        VALUES (1, %s, %s, now())
+        ON CONFLICT (id) DO UPDATE SET
+            source = EXCLUDED.source,
+            retry_after_seconds = EXCLUDED.retry_after_seconds,
+            observed_at = EXCLUDED.observed_at
+        """,
+        (source, retry_after_seconds),
+    )
+
+
 def _push_one(item: dict) -> tuple[bool, str | None]:
     """One push attempt to AniList for a single outbox item. Returns (ok, error).
 
@@ -91,7 +108,9 @@ def _push_one(item: dict) -> tuple[bool, str | None]:
             timeout=10,
         )
         if resp.status_code == 429:
-            return False, f"rate_limited:{resp.headers.get('Retry-After', 60)}"
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            _record_rate_limit("outbox", retry_after)
+            return False, f"rate_limited:{retry_after}"
         resp.raise_for_status()
         data = resp.json()
         if "errors" in data:

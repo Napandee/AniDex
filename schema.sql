@@ -682,6 +682,16 @@ CREATE TABLE migration_state (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Issue #381 — single-row marker for the most recently observed AniList 429,
+-- read by Admin > Instance Health. No seed row: absence means "never observed
+-- a rate limit," same no-row-is-fine contract as migration_state above.
+CREATE TABLE anilist_rate_limit_state (
+    id                   INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    source               TEXT NOT NULL,
+    retry_after_seconds  INTEGER NOT NULL,
+    observed_at          TIMESTAMPTZ NOT NULL
+);
+
 -- =========================================================================
 -- INDEXES
 -- =========================================================================
