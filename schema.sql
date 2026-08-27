@@ -682,6 +682,19 @@ CREATE TABLE migration_state (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Scheduled automatic backups (issue #372, migration 037) — each row is one
+-- full-instance backup zip (same content admin_export_all builds on demand),
+-- stored in Postgres rather than on the app container's own filesystem, since
+-- the app container has no persistent volume mounted for arbitrary files today
+-- (only Postgres does). Pruned to the most recent N rows on each scheduled run.
+CREATE TABLE instance_backups (
+    id            SERIAL PRIMARY KEY,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    size_bytes    INTEGER NOT NULL,
+    user_count    INTEGER NOT NULL,
+    content       BYTEA NOT NULL
+);
+
 -- Issue #381 — single-row marker for the most recently observed AniList 429,
 -- read by Admin > Instance Health. No seed row: absence means "never observed
 -- a rate limit," same no-row-is-fine contract as migration_state above.
@@ -695,6 +708,8 @@ CREATE TABLE anilist_rate_limit_state (
 -- =========================================================================
 -- INDEXES
 -- =========================================================================
+
+CREATE INDEX idx_instance_backups_created_at ON instance_backups (created_at DESC);
 
 CREATE INDEX idx_library_entries_status ON library_entries(status);
 CREATE INDEX idx_library_entries_user ON library_entries(user_id);

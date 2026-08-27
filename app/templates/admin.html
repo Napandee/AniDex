@@ -223,10 +223,51 @@
           </div>
         </div>
 
+        <div class="form-field">
+          <label class="form-label" for="backup_daily_time">
+            {{ t('admin_backup_schedule_label') }}
+            {% if next_backup %}
+            <span class="form-label-hint">{{ t('admin_next_run_hint') }} <time id="next-backup-ts" datetime="{{ next_backup }}">{{ next_backup }}</time></span>
+            {% endif %}
+          </label>
+          <input class="form-input form-input--narrow" type="time" id="backup_daily_time"
+                 name="backup_daily_time" value="{{ schedule.backup_daily_time }}">
+        </div>
+
         <div class="form-actions">
           <button type="submit" class="btn-save">{{ t('admin_save_schedule_btn') }}</button>
         </div>
       </form>
+    </div>
+
+    {# ── Scheduled backups (issue #372) ───────────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('admin_backups_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_backups_desc') }}</p>
+      {% if recent_backups %}
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>{{ t('admin_backups_col_created') }}</th>
+            <th>{{ t('admin_backups_col_users') }}</th>
+            <th>{{ t('admin_backups_col_size') }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for b in recent_backups %}
+          <tr>
+            <td><time datetime="{{ b.created_at.isoformat() }}">{{ b.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</time></td>
+            <td>{{ b.user_count }}</td>
+            <td>{{ (b.size_bytes / 1024) | round(1) }} KB</td>
+            <td><a href="/admin/backups/{{ b.id }}/download" class="btn-save" download>{{ t('admin_backups_download_btn') }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="settings-section-desc">{{ t('admin_backups_empty') }}</p>
+      {% endif %}
     </div>
 
     {# ── Privacy defaults ─────────────────────────────────────────────── #}

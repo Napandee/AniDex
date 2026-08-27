@@ -670,7 +670,16 @@
   "admin_next_run_hint": "— próxima ejecución",
   "admin_weekly_recommender_label": "Recomendador semanal",
   "admin_schedule_at": "a las",
+  "admin_backup_schedule_label": "Hora de copia de seguridad diaria (HH:MM UTC)",
   "admin_save_schedule_btn": "Guardar programación",
+
+  "admin_backups_title": "Copias de seguridad programadas",
+  "admin_backups_desc": "Una exportación completa de la instancia, realizada automáticamente a la hora indicada arriba. Se conservan las 14 copias más recientes.",
+  "admin_backups_col_created": "Creada",
+  "admin_backups_col_users": "Usuarios",
+  "admin_backups_col_size": "Tamaño",
+  "admin_backups_download_btn": "Descargar",
+  "admin_backups_empty": "Aún no hay copias de seguridad programadas.",
 
   "admin_privacy_defaults_title": "Privacidad predeterminada",
   "admin_privacy_defaults_help": "Etiquetas/géneros ocultos a nivel de instancia para las funciones de visibilidad entre usuarios — se combinan con la lista de etiquetas ocultas propia de cada usuario en Ajustes, nunca la sustituyen. Solo opcional: si se deja vacío, nada se oculta por defecto.",
