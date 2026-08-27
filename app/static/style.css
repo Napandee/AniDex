@@ -997,7 +997,15 @@ main {
   transition: border-color 0.15s, color 0.15s;
 }
 .status-select:hover { border-color: var(--border-strong); color: var(--t4); }
-.status-select:focus { outline: none; border-color: var(--border-strong); }
+.status-select:focus { border-color: var(--border-strong); }
+/* Issue #369 — this used to also set outline:none with only the border-color
+   change above as a substitute, a subtle gray-to-gray shift with no visible
+   ring (WCAG 2.4.7 gap) — every other interactive element already using
+   :focus-visible in this file (.help-disclosure-btn, a.upcoming-month-cell,
+   a.stat-headline-link) gets a real outline; this was the one broadly-used
+   exception. Matches that established pattern exactly rather than inventing
+   a new one. */
+.status-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .genres {
   display: flex;
@@ -1283,7 +1291,12 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
   width: 100%;
 }
 .form-textarea { resize: vertical; }
-.form-input:focus, .form-textarea:focus { outline: none; border-color: var(--border-strong); }
+.form-input:focus, .form-textarea:focus { border-color: var(--border-strong); }
+/* Issue #369 — see .status-select:focus-visible's comment above for why: same
+   gap, same fix, same established :focus-visible pattern this file already
+   uses elsewhere. These two are used on every Settings field and notes field
+   in the app, making this the broadest instance of the gap. */
+.form-input:focus-visible, .form-textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .form-input::placeholder, .form-textarea::placeholder { color: var(--t8); }
 
 .form-actions { display: flex; gap: 0.75rem; padding-top: 0.25rem; }
@@ -2435,6 +2448,16 @@ a.drop-tag-chip-link:focus-visible {
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
 }
+/* Issue #364 — .stats-grid never set `display` conditionally itself, so the
+   author rule above always won over the browser's default `[hidden] {
+   display: none }` UA rule, even while JS left the `hidden` attribute set on
+   #studio-loyalty-section/#taste-drift-section/#watch-activity-section (each
+   waiting on real data before unhiding, see stats.html). Confirmed live: an
+   element with hidden===true still occupied a full grid track, rendering an
+   empty card with a heading and nothing else. Same bug class .genre[hidden]
+   above already guards against — belt-and-braces here too rather than assume
+   it stays fixed. */
+.stats-grid[hidden] { display: none; }
 .chart-card {
   background: var(--bg-surface-alt);
   border: 1px solid var(--border);

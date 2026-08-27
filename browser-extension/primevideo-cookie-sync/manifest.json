@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "AniDex — Prime Video Cookie Sync",
+  "version": "1.0.0",
+  "description": "Keeps a self-hosted AniDex instance's stored Prime Video cookie fresh, without manual copy-paste. See README.md.",
+  "permissions": ["cookies", "storage", "alarms"],
+  "host_permissions": ["*://*.primevideo.com/*"],
+  "optional_host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Sync Prime Video cookie to AniDex now"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

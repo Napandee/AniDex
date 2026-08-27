@@ -77,7 +77,19 @@ per watched episode, not just a raw count.
 > shorter-lived session tier than general browsing, so expect to occasionally repeat
 > the capture steps above even if you're still logged into primevideo.com everywhere
 > else. If your Prime Video sync starts failing, recapturing a fresh cookie the same
-> way is the first thing to try.
+> way is the first thing to try. This isn't a bug in AniDex — every other community
+> tool that reads this same Amazon endpoint hits the same limit. Two ways to make
+> this less painful than re-capturing the cookie by hand every time it dies:
+>
+> - **[Prime Video Cookie Sync browser extension](../../browser-extension/primevideo-cookie-sync/)**
+>   (issue #390) — a small companion extension that reads your browser's current
+>   Prime Video cookies and pushes them to your AniDex instance automatically
+>   (hourly, or on demand). Recommended if the manual recapture is happening often
+>   enough to be annoying.
+> - **CSV import** (issue #389) — a one-time export of your Prime Video watch
+>   history from Amazon's own account settings, imported the same way Netflix's CSV
+>   import works above. A good fallback for whenever the live cookie sync is stale
+>   between refreshes, rather than something to redo constantly.
 
 ## What happens with a title you haven't added yet
 
