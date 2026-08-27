@@ -178,6 +178,10 @@
   "cred_guide_primevideo_step3": "किसी भी getWatchHistorySettingsPage रिक्वेस्ट पर क्लिक करें → Request Headers → पूरा कुकी मान कॉपी करें।",
   "cred_guide_primevideo_step4": "इसे ऊपर पेस्ट करें।",
 
+  "settings_group_sync_ops_title": "सिंक स्थिति और कार्य",
+  "settings_group_provider_tools_title": "प्रोवाइडर-विशिष्ट टूल",
+  "settings_group_data_title": "डेटा एक्सपोर्ट और इम्पोर्ट",
+
   "sync_manual_title": "मैनुअल सिंक",
   "sync_manual_desc": "निर्धारित रन का इंतज़ार करने के बजाय पूरी सिंक पाइपलाइन तुरंत चलाएँ।",
   "sync_now_btn": "अभी सिंक करें",

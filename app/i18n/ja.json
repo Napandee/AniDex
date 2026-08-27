@@ -178,6 +178,10 @@
   "cred_guide_primevideo_step3": "getWatchHistorySettingsPageへのリクエストをクリック → リクエストヘッダー → cookieの値全体をコピーします。",
   "cred_guide_primevideo_step4": "上に貼り付けます。",
 
+  "settings_group_sync_ops_title": "同期状況と操作",
+  "settings_group_provider_tools_title": "プロバイダー別ツール",
+  "settings_group_data_title": "データのエクスポート・インポート",
+
   "sync_manual_title": "手動同期",
   "sync_manual_desc": "スケジュール実行を待たずに、フル同期パイプラインをオンデマンドで実行します。",
   "sync_now_btn": "今すぐ同期",

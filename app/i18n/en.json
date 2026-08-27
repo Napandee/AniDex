@@ -178,6 +178,10 @@
   "cred_guide_primevideo_step3": "Click any getWatchHistorySettingsPage request → Request Headers → copy the whole cookie value.",
   "cred_guide_primevideo_step4": "Paste it above.",
 
+  "settings_group_sync_ops_title": "Sync status & operations",
+  "settings_group_provider_tools_title": "Provider-specific tools",
+  "settings_group_data_title": "Data export & import",
+
   "sync_manual_title": "Manual sync",
   "sync_manual_desc": "Trigger the full sync pipeline on demand instead of waiting for the scheduled run.",
   "sync_now_btn": "Sync Now",
