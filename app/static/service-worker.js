@@ -14,3 +14,19 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request));
 });
+
+// Issue #377 — Web Push. The payload is whatever app/notify.py's WebPushChannel
+// sent: {"title": ..., "body": ...} (see that module — same title/body shape every
+// other notification channel already uses, just JSON-encoded for the wire).
+self.addEventListener('push', (event) => {
+  let title = 'AniDex';
+  let body = '';
+  try {
+    const data = event.data ? event.data.json() : {};
+    title = data.title || title;
+    body = data.body || '';
+  } catch {
+    body = event.data ? event.data.text() : '';
+  }
+  event.waitUntil(self.registration.showNotification(title, { body }));
+});

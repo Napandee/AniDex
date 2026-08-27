@@ -436,6 +436,7 @@ def test_instance_encrypted_keys_allowlist_matches_confirmed_call_sites():
     assert config.INSTANCE_ENCRYPTED_KEYS == {
         "google_client_secret",
         "discord_client_secret",
+        "vapid_private_key",
     }
 
 

@@ -705,11 +705,25 @@ CREATE TABLE anilist_rate_limit_state (
     observed_at          TIMESTAMPTZ NOT NULL
 );
 
+-- Issue #377 — one row per browser/device a user has subscribed to Web Push from.
+-- The VAPID keypair signing every push lives in instance_config (see app/vapid.py),
+-- not here — this table only holds what each individual subscription needs.
+CREATE TABLE push_subscriptions (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint    TEXT NOT NULL,
+    p256dh      TEXT NOT NULL,
+    auth        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, endpoint)
+);
+
 -- =========================================================================
 -- INDEXES
 -- =========================================================================
 
 CREATE INDEX idx_instance_backups_created_at ON instance_backups (created_at DESC);
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions (user_id);
 
 CREATE INDEX idx_library_entries_status ON library_entries(status);
 CREATE INDEX idx_library_entries_user ON library_entries(user_id);

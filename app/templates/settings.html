@@ -888,6 +888,21 @@
           <button type="submit" class="btn-save">{{ t('notif_save_btn') }}</button>
         </div>
       </form>
+
+      {# ── Web Push (issue #377) — its own subsection, deliberately outside the
+         form above: subscribing is a live browser permission grant + API call,
+         not a value to save-and-reload the way the other three channels' text
+         fields are. type="button" so it can never trigger that form's submit. #}
+      <div class="settings-subsection">
+        <h3 class="settings-subsection-title">{{ t('notif_webpush_subtitle') }}</h3>
+        <p class="settings-section-desc" id="webpush-unsupported" hidden>{{ t('notif_webpush_unsupported') }}</p>
+        <p class="settings-section-desc" id="webpush-status">
+          {% if push_subscription_count %}{{ t('notif_webpush_subscribed', count=push_subscription_count) }}{% else %}{{ t('notif_webpush_not_subscribed') }}{% endif %}
+        </p>
+        <button type="button" class="btn-save" id="webpush-toggle-btn" data-vapid-key="{{ vapid_public_key }}">
+          {% if push_subscription_count %}{{ t('notif_webpush_disable_btn') }}{% else %}{{ t('notif_webpush_enable_btn') }}{% endif %}
+        </button>
+      </div>
     </div>
   </div>
 
@@ -1418,6 +1433,88 @@ function renderStepChips(steps) {
     };
     reader.onerror = function () { setImportMsg('Could not read that file.', 'error'); };
     reader.readAsText(file);
+  });
+}());
+</script>
+
+{# ── Web Push subscribe/unsubscribe (issue #377) — its own script tag, same
+   "several independent inline <script> blocks in this file" convention the
+   data-import script above already uses. #}
+<script>
+(function () {
+  const btn = document.getElementById('webpush-toggle-btn');
+  const statusEl = document.getElementById('webpush-status');
+  const unsupportedEl = document.getElementById('webpush-unsupported');
+  if (!btn) return;
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    unsupportedEl.hidden = false;
+    btn.hidden = true;
+    statusEl.hidden = true;
+    return;
+  }
+
+  // Standard base64url → Uint8Array conversion PushManager.subscribe() needs for
+  // applicationServerKey — the VAPID public key arrives from the server as the
+  // same base64url string app/vapid.py generates, no other transport shape exists.
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+
+  function setState(subscribed, count) {
+    btn.textContent = subscribed ? '{{ t("notif_webpush_disable_btn") }}' : '{{ t("notif_webpush_enable_btn") }}';
+    statusEl.textContent = subscribed
+      ? t('notif_webpush_subscribed', {count: count})
+      : t('notif_webpush_not_subscribed');
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+
+      if (existing) {
+        await existing.unsubscribe();
+        await fetch('/settings/push/unsubscribe', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({endpoint: existing.endpoint}),
+        });
+        setState(false, 0);
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert(t('notif_webpush_permission_denied'));
+        return;
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(btn.dataset.vapidKey),
+      });
+      const resp = await fetch('/settings/push/subscribe', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(subscription.toJSON()),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        await subscription.unsubscribe();
+        alert(t('notif_webpush_subscribe_failed'));
+        return;
+      }
+      setState(true, data.count);
+    } catch {
+      alert(t('notif_webpush_subscribe_failed'));
+    } finally {
+      btn.disabled = false;
+    }
   });
 }());
 </script>
