@@ -205,6 +205,37 @@ def test_latest_migration_constant_matches_highest_migration_file(monkeypatch):
     )
 
 
+def test_no_migration_number_is_claimed_by_more_than_one_file():
+    """The other half of #380's own self-defeat risk, found live 2026-08-27: this
+    repo has real history of two independently-merged PRs each claiming the same
+    migration number (008, 009, and — the one that actually caused a production
+    gap — 028, where plex_sync_state went silently unapplied because
+    scripts/mark_migration_applied.sh's file lookup picked only one of the two
+    "028" files; see migration 041's header for the incident writeup). The
+    highest-number check above wouldn't catch a NEW collision at a number below
+    the current max (e.g. two files both claiming 022) — this checks every
+    number is unique, independent of what LATEST_MIGRATION says."""
+    import re
+    from collections import Counter
+
+    migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
+    pattern = re.compile(r"^(\d+)_.*\.sql$")
+    numbers = []
+    for f in migrations_dir.iterdir():
+        match = pattern.match(f.name)
+        if match:
+            numbers.append(int(match.group(1)))
+
+    counts = Counter(numbers)
+    duplicates = {n: c for n, c in counts.items() if c > 1}
+    assert not duplicates, (
+        f"Migration number(s) claimed by more than one file: {duplicates}. "
+        f"Run `ls migrations/{{n:03d}}_*.sql` for each to see the colliding files, "
+        "and renumber one of them — this is exactly the failure mode "
+        "scripts/mark_migration_applied.sh's file lookup can't safely resolve on its own."
+    )
+
+
 # ── AniList rate-limit visibility (issue #381) ──────────────────────────────
 
 

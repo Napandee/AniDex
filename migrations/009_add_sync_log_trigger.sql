@@ -2,6 +2,9 @@
 -- UI can distinguish a manual "Sync Now"/"Force Full Resync" click from the daily
 -- APScheduler-driven run — today's `type` column only ever says 'full_sync' or
 -- 'force_full_resync', neither of which says who/what kicked the run off.
+-- (2026-08-27: this number briefly collided with what's now migration 039
+-- (admin_audit_log) — see that file's header. This one keeps its original
+-- number since it merged first, chronologically.)
 --
 -- Threaded from app/main.py's _run_sync_task (defaults to 'manual' for both sync
 -- routes; 'scheduled' passed explicitly from _scheduled_full_sync) through a TRIGGER

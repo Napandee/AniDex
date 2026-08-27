@@ -1,4 +1,7 @@
 -- Migration 008: persistent AniList title-search cache (issue #115).
+-- (2026-08-27: this number briefly collided with what's now migration 040
+-- (recommendation_scores.snoozed_until) — see that file's header. This one keeps
+-- its original number since it merged first, chronologically.)
 -- find_anilist_id() falls back to AniList's live search API for any watched title not
 -- already in a user's own pre-built title index. For accounts with a lot of non-anime
 -- watch history (Western Netflix/Crunchyroll content), this search fallback dominates
