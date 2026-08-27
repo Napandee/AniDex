@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ t('tags_page_title') }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{{ t('tags_page_title') }}</h1>
+  <p class="page-sub">{{ t('tags_page_sub') }}</p>
+</div>
+
+{% if renamed %}<p class="settings-success">{{ t('tags_renamed_success') }}</p>{% endif %}
+{% if deleted %}<p class="settings-success">{{ t('tags_deleted_success') }}</p>{% endif %}
+{% if tag_error %}<p class="settings-error">{{ tag_error }}</p>{% endif %}
+
+{% if tags %}
+<datalist id="existing-tags-list">
+  {% for t in tags %}<option value="{{ t.tag }}">{% endfor %}
+</datalist>
+
+<table class="tags-table">
+  <thead>
+    <tr>
+      <th>{{ t('tags_col_tag') }}</th>
+      <th>{{ t('tags_col_count') }}</th>
+      <th>{{ t('tags_col_rename') }}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in tags %}
+    <tr>
+      <td class="tags-name">{{ row.tag }}</td>
+      <td class="tags-count">{{ row.entry_count }}</td>
+      <td>
+        <form method="post" action="/tags/rename" class="tags-inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="old_tag" value="{{ row.tag }}">
+          <input class="form-input form-input--narrow" type="text" name="new_tag"
+                 list="existing-tags-list" placeholder="{{ t('tags_rename_placeholder') }}" required>
+          <button type="submit" class="btn-save">{{ t('tags_rename_btn') }}</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/tags/delete" class="tags-inline-form tags-delete-form"
+              data-tag="{{ row.tag }}" data-count="{{ row.entry_count }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="tag" value="{{ row.tag }}">
+          <button type="submit" class="btn-danger-sm">{{ t('tags_delete_btn') }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">{{ t('tags_empty') }}</p>
+{% endif %}
+{% endblock %}

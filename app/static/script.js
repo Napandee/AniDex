@@ -1630,3 +1630,17 @@ document.querySelectorAll('[data-wrapup-reveal-year]').forEach(el => {
     : null;
   window.AniDexWrapupReveal.init(el, steps, { scope, year, replayBtn });
 });
+
+// ── Tag management delete confirmation (issue #376) ─────────────────────────
+// Reads tag/count off the form's own dataset rather than interpolating them
+// into a JS string server-side (tags.html) — a tag containing a quote would
+// otherwise break out of an inline onsubmit string literal. Same t()-with-vars
+// pattern as .btn-mark-watched's confirm() (issue #365).
+document.querySelectorAll('.tags-delete-form').forEach(form => {
+  form.addEventListener('submit', e => {
+    const tag = form.dataset.tag;
+    const count = parseInt(form.dataset.count, 10);
+    const ok = confirm(t('tags_delete_confirm', {tag, count}));
+    if (!ok) e.preventDefault();
+  });
+});
