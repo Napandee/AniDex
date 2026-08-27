@@ -145,7 +145,7 @@ jobs:
             docker logs anidex-smoke
             exit 1
           fi
-          if ! grep -q 'id="library-grid"' /tmp/home.html; then
+          if ! grep -q 'id="library-search"' /tmp/home.html; then
             echo "Post-login redirect doesn't look like a rendered library page — login or an authenticated TemplateResponse route may be broken"
             cat /tmp/home.html
             docker logs anidex-smoke
