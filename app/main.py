@@ -6011,12 +6011,32 @@ def settings_2fa_disable(request: Request, password: str = Form(...)):
     check (this IS a password check, so it draws from the same guess budget as any
     other one) — not the separate totp_failed_attempts/totp_locked_until pair, which
     is specifically the TOTP-*code* guess budget used on the login second-factor
-    step."""
+    step.
+
+    Issue #385 — also gated by the same aggregate per-IP throttle
+    (_ip_login_rate_limited(), issue #359) /auth/login already uses, sharing its
+    counter/threshold rather than tracking a second bucket: it's the same underlying
+    signal (password-guessing volume from one IP) whether it's aimed at the login
+    form or here, and the existing threshold (30 attempts/15min) already has enough
+    headroom for legitimate multi-account use from one IP. This route needs an
+    already-valid session to reach at all, so it can't be used to enumerate/attack
+    accounts the caller doesn't already hold a session for — a materially smaller
+    blast radius than the unauthenticated login routes, which is exactly why #385
+    was filed at lower priority than #359 — but it's the same class of gap
+    (unlimited password guesses from one IP, just against a session-bound account
+    instead of an arbitrary one), and reusing the existing mechanism is simpler than
+    inventing a narrower second one for the same risk."""
     user, denied = _require_user(request)
     if denied:
         return denied
     if not user["totp_enabled"]:
         return RedirectResponse(url="/settings", status_code=303)
+
+    if _ip_login_rate_limited(_client_ip(request)):
+        return RedirectResponse(
+            url="/settings?twofa_error=Too+many+attempts+from+this+network.+Try+again+later",
+            status_code=303,
+        )
 
     if user["locked_until"] and user["locked_until"] > datetime.now(timezone.utc):
         minutes_left = max(1, int((user["locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
