@@ -55,8 +55,9 @@ import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    enqueue_outbox_update, find_anilist_id, load_user_list_from_db,
+    enqueue_outbox_update, find_anilist_id, load_user_list_from_db, load_walk_complete,
     resolve_or_create_user_list_entry, seed_search_cache, season_suffix_candidates,
+    set_walk_complete,
 )
 
 load_dotenv()
@@ -67,6 +68,12 @@ CRUNCHYROLL_ETP_RT = os.environ.get("CRUNCHYROLL_ETP_RT", "")
 # Issue #20 — set by run_full_sync.py's Force Full Resync path to bypass the stored
 # watermark for one run. Mirrors sync_netflix.py's DRY_RUN env-var pattern.
 FORCE_FULL_RESYNC = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in ("1", "true", "yes")
+
+# Issue #387, Part 2 — this script's docstring/comments used to say "no DRY_RUN mode,
+# so no branch needed here" (see _update()'s old docstring) — that was exactly the gap
+# that let today's #352 debugging write real partial state against a live account with
+# no safe way to exercise a real fetch first. Same pattern sync_netflix.py already had.
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in ("1", "true", "yes")
 
 CR_API_BASE = "https://beta-api.crunchyroll.com"
 # Public web client id, embedded in CR's own web app — documented widely in
@@ -88,7 +95,10 @@ def log(msg):
 def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
     """Issue #46 — the only channel run_full_sync.py has for learning this step's real
     entries-touched count back from the subprocess; it parses this exact prefix out of
-    captured stdout."""
+    captured stdout. Not emitted in DRY_RUN — that mode is a local investigation tool,
+    never invoked through run_full_sync.py."""
+    if DRY_RUN:
+        return
     print(
         f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
         flush=True,
@@ -290,6 +300,8 @@ def load_cr_state(conn) -> dict[int, dict]:
 
 
 def save_cr_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO cr_sync_state (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
@@ -310,6 +322,8 @@ def save_watermark(conn, anilist_id: int, title: str, watched_at: datetime):
     state writes: the two functions' UPDATE SET clauses are column-disjoint, so
     call order between them within a single sync run doesn't matter. Takes the max
     with whatever's already stored so this can't regress the watermark."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO cr_sync_state (user_id, anilist_id, series_title, last_seen_watched_at, last_synced_at)
@@ -333,43 +347,13 @@ def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
     return max(values) if values else None
 
 
-def load_walk_complete(conn, has_existing_state: bool) -> bool:
-    """Whether we've ever confirmed reviewing this account's full Crunchyroll
-    history (issue #97) — distinct from compute_fetch_watermark()'s per-series
-    max(), which only tells us the newest point we've matched, not whether
-    unreviewed older history might still exist. A partial/interrupted full walk
-    otherwise leaves the per-series max looking complete when it isn't, silently
-    causing a later incremental sync to stop looking further back forever.
-
-    Defaults to `has_existing_state` when never explicitly set, so existing
-    accounts with an already-working incremental sync aren't hit with a
-    surprise full re-walk the first time this ships — only genuinely first-ever
-    syncs start as not-complete, matching today's existing "no watermark = full
-    pull" first-sync behavior."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT value FROM settings WHERE user_id = %s AND key = 'crunchyroll_walk_complete'",
-            (USER_ID,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return has_existing_state
-    return row["value"].strip().lower() in ("1", "true", "yes")
-
-
-def _set_walk_complete(conn, complete: bool):
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO settings (user_id, key, value) VALUES (%s, 'crunchyroll_walk_complete', %s)
-            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
-        """, (USER_ID, "true" if complete else "false"))
-    conn.commit()
-
-
 def load_title_search_cache(conn) -> dict[str, int | None]:
     """Global (not per-user) AniList title-search cache (issue #115) — a search
     result for a given title string is the same regardless of which user or
-    provider is asking, so this is shared across the whole instance."""
+    provider is asking, so this is shared across the whole instance. `conn` may
+    be None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
+    if conn is None:
+        return {}
     with conn.cursor() as cur:
         cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
         return {row["title"]: row["media_id"] for row in cur.fetchall()}
@@ -379,6 +363,8 @@ def save_title_search_cache_entry(conn, title: str, media_id: int | None):
     """Persist one newly-resolved (or confirmed-no-match) title immediately, not
     batched at the end of the run — issue #115's whole point is durability across
     an interrupted sync, same principle as #104's walk_complete fix."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
@@ -396,7 +382,11 @@ def load_title_overrides(conn) -> dict[tuple[str, int], int]:
     all writes (POST /settings/cr-overrides). Keyed by lowercased series_title to
     match case-insensitively, same normalization find_anilist_id()/title_index
     already use — series_title is stored lowercased by the app, but this also
-    lowercases at read time defensively in case a row is ever written another way."""
+    lowercases at read time defensively in case a row is ever written another way.
+    `conn` may be None in DRY_RUN, matching that mode's "no DB reads at all"
+    framing — DRY_RUN exercises matching without a real user's manual overrides."""
+    if conn is None:
+        return {}
     with conn.cursor() as cur:
         cur.execute(
             "SELECT series_title, season_number, anilist_id FROM cr_title_overrides WHERE user_id = %s",
@@ -460,9 +450,23 @@ def resolve_media_id(title: str, season: int, overrides: dict[tuple[str, int], i
 def _update(conn, anilist_id: int, **kwargs):
     """Issue #100 — no longer pushes to AniList directly/synchronously; enqueues to
     status_sync_outbox for the app's single shared outbox worker to deliver, same
-    local-first pattern issue #18 built for UI bulk-edits. Mirrors sync_netflix.py's
-    own _update() wrapper (this script has no DRY_RUN mode, so no branch needed here)."""
-    enqueue_outbox_update(conn, anilist_id, "crunchyroll", **kwargs)
+    local-first pattern issue #18 built for UI bulk-edits. Routed through DRY_RUN
+    (issue #387, Part 2) — mirrors sync_netflix.py's own _update() wrapper exactly."""
+    if DRY_RUN:
+        log(f"    [dry-run] would enqueue outbox update({anilist_id}, {kwargs})")
+    else:
+        enqueue_outbox_update(conn, anilist_id, "crunchyroll", **kwargs)
+
+
+def _save_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
+    """save_cr_state(), routed through DRY_RUN for a consistent log line — see
+    _update()'s docstring. save_cr_state() itself already guards conn is None
+    (safe to call directly), this wrapper exists purely so process()'s DRY_RUN
+    output says what it would have saved, matching sync_netflix.py's pattern."""
+    if DRY_RUN:
+        log(f"    [dry-run] would save state: anilist_id={anilist_id} last_ep={last_ep} rewatch={rewatch}")
+    else:
+        save_cr_state(conn, anilist_id, title, last_ep, rewatch)
 
 
 def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
@@ -492,21 +496,21 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     # WATCHING, not whatever AniList defaults an id-less SaveMediaListEntry to.
     if status is None:
         _update(conn, anilist_id, progress=cr_ep, status="WATCHING")
-        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        _save_state(conn, anilist_id, title, cr_ep, False)
         return f"new AniList entry created → WATCHING ep {cr_ep}"
 
     # ── First-time seeing a COMPLETED series in CR history ────────────────────
     # Without prior state we can't safely distinguish "rewatch" from "first sync".
     # Record state and do nothing — next sync will have a baseline.
     if cr_state is None and status == "COMPLETED":
-        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        _save_state(conn, anilist_id, title, cr_ep, False)
         return "first-sync (COMPLETED) — state recorded, no change"
 
     # ── AniList status already REPEATING but rewatch not recorded in state ────
     # Handles: user changes status to REPEATING in the app/AniList before sync
     # runs. Set rewatch_active so subsequent syncs advance progress correctly.
     # Issue #100 — _update() now enqueues to the outbox rather than pushing to
-    # AniList directly, and doesn't commit; call order with save_cr_state() (which
+    # AniList directly, and doesn't commit; call order with _save_state() (which
     # does commit) no longer matters for correctness the way it used to when the
     # update was a network call that could fail mid-flight — both now land in one
     # atomic transaction, so either the outbox row + advanced watermark both
@@ -514,9 +518,9 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     if status == "REPEATING" and not rewatch_active:
         if cr_ep > al_ep:
             _update(conn, anilist_id, progress=cr_ep)
-            save_cr_state(conn, anilist_id, title, cr_ep, True)
+            _save_state(conn, anilist_id, title, cr_ep, True)
             return f"rewatch detected (already REPEATING) → progress {al_ep} → {cr_ep}"
-        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        _save_state(conn, anilist_id, title, cr_ep, True)
         return "rewatch detected (already REPEATING) — state recorded"
 
     # ── Rewatch: COMPLETED but CR episode dropped below last-seen ────────────
@@ -524,7 +528,7 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     # and would short-circuit before we ever detect the rewatch.
     if status == "COMPLETED" and cr_ep < (last_ep or total or 999) and not rewatch_active:
         _update(conn, anilist_id, progress=cr_ep, status="REPEATING")
-        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        _save_state(conn, anilist_id, title, cr_ep, True)
         return f"rewatch started → REPEATING ep {cr_ep}"
 
     # ── Rewatch: a new pass restarted while already mid-rewatch ─────────────
@@ -545,7 +549,7 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     # sitting at a higher point from an earlier pass).
     if rewatch_active and cr_ep < last_ep:
         _update(conn, anilist_id, progress=cr_ep)
-        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        _save_state(conn, anilist_id, title, cr_ep, True)
         return f"new rewatch pass detected (was at {last_ep}) → progress reset to {cr_ep}"
 
     # ── No progress since last sync ───────────────────────────────────────────
@@ -554,35 +558,35 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
             # AniList is behind but we already processed this — shouldn't happen often
             pass
         else:
-            save_cr_state(conn, anilist_id, title, last_ep, rewatch_active)
+            _save_state(conn, anilist_id, title, last_ep, rewatch_active)
             return f"no change (CR={cr_ep}, last_seen={last_ep})"
 
     # ── Rewatch completion: REPEATING and reached total episodes ─────────────
     if rewatch_active and total and cr_ep >= total:
         _update(conn, anilist_id, progress=cr_ep, status="COMPLETED", repeat=repeat + 1)
-        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        _save_state(conn, anilist_id, title, cr_ep, False)
         return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
 
     # ── Progress advance for active rewatch ───────────────────────────────────
     if rewatch_active and cr_ep > al_ep:
         _update(conn, anilist_id, progress=cr_ep)
-        save_cr_state(conn, anilist_id, title, cr_ep, True)
+        _save_state(conn, anilist_id, title, cr_ep, True)
         return f"rewatch progress {al_ep} → {cr_ep}"
 
     # ── DROPPED: user picked it back up ──────────────────────────────────────
     if status == "DROPPED" and cr_ep > last_ep:
         _update(conn, anilist_id, progress=cr_ep, status="CURRENT")
-        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        _save_state(conn, anilist_id, title, cr_ep, False)
         return f"resumed after DROP → CURRENT ep {cr_ep}"
 
     # ── Normal progress advance (CURRENT, PAUSED) ─────────────────────────────
     if cr_ep > al_ep:
         _update(conn, anilist_id, progress=cr_ep)
-        save_cr_state(conn, anilist_id, title, cr_ep, False)
+        _save_state(conn, anilist_id, title, cr_ep, False)
         return f"progress {al_ep} → {cr_ep}"
 
     # Nothing to do
-    save_cr_state(conn, anilist_id, title, max(cr_ep, last_ep), rewatch_active)
+    _save_state(conn, anilist_id, title, max(cr_ep, last_ep), rewatch_active)
     return f"AniList ({al_ep}) already at or ahead of CR ({cr_ep})"
 
 
@@ -595,15 +599,25 @@ def main():
         log("ERROR: Crunchyroll credentials not configured (CRUNCHYROLL_ETP_RT)")
         sys.exit(1)
 
-    conn = db_connect()
-    ensure_table(conn)
-    cr_state_map = load_cr_state(conn)
-    log(f"Loaded CR sync state for {len(cr_state_map)} series")
+    if DRY_RUN:
+        # No DB touched at all in dry-run — not even the CREATE TABLE IF NOT EXISTS
+        # fallback. Treated as a from-scratch first sync (no watermark), which is
+        # also the most useful dry-run shape: it exercises the fetch/parse/match/
+        # process path (including the create-decision plausibility gate, issue
+        # #387) against your full real history without writing anything.
+        log("[dry-run] skipping database entirely — no reads, no writes")
+        conn = None
+        cr_state_map: dict[int, dict] = {}
+    else:
+        conn = db_connect()
+        ensure_table(conn)
+        cr_state_map = load_cr_state(conn)
+        log(f"Loaded CR sync state for {len(cr_state_map)} series")
 
-    walk_complete = load_walk_complete(conn, has_existing_state=bool(cr_state_map))
+    walk_complete = load_walk_complete(conn, "crunchyroll", USER_ID)
     if walk_complete and FORCE_FULL_RESYNC:
         log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        _set_walk_complete(conn, False)  # persisted before the (possibly slow) fetch/process below,
+        set_walk_complete(conn, "crunchyroll", USER_ID, False)  # persisted before the (possibly slow) fetch/process below,
         walk_complete = False            # so an interruption leaves an honest "not complete" state
         watermark = None
     elif walk_complete:
@@ -623,7 +637,8 @@ def main():
         raw_items, reached_true_end = client.fetch_since(watermark)
     except Exception as e:
         log(f"ERROR: Crunchyroll fetch failed: {e}")
-        conn.close()
+        if conn:
+            conn.close()
         sys.exit(1)
     log(f"Fetched {len(raw_items)} new watch-history rows")
 
@@ -634,10 +649,11 @@ def main():
         # Issue #104 — safe to mark complete here even though the processing loop
         # below never ran: there's nothing to process, so nothing can be stranded.
         if reached_true_end:
-            _set_walk_complete(conn, True)
+            set_walk_complete(conn, "crunchyroll", USER_ID, True)
             log("Reached true end of Crunchyroll history — full walk marked complete")
         log("No new activity — nothing to do")
-        conn.close()
+        if conn:
+            conn.close()
         _emit_result(0, len(raw_items), full_pull)
         sys.exit(0)
 
@@ -698,9 +714,21 @@ def main():
         # being silently dropped forever. Full-pull runs (initial connect or a
         # Force Full Resync, #20) keep the original skip behavior. See
         # resolve_or_create_user_list_entry()'s docstring for the full decision.
-        decision = resolve_or_create_user_list_entry(media_id, title, user_list, full_pull, conn)
+        # Issue #387 — CR's catalog is anime-only (unlike Netflix/Plex/Prime
+        # Video's mostly-non-anime ones), so this script never tracked a
+        # watched_format signal and none of today's incident false-positives
+        # came from here; passing watched_format=None just means that half of
+        # the create-path plausibility check can't fire, same as it always
+        # could for any caller. The title-similarity half (the part that
+        # actually caught the incident's false positives) still fully applies,
+        # for free, now that the check lives inside the shared function instead
+        # of being a separate call each provider script had to remember to make.
+        decision = resolve_or_create_user_list_entry(
+            media_id, title, user_list, full_pull, conn,
+            watched_format=None, watched_episode_count=cr_ep,
+        )
         if decision == "skip":
-            log(f"  ✗ Not in your AniList: '{label}'")
+            log(f"  ✗ Not in your AniList (or an implausible/unvalidated match): '{label}'")
             skipped += 1
             continue
         if decision == "create":
@@ -731,12 +759,14 @@ def main():
     # later sync would trust walk_complete and never re-walk to pick up what was
     # fetched but never reached.
     if reached_true_end:
-        _set_walk_complete(conn, True)
+        set_walk_complete(conn, "crunchyroll", USER_ID, True)
         log("Reached true end of Crunchyroll history — full walk marked complete")
 
-    conn.close()
+    if conn:
+        conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
-        f"({index_hits} index hits, {search_hits} API searches, {override_hits} manual overrides)")
+        f"({index_hits} index hits, {search_hits} API searches, {override_hits} manual overrides)"
+        + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
     _emit_result(updated, len(raw_items), full_pull)
 
 

@@ -258,3 +258,53 @@ def test_new_entry_branch_checked_before_every_other_branch(monkeypatch):
     assert ("update", 42, {"progress": 12, "status": "WATCHING"}) in calls
     assert "COMPLETED" not in result
     assert "rewatch" not in result.lower()
+
+
+# ── DRY_RUN mode (issue #387, Part 2) — this script had none before; every
+# conn-taking write function must safely no-op with conn=None, and the reads
+# must return an empty/from-scratch shape, matching sync_netflix.py's existing
+# DRY_RUN precedent exactly.
+
+def test_load_title_search_cache_empty_when_conn_is_none():
+    assert plex.load_title_search_cache(None) == {}
+
+
+def test_save_title_search_cache_entry_noop_when_conn_is_none():
+    plex.save_title_search_cache_entry(None, "Some Western Show", None)  # must not raise
+
+
+def test_save_plex_state_noop_when_conn_is_none():
+    plex.save_plex_state(None, 154587, "Attack on Titan", 5, False)  # must not raise
+
+
+def test_save_watermark_noop_when_conn_is_none():
+    plex.save_watermark(None, 154587, "Attack on Titan", datetime.now(timezone.utc))  # must not raise
+
+
+def test_update_logs_instead_of_enqueueing_when_dry_run(monkeypatch):
+    monkeypatch.setattr(plex, "DRY_RUN", True)
+    called = []
+    monkeypatch.setattr(plex, "enqueue_outbox_update", lambda *a, **kw: called.append((a, kw)))
+    plex._update(None, 154587, status="WATCHING", progress=3)
+    assert called == []
+
+
+def test_save_state_logs_instead_of_saving_when_dry_run(monkeypatch):
+    monkeypatch.setattr(plex, "DRY_RUN", True)
+    called = []
+    monkeypatch.setattr(plex, "save_plex_state", lambda *a, **kw: called.append((a, kw)))
+    plex._save_state(None, 154587, "Attack on Titan", 5, False)
+    assert called == []
+
+
+def test_update_and_save_state_call_through_when_not_dry_run(monkeypatch):
+    assert plex.DRY_RUN is False
+    enqueue_called = []
+    monkeypatch.setattr(plex, "enqueue_outbox_update", lambda *a, **kw: enqueue_called.append((a, kw)))
+    plex._update(object(), 154587, status="WATCHING")
+    assert len(enqueue_called) == 1
+
+    save_called = []
+    monkeypatch.setattr(plex, "save_plex_state", lambda *a, **kw: save_called.append((a, kw)))
+    plex._save_state(object(), 154587, "Attack on Titan", 5, False)
+    assert len(save_called) == 1

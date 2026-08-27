@@ -7,7 +7,9 @@ DATABASE_URL in its env, so this module loads its own env rather than relying
 on the importing script having done it first.
 """
 
+import difflib
 import os
+import re
 import time
 
 import httpx
@@ -83,6 +85,16 @@ query ($search: String) {
   Media(search: $search, type: ANIME) {
     id
     format
+    title { romaji english }
+  }
+}
+"""
+
+MEDIA_METADATA_QUERY = """
+query ($id: Int) {
+  Media(id: $id, type: ANIME) {
+    format
+    episodes
     title { romaji english }
   }
 }
@@ -295,6 +307,163 @@ def find_anilist_id(title: str, title_index: dict[str, int], season_number: int 
     return mid
 
 
+# Cached per-media_id (issue #387) — the create-decision path below fetches real
+# format/episodes/title for a candidate before deciding to create, so the same
+# candidate recurring within one sync run (or across the four provider scripts'
+# separate subprocess invocations sharing nothing) only costs one AniList call.
+# In-process only, like _search_cache — not worth persisting, this is a much
+# smaller, shorter-lived lookup than the title-search cache.
+_media_metadata_cache: dict[int, dict | None] = {}
+
+
+def fetch_anilist_media_metadata(media_id: int) -> dict | None:
+    """Real AniList format/episodes/title for a candidate media_id (issue #387).
+
+    resolve_or_create_user_list_entry()'s synthetic placeholder used to leave
+    format/total_episodes as None for any brand-new entry, which made
+    is_plausible_match()'s checks silently no-op on exactly the highest-risk
+    path (creating something never tracked before) — confirmed live: 14 of 16
+    entries a single Prime Video sync auto-created were false-positive title
+    matches to unrelated real anime, none of them caught. Fetching the
+    candidate's real metadata before deciding to create closes that gap."""
+    if media_id in _media_metadata_cache:
+        return _media_metadata_cache[media_id]
+    try:
+        data = gql(MEDIA_METADATA_QUERY, {"id": media_id})
+        media = data["Media"]
+        title_obj = media.get("title") or {}
+        result = {
+            "format": media.get("format"),
+            "episodes": media.get("episodes"),
+            "title_romaji": (title_obj.get("romaji") or "").strip(),
+            "title_english": (title_obj.get("english") or "").strip(),
+        }
+    except Exception:
+        result = None
+    _media_metadata_cache[media_id] = result
+    return result
+
+
+_PUNCT_RE = re.compile(r"[^\w\s]")
+
+# Why this check has to exist at all (issue #387): AniList's Media(search:) query
+# (SEARCH_QUERY above) is a single best-effort lookup with no "no confident
+# match" / null-on-low-confidence behavior — it always returns its closest
+# textual guess for whatever string it's given, never an explicit "nothing
+# matched." find_anilist_id() getting a non-null media_id back therefore only
+# ever means "AniList found something," never "AniList found the right thing" —
+# a vague, non-anime query like "Wind River" or "The Boys" doesn't fail to
+# resolve, it happily returns whatever real, valid anime AniList's own fuzzy
+# ranking considered the closest hit, however unrelated the actual watched
+# content was. The old code treated "found something" as sufficient grounds to
+# create a brand-new AniList entry; this check exists because that conflation
+# is the actual root cause of the 2026-08-26 incident, not a search-quality bug
+# on AniList's side — every one of the 14 false positives that day resolved to
+# a real, legitimate AniList catalog entry, just the wrong one.
+#
+# Empirically validated against that real incident data — every false-positive
+# match that slipped through that day scores well below this threshold, every
+# genuine match scores at or near 1.0, with a wide gap between them:
+#   0.286  "Wind River" vs "Otona Joshi no Anime Time"            (wrong — reject)
+#   0.400  "The Guest" vs "Gregory Horror Show: The Second Guest" (wrong — reject)
+#   0.483  "The Proposal" vs "Ousama no Propose"                  (wrong — reject)
+#   0.438  "The Boys" vs "Wakakusa Monogatari... Jo's Boys"       (wrong — reject)
+#   0.593  "Season 3" vs "Dorohedoro Season 3"                    (wrong — reject;
+#           also separately fixed at the parse layer, see sync_primevideo.py's
+#           _parse_season_and_title(), so this case shouldn't even reach here —
+#           kept as a reject at this threshold too, defense in depth)
+#   1.000  "Beck" vs "BECK"                                       (right — accept)
+#   1.000  "Ghost in The Shell: Stand Alone Complex" vs "Koukaku
+#           Kidoutai: STAND ALONE COMPLEX" / "Ghost in the Shell:
+#           Stand Alone Complex"                                  (right — accept)
+TITLE_SIMILARITY_THRESHOLD = 0.6
+
+# A candidate with neither a known format nor a known episode count has nothing
+# for is_plausible_match()'s existing checks to compare against — a real,
+# already-airing-or-finished anime someone has apparently already watched almost
+# always has real publisher metadata on AniList by now, so unknown-on-both-axes
+# is itself treated as a weak signal against creating, not neutral. Requires a
+# near-exact title match to override it. ("The Proposal" → "Ousama no Propose",
+# one of the incident's null-metadata cases, already fails the primary
+# TITLE_SIMILARITY_THRESHOLD above on its own — this is genuine defense in depth
+# for a case where format/episodes are unknown but the title happens to look
+# closer, not the primary rejector for anything seen in the real incident.)
+UNKNOWN_METADATA_TITLE_SIMILARITY_THRESHOLD = 0.85
+
+
+def _normalize_title(s: str | None) -> str:
+    return _PUNCT_RE.sub("", (s or "").lower()).strip()
+
+
+def _title_similarity(watched_title: str, candidate_titles: list[str | None]) -> float:
+    """Best-of similarity ratio between the watched title and whichever of the
+    candidate's romaji/english titles scores higher — difflib.SequenceMatcher
+    over normalized (lowercased, punctuation-stripped) strings. See
+    TITLE_SIMILARITY_THRESHOLD's comment for the real data this was validated
+    against."""
+    normalized_watched = _normalize_title(watched_title)
+    if not normalized_watched:
+        return 0.0
+    best = 0.0
+    for candidate in candidate_titles:
+        normalized_candidate = _normalize_title(candidate)
+        if not normalized_candidate:
+            continue
+        ratio = difflib.SequenceMatcher(None, normalized_watched, normalized_candidate).ratio()
+        best = max(best, ratio)
+    return best
+
+
+def load_walk_complete(conn, provider: str, user_id: int) -> bool:
+    """Whether we've ever confirmed reviewing this account's full history for
+    `provider` (issue #97/#104, tightened by #387) — distinct from
+    compute_fetch_watermark()'s per-series max(), which only tells us the newest
+    point we've matched, not whether unreviewed older history might still exist.
+    A partial/interrupted full walk otherwise leaves the per-series max looking
+    complete when it isn't, silently causing a later incremental sync to stop
+    looking further back forever.
+
+    Issue #387 — this used to take a `has_existing_state` fallback ("if
+    sync-state rows already exist, assume the walk completed") whenever no
+    explicit flag had been set, which was NOT safe as a general rule. That
+    fallback existed only to cover CR/Netflix/Plex users who predated this flag
+    (see migration 034, which backfills it explicitly, once, for exactly those
+    three providers' existing users). Confirmed live: partial dev/debug runs
+    against a real account during #352's investigation wrote a few real
+    primevideo_sync_state rows before failing; the very next real run trusted
+    that leftover state as "walk complete" via this exact fallback, flipping
+    full_pull to False on a still-mostly-unwalked year of history and
+    auto-creating 16 bogus AniList entries in one run. Only an explicit,
+    persisted flag ever counts now — a provider with no flag row simply hasn't
+    completed a walk yet, full stop, no inference.
+
+    conn may be None (DRY_RUN mode, Netflix's existing precedent extended to
+    every provider by #387's Part 2) — treated as a from-scratch first sync,
+    matching every other DRY_RUN-guarded read in these scripts."""
+    if conn is None:
+        return False
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT value FROM settings WHERE user_id = %s AND key = %s",
+            (user_id, f"{provider}_walk_complete"),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return False
+    return row["value"].strip().lower() in ("1", "true", "yes")
+
+
+def set_walk_complete(conn, provider: str, user_id: int, complete: bool) -> None:
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO settings (user_id, key, value) VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+        """, (user_id, f"{provider}_walk_complete", "true" if complete else "false"))
+    conn.commit()
+
+
 def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None = None,
                            progress: int | None = None, repeat: int | None = None) -> None:
     """Local-first write (issue #100) — replaces the old direct, synchronous
@@ -377,47 +546,101 @@ def enqueue_outbox_update(conn, anime_id: int, source: str, status: str | None =
 
 
 def resolve_or_create_user_list_entry(media_id: int, title: str, user_list: dict,
-                                       full_pull: bool, conn) -> str:
+                                       full_pull: bool, conn,
+                                       watched_format: str | None = None,
+                                       watched_episode_count: int | None = None) -> str:
     """Issue #252 — the shared "is this title tracked yet, and if not, should this
     sync create a new AniList entry for it" decision. sync_crunchyroll.py and
     sync_netflix.py had identical `if media_id not in user_list: skip` gates before
     this issue; extracted here so both scripts share one tested implementation
     instead of duplicating the fix (and the regression risk of the two drifting).
 
+    Issue #387 — the create path used to build its synthetic entry with
+    format=None/total_episodes=None, then leave plausibility validation entirely
+    to the CALLER's own separate is_plausible_match() call afterward — which made
+    that check a silent no-op (both fields compared as falsy) on exactly the
+    highest-risk path. Confirmed live: 14 of 16 entries a single Prime Video sync
+    auto-created were false-positive title matches (e.g. "Wind River" watched on
+    Prime matched to the real but unrelated anime "Otona Joshi no Anime Time"),
+    none of them caught. Root cause of those 14: find_anilist_id()'s underlying
+    AniList search is a single best-effort lookup with no "no confident match"
+    signal — it always returns its closest textual guess, never an explicit
+    "nothing matched," so a non-null media_id only ever means "AniList found
+    something," never "AniList found the right thing." Every one of those 14
+    resolved to a real, legitimate AniList catalog entry — just the wrong one.
+    Validation now happens HERE, against real AniList metadata fetched for the
+    candidate (fetch_anilist_media_metadata()) plus a title-similarity check
+    (_title_similarity(), see TITLE_SIMILARITY_THRESHOLD's own comment for why
+    that check specifically has to exist), before either ensure_anime_stub() or
+    the `user_list` mutation happens — so an implausible candidate leaves no
+    trace at all, not even the local `anime` stub row the old ordering used to
+    write regardless of the caller's later check.
+    Callers should still pass watched_format/watched_episode_count when they have
+    them (every provider script's own fetch already computes these); omitting
+    them just means the format/episode-count half of the check can't fire, same
+    as passing None to is_plausible_match() directly always has.
+
     Mutates `user_list` in place on a create decision, adding a synthetic
-    "brand-new" entry: status=None, progress=0, repeat=0 — process() in both
-    scripts treats status=None as the unambiguous "no existing AniList row yet"
-    sentinel (a real AniList entry's status is never None) and creates it via the
-    existing outbox path with the resolved WATCHING default, at whatever progress
-    the caller's own diff logic computes from there.
+    "brand-new" entry: status=None, progress=0, repeat=0, but — unlike before
+    #387 — format/total_episodes are the REAL values fetched from AniList, not
+    blank placeholders. process() in every provider script treats status=None as
+    the unambiguous "no existing AniList row yet" sentinel (a real AniList
+    entry's status is never None) and creates it via the existing outbox path
+    with the resolved WATCHING default, at whatever progress the caller's own
+    diff logic computes from there.
 
     Returns one of:
       "existing" — media_id was already in user_list; nothing changed here.
-      "create"   — media_id was not tracked and full_pull is False (a normal
-                   incremental sync): a synthetic entry was just added to
-                   user_list, and — if conn is not None — a matching `anime` stub
-                   row was upserted first (see ensure_anime_stub()) so the
+      "create"   — media_id was not tracked, full_pull is False (a normal
+                   incremental sync), and the candidate passed real-metadata +
+                   title-similarity validation: a synthetic entry was just added
+                   to user_list, and — if conn is not None — a matching `anime`
+                   stub row was upserted first (see ensure_anime_stub()) so the
                    outbox write's foreign-key constraint succeeds.
-      "skip"     — media_id was not tracked and full_pull is True: the original,
-                   unchanged, conservative behavior for the initial full-history
-                   walk (or a user-triggered Force Full Resync, #20/#21 — both
-                   set full_pull) — never auto-create from a full backfill.
+      "skip"     — media_id was not tracked, and either full_pull is True (the
+                   original, unchanged, conservative behavior for the initial
+                   full-history walk or a user-triggered Force Full Resync,
+                   #20/#21 — never auto-create from a full backfill), the
+                   metadata fetch itself failed (can't validate an unknown
+                   candidate — conservative default), or the candidate failed
+                   plausibility/title-similarity validation.
 
-    conn may be None (sync_netflix.py's DRY_RUN mode) — no DB write happens in
-    that case, matching every other DRY_RUN-guarded write in that script; the
-    synthetic user_list entry is still added so DRY_RUN's logging/process() path
-    exercises the same decision it would make for real.
+    conn may be None (DRY_RUN mode) — no DB write happens in that case, matching
+    every other DRY_RUN-guarded write in each provider script; the synthetic
+    user_list entry is still added on a would-be "create" so DRY_RUN's
+    logging/process() path exercises the same decision it would make for real.
+    The real-metadata fetch itself is a read, not a write — it still happens for
+    real under DRY_RUN, same as find_anilist_id()'s search calls already do,
+    since DRY_RUN's whole point is exercising the real matching/validation path
+    without committing anything.
     """
     if media_id in user_list:
         return "existing"
     if full_pull:
         return "skip"
+
+    metadata = fetch_anilist_media_metadata(media_id)
+    if metadata is None:
+        return "skip"
+
+    synthetic_entry = {
+        "status": None, "progress": 0, "repeat": 0,
+        "total_episodes": metadata["episodes"], "format": metadata["format"],
+        "title": title,
+    }
+    if not is_plausible_match(synthetic_entry, watched_format, watched_episode_count):
+        return "skip"
+
+    similarity = _title_similarity(title, [metadata["title_romaji"], metadata["title_english"]])
+    if similarity < TITLE_SIMILARITY_THRESHOLD:
+        return "skip"
+    if (metadata["format"] is None and metadata["episodes"] is None
+            and similarity < UNKNOWN_METADATA_TITLE_SIMILARITY_THRESHOLD):
+        return "skip"
+
     if conn is not None:
         ensure_anime_stub(conn, media_id, title)
-    user_list[media_id] = {
-        "status": None, "progress": 0, "repeat": 0,
-        "total_episodes": None, "format": None, "title": title,
-    }
+    user_list[media_id] = synthetic_entry
     return "create"
 
 
