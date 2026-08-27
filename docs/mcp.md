@@ -10,7 +10,7 @@ install or keep running.
 
 ## Setting it up
 
-1. Go to **Settings → Personal access tokens**.
+1. Go to **Settings → API Access**, and find the **Personal access tokens** section.
 2. Create a token, choosing a **scope**:
    - `read` — can call any of the four read tools below. Can't change anything.
    - `read_write` — can also call the five write tools below.

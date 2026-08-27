@@ -17,7 +17,10 @@ Each candidate's score is a weighted blend:
 
 The cross-user signal is opt-in — see [Multi-user](multi-user.md)'s "also watching"
 section. On a single-user instance, or if you haven't opted in, that 20% simply
-redistributes across the other three signals.
+contributes nothing — every candidate scores 0 on it, so it doesn't change how
+candidates rank against each other (there's no redistribution of the weight onto
+the other three signals; the score is just capped lower before the final
+0–100 normalization).
 
 Candidates come from two sources: AniList's own per-show "recommendations" edge for
 your top-rated completed shows, and your own Planning list (scored on the same scale,

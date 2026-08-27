@@ -442,6 +442,14 @@ these are separate from the app's own `TELEGRAM_BOT_TOKEN` in `.env` (see
 [Notifications](#notifications-optional) above — that one's for in-app notifications;
 this one's a GitHub Actions secret for repo maintainers).
 
+## Upgrading
+
+Deploying new code is automatic (see CI/CD above) — applying a database schema change
+is not. `migrations/` holds numbered SQL files for upgrading an already-running
+instance; nothing in the deploy pipeline applies them, they're a deliberate manual
+step run against your live Postgres, and **Admin → Instance Health** warns you when
+one is pending. Full details: [docs/admin/upgrading.md](docs/admin/upgrading.md).
+
 ## Social login (Google/Discord, optional)
 
 Google and Discord "Sign in with..." are optional alternatives to local email+password,
