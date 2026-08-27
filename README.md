@@ -52,6 +52,11 @@ and a recommendation engine scored against your own taste profile.
 - **Netflix sync** — watch history synced from Netflix's own viewing-activity API into
   AniList progress, cookie-authenticated, incremental (optional). A CSV export import is
   also available as a one-time bootstrap fallback for accounts with a lot of history
+- **Plex sync** — watch history synced from your own Plex Media Server into AniList
+  progress, via Plex's real OAuth sign-in flow (no cookie to find or paste), incremental
+  (optional)
+- **Prime Video sync** — watch history synced from Prime Video into AniList progress,
+  cookie-authenticated, incremental (optional)
 - **Notifications** — new episode alerts, sync results, and a weekly digest, delivered to
   any combination of Telegram, Discord (webhook), and ntfy, each toggled independently
   (optional)
@@ -62,25 +67,27 @@ and a recommendation engine scored against your own taste profile.
 
 ```
 Crunchyroll ──► sync_crunchyroll.py ──┐
-                                       ├──► AniList ──► sync_anilist.py ──► Postgres ──► FastAPI app ──► http://localhost:8888
-Netflix ──────► sync_netflix.py ──────┘
+Netflix ──────► sync_netflix.py ───────┤
+Plex ─────────► sync_plex.py ──────────┼──► AniList ──► sync_anilist.py ──► Postgres ──► FastAPI app ──► http://localhost:8888
+Prime Video ──► sync_primevideo.py ────┘
 ```
 
 The app includes a built-in scheduler (APScheduler) that runs the daily AniList sync and
 weekly recommender automatically. Schedule is configurable via the Admin page.
 
-Writes back to AniList (bulk status/tag edits, and any Crunchyroll/Netflix-originated
-progress update) go through an async outbox rather than blocking the request that
-triggered them — a background worker drains it and retries on transient AniList
-failures, so a slow or briefly-down AniList API doesn't stall the UI.
+Writes back to AniList (bulk status/tag edits, and any Crunchyroll/Netflix/Plex/Prime
+Video-originated progress update) go through an async outbox rather than blocking the
+request that triggered them — a background worker drains it and retries on transient
+AniList failures, so a slow or briefly-down AniList API doesn't stall the UI.
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - An AniList account
 - A Postgres instance (a compose file is provided)
-- Optional: Crunchyroll account, Netflix account, a notification channel (Telegram bot,
-  Discord webhook, and/or ntfy), GitHub account for CI/CD
+- Optional: Crunchyroll account, Netflix account, Plex account/server, Prime Video
+  account, a notification channel (Telegram bot, Discord webhook, and/or ntfy), GitHub
+  account for CI/CD
 
 ## Quick start
 
@@ -287,6 +294,50 @@ the "Sync Now" button on the Settings page (or `POST /api/sync`). A one-time CSV
 is also available as a bootstrap alternative for accounts with a lot of history — see
 the [sync providers guide](docs/user-guide/sync-providers.md).
 
+## Plex sync (optional)
+
+If you watch on Plex, the app can pull your watch history from your own Plex Media
+Server and push progress updates to AniList. Unlike Crunchyroll/Netflix/Prime Video
+above, this uses Plex's own real, documented OAuth sign-in flow — no cookie to find
+or paste. From Settings' Plex card, click **Connect**, approve access in the plex.tv
+tab that opens, and pick which of your Plex servers to sync from. AniDex stores a
+server-scoped token from that flow, the same PIN-based approach apps like Overseerr
+and Tautulli use.
+
+Progress is set to an absolute episode number from Plex's own watch history, so it's
+accurate even out-of-order viewing. If your library uses an anime-specific metadata
+agent (HAMA or MyAnimeList.bundle), AniDex checks Plex's own AniDB/MAL id first as a
+strictly better match signal before falling back to title matching.
+
+Once connected, it runs automatically as part of the daily sync — or trigger it
+anytime via the "Sync Now" button on the Settings page (or `POST /api/sync`).
+
+## Prime Video sync (optional)
+
+If you watch on Prime Video, the app can pull your watch history and push progress
+updates to AniList — same cookie-based pattern as Netflix above, runs inside the main
+app container as part of the same daily sync.
+
+> **Note:** this reads your Prime Video session cookie directly against Amazon's own
+> (unofficial, undocumented) API — it isn't affiliated with or supported by Amazon,
+> and could stop working if Amazon changes their site. Same ToS caveat as Crunchyroll/
+> Netflix sync above. This feature is entirely optional — skip it if you'd rather not
+> take that on.
+>
+> Amazon's watch-history page sits behind a shorter-lived session tier than general
+> Prime Video browsing, so this cookie tends to need refreshing more often than
+> Crunchyroll's or Netflix's — expect to occasionally repeat the capture steps below
+> even while still logged into primevideo.com everywhere else.
+
+To get your Prime Video credentials: log into primevideo.com in a browser, go to
+**Settings → Watch History**, open DevTools → Network, click any
+`getWatchHistorySettingsPage` request, and copy the whole `cookie` request header
+value under Request Headers as `PRIMEVIDEO_COOKIE_HEADER`. Set it in your `.env` (or
+in Settings after first launch).
+
+Once set, it runs automatically as part of the daily sync — or trigger it anytime via
+the "Sync Now" button on the Settings page (or `POST /api/sync`).
+
 ## Notifications (optional)
 
 Configured per-user under **Settings → Notifications**. Three channels are supported,
@@ -435,6 +486,8 @@ pre-approval step needed.
 | `CRUNCHYROLL_ETP_RT` | No | Crunchyroll session cookie — enables CR watch history sync |
 | `NETFLIX_COOKIE_HEADER` | No | Full Netflix session cookie header — enables Netflix watch history sync |
 | `NETFLIX_PROFILE_GUID` | No | Netflix profile guid — required alongside `NETFLIX_COOKIE_HEADER` |
+| `PLEX_SERVER_TOKEN` / `PLEX_SERVER_BASE_URL` | No | Plex server token/URL — normally set automatically by the Connect flow in Settings, not hand-entered |
+| `PRIMEVIDEO_COOKIE_HEADER` | No | Prime Video session cookie — enables Prime Video watch history sync |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram bot token — enables Telegram notifications |
 | `TELEGRAM_CHAT_ID` | No | Your Telegram chat ID — where Telegram notifications are sent |
 | `SESSION_SECRET_KEY` | Recommended | Signs session cookies. If unset, a random key is generated per process start and sessions won't survive a container restart — set this for any real deployment |
