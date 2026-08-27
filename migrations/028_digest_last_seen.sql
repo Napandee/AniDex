@@ -6,6 +6,13 @@
 -- number first. Re-check the highest number on origin/main right before
 -- merging and renumber this file if something else has already taken 028.)
 --
+-- (2026-08-27: this warning turned out to be prophetic — 028_plex_sync_state.sql
+-- merged a day later without re-checking, collided with this file, and the
+-- collision caused a real silent gap on prod (plex_sync_state never applied
+-- until caught by accident). That file is now migration 041 — see its header
+-- for the incident writeup. This one keeps its original number since it merged
+-- first, chronologically.)
+--
 -- Watermark for the in-app "what's new since your last visit" digest (#235) —
 -- a passive summary of new episodes aired for Watching-status shows, new
 -- recommendations generated, and recent sync activity, shown once per
