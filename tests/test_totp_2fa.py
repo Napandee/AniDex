@@ -698,3 +698,138 @@ def test_viewing_the_2fa_prompt_page_multiple_times_still_preserves_it(client, p
     )
     assert submit.status_code == 303
     assert submit.headers["location"] == "/"
+
+
+# ── Finding #3 (issue #385): /settings/2fa/disable is also gated by the aggregate
+# per-IP throttle (_ip_login_rate_limited(), issue #359) — not just the per-account
+# lockout Finding #2 above already covers. Threat model: an attacker holding several
+# stolen SESSION COOKIES (still logged in to each, but none of the real passwords)
+# spreads password guesses across those different accounts from one IP to try to
+# strip 2FA off each without ever tripping any single account's own 5-attempt
+# lockout — the same "spread across many accounts" pattern #359 closed for the
+# login form itself, just aimed at this route instead. ─────────────────────────────
+
+def test_disable_2fa_ip_throttle_fires_across_different_accounts(client, pg_conn, bcrypt_hash, app_module):
+    """Spreads guesses across a fresh 2FA-enabled account each time (never reusing
+    one), so no single account's own failed_login_attempts lockout (5) can be what's
+    actually blocking request max_attempts+1 — proves this is genuinely the
+    IP-aggregate throttle, not just another path into the existing per-account one.
+
+    Logging in and enrolling 2FA for each throwaway account happens under its own
+    unique, never-reused setup IP (31 accounts needing 31 successful logins can't
+    all share one IP either — that alone would cross the same 30-request
+    threshold), so only the actual disable-route requests count toward the one
+    shared `ip` under test — cleanly isolates what's being measured instead of
+    the shared /auth/login+/settings/2fa/disable budget (already covered
+    separately below) muddying the exact request count needed to cross it."""
+    ip = "198.51.100.30"
+    max_attempts = app_module._IP_LOGIN_MAX_ATTEMPTS
+
+    last_resp = None
+    for i in range(max_attempts + 1):
+        user_id, email = _make_local_user(pg_conn, bcrypt_hash)
+        client.post(
+            "/auth/login", data={"email": email, "password": PASSWORD},
+            headers={"x-forwarded-for": f"203.0.113.{i}"}, follow_redirects=False,
+        )
+        _enable_2fa(client, pg_conn, user_id)
+        last_resp = client.post(
+            "/settings/2fa/disable", data={"password": "definitely wrong"},
+            headers={"x-forwarded-for": ip}, follow_redirects=False,
+        )
+
+    assert last_resp.status_code == 303
+    assert last_resp.headers["location"] == (
+        "/settings?twofa_error=Too+many+attempts+from+this+network.+Try+again+later"
+    )
+
+
+def test_disable_2fa_ip_throttle_not_tripped_by_normal_usage(client, pg_conn, local_user, app_module):
+    user_id, email = local_user
+    ip = "198.51.100.31"
+    client.post(
+        "/auth/login", data={"email": email, "password": PASSWORD},
+        headers={"x-forwarded-for": ip}, follow_redirects=False,
+    )
+    _enable_2fa(client, pg_conn, user_id)
+
+    resp = client.post(
+        "/settings/2fa/disable", data={"password": "wrong"},
+        headers={"x-forwarded-for": ip}, follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/settings?twofa_error=Incorrect+password"
+
+    good = client.post(
+        "/settings/2fa/disable", data={"password": PASSWORD},
+        headers={"x-forwarded-for": ip}, follow_redirects=False,
+    )
+    assert good.status_code == 303
+    assert good.headers["location"] == "/settings?saved=twofa_disabled"
+
+
+def test_disable_2fa_ip_throttle_budget_is_shared_with_login(client, pg_conn, bcrypt_hash, app_module):
+    """Deliberate design choice (see the route's own docstring): this reuses
+    _ip_login_rate_limited()'s SAME counter, not a second one — so attempts already
+    spent against /auth/login from an IP count toward this route's budget too, and
+    vice versa. Confirms that sharing actually happens rather than two independently-
+    threshold buckets that happen to look similar."""
+    ip = "198.51.100.32"
+    max_attempts = app_module._IP_LOGIN_MAX_ATTEMPTS
+
+    # Spend most of the budget on plain failed /auth/login attempts (spread across
+    # accounts so no account-level lockout interferes).
+    for _ in range(max_attempts - 2):
+        _, email = _make_local_user(pg_conn, bcrypt_hash)
+        client.post(
+            "/auth/login", data={"email": email, "password": "wrong"},
+            headers={"x-forwarded-for": ip}, follow_redirects=False,
+        )
+
+    # A couple more requests against the disable route should be enough to cross
+    # the shared threshold, proving the budget really is shared rather than each
+    # route getting its own separate max_attempts allowance.
+    user_id, email = _make_local_user(pg_conn, bcrypt_hash)
+    client.post(
+        "/auth/login", data={"email": email, "password": PASSWORD},
+        headers={"x-forwarded-for": ip}, follow_redirects=False,
+    )
+    _enable_2fa(client, pg_conn, user_id)
+
+    last_resp = None
+    for _ in range(4):
+        last_resp = client.post(
+            "/settings/2fa/disable", data={"password": "wrong"},
+            headers={"x-forwarded-for": ip}, follow_redirects=False,
+        )
+
+    assert last_resp.status_code == 303
+    assert "Too+many+attempts+from+this+network" in last_resp.headers["location"]
+
+
+def test_disable_2fa_ip_throttle_independent_per_ip(client, pg_conn, local_user, bcrypt_hash, app_module):
+    ip_a = "198.51.100.33"
+    ip_b = "198.51.100.34"
+    max_attempts = app_module._IP_LOGIN_MAX_ATTEMPTS
+
+    for _ in range(max_attempts + 1):
+        _, email = _make_local_user(pg_conn, bcrypt_hash)
+        client.post(
+            "/auth/login", data={"email": email, "password": "wrong"},
+            headers={"x-forwarded-for": ip_a}, follow_redirects=False,
+        )
+
+    # ip_b has made zero requests — its own budget must be untouched by ip_a's.
+    user_id, email = local_user
+    client.post(
+        "/auth/login", data={"email": email, "password": PASSWORD},
+        headers={"x-forwarded-for": ip_b}, follow_redirects=False,
+    )
+    _enable_2fa(client, pg_conn, user_id)
+
+    resp = client.post(
+        "/settings/2fa/disable", data={"password": PASSWORD},
+        headers={"x-forwarded-for": ip_b}, follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/settings?saved=twofa_disabled"
