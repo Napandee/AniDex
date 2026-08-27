@@ -193,6 +193,9 @@
   "sync_csv_import_success": "导入完成——详情见下方的同步历史。",
   "sync_csv_field_label": "Netflix 观看活动 CSV",
   "sync_csv_import_btn": "导入",
+  "sync_pv_csv_import_title": "Prime Video CSV 导入",
+  "sync_pv_csv_import_help": "当实时 Prime Video 同步的 Cookie 频繁失效时的备用方案——亚马逊的观看历史会话本身就设计为比常规浏览过期快得多。请向亚马逊申请你的 Prime Video 观看历史导出（账户 → 隐私 → “请求我的数据” → Digital.PrimeVideo.ViewingHistory），然后在此上传生成的文件。此操作仅更新你 AniList 库中已有的条目——不会创建新条目，因此可以放心重复导入。",
+  "sync_pv_csv_field_label": "Prime Video 观看历史导出",
 
   "sync_cr_overrides_title": "Crunchyroll 标题覆盖",
   "sync_cr_overrides_help": "Crunchyroll 报告的是系列级别的标题（每一季都用同一个名字），而 AniList 通常会把续作季列在带后缀的独立标题下（例如\"Kingdom 2nd Season\"）。同步已经会自动尝试 AniList 常见的命名惯例——这里仅用于处理仍然匹配错误、或完全找不到的标题。按 Crunchyroll 报告的原样填写系列标题、季数,以及应匹配的正确 AniList 条目;此后同步会直接使用它,不再重新匹配。",

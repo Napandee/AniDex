@@ -57,6 +57,8 @@ _NETFLIX_CSV_IMPORT_SCRIPT = os.path.join(_SCRIPTS_DIR, "import_netflix_csv.py")
 _NETFLIX_CSV_IMPORT_TIMEOUT = 480  # seconds — same order as PROVIDER_STEP_TIMEOUT in
                                     # run_full_sync.py; a full-history CSV runs the same
                                     # per-title AniList search fallback the live path does
+_PRIMEVIDEO_CSV_IMPORT_SCRIPT = os.path.join(_SCRIPTS_DIR, "import_primevideo_csv.py")
+_PRIMEVIDEO_CSV_IMPORT_TIMEOUT = 480  # seconds — same rationale as Netflix's above
 
 _sync_lock = threading.Lock()
 # user_id -> {"running": bool, "last_result": str|None}. Only used as the double-click
@@ -5681,6 +5683,78 @@ def settings_netflix_csv_import(request: Request, netflix_csv: UploadFile = File
             (summary.get("updated") if summary else None, log_row["id"]),
         )
         return RedirectResponse(url="/settings?saved=netflix_csv_import", status_code=303)
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.post("/settings/primevideo-csv-import")
+def settings_primevideo_csv_import(request: Request, primevideo_csv: UploadFile = File(...)):
+    """Issue #389 — CSV import fallback for Prime Video, alongside (never replacing)
+    the live cookie-header sync. Exists because that live sync sits behind Amazon's
+    account-settings session tier, which expires far faster than general browsing —
+    see scripts/import_primevideo_csv.py's module docstring for the full incident
+    writeup and, importantly, its "CSV format confidence" caveat: unlike Netflix's
+    upload above, the exact export format here was NOT confirmed against a real
+    account during implementation. Otherwise identical shape/isolation rationale to
+    settings_netflix_csv_import() directly above — read that docstring too."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    anilist_token = config.get(user["id"], "anilist_token")
+    anilist_username = config.get(user["id"], "anilist_username")
+    if not anilist_token or not anilist_username:
+        return RedirectResponse(
+            url="/settings?csv_import_error=AniList+credentials+must+be+configured+first",
+            status_code=303,
+        )
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+            tmp.write(primevideo_csv.file.read())
+            tmp_path = tmp.name
+
+        env = os.environ.copy()
+        env["USER_ID"] = str(user["id"])
+        env["ANILIST_TOKEN"] = anilist_token
+        env["ANILIST_USERNAME"] = anilist_username
+
+        log_row = db.execute_returning(
+            "INSERT INTO sync_log (user_id, type, status, steps) VALUES (%s, 'primevideo_csv_import', 'running', '[]') "
+            "RETURNING id",
+            (user["id"],),
+        )
+
+        try:
+            result = subprocess.run(
+                [sys.executable, _PRIMEVIDEO_CSV_IMPORT_SCRIPT, tmp_path],
+                capture_output=True, text=True, timeout=_PRIMEVIDEO_CSV_IMPORT_TIMEOUT, env=env,
+            )
+        except subprocess.TimeoutExpired:
+            db.execute(
+                "UPDATE sync_log SET status = 'error', error_msg = %s WHERE id = %s",
+                (f"Import timed out after {_PRIMEVIDEO_CSV_IMPORT_TIMEOUT}s", log_row["id"]),
+            )
+            return RedirectResponse(url="/settings?csv_import_error=Import+timed+out", status_code=303)
+
+        if result.returncode != 0:
+            db.execute(
+                "UPDATE sync_log SET status = 'error', error_msg = %s WHERE id = %s",
+                (result.stderr[-800:] or "Import failed — check container logs", log_row["id"]),
+            )
+            return RedirectResponse(url="/settings?csv_import_error=Import+failed", status_code=303)
+
+        summary = _parse_csv_import_summary(result.stdout)
+        db.execute(
+            "UPDATE sync_log SET status = 'ok', entries_updated = %s WHERE id = %s",
+            (summary.get("updated") if summary else None, log_row["id"]),
+        )
+        return RedirectResponse(url="/settings?saved=primevideo_csv_import", status_code=303)
     finally:
         if tmp_path:
             try:

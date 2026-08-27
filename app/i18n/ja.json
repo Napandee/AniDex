@@ -193,6 +193,9 @@
   "sync_csv_import_success": "インポートが完了しました — 詳細は下の同期履歴を確認してください。",
   "sync_csv_field_label": "Netflix視聴アクティビティCSV",
   "sync_csv_import_btn": "インポート",
+  "sync_pv_csv_import_title": "Prime Video CSVインポート",
+  "sync_pv_csv_import_help": "ライブのPrime Video同期のクッキーがすぐに無効になってしまう場合の代替手段です。Amazonの視聴履歴セッションは、通常のブラウジングよりもはるかに早く期限切れになる仕様です。Amazonにプライムビデオの視聴履歴のエクスポートをリクエストし（アカウント → プライバシー → 「マイデータをリクエスト」 → Digital.PrimeVideo.ViewingHistory）、生成されたファイルをここにアップロードしてください。これはAniListライブラリに既に登録済みのタイトルのみを更新します — 新しいエントリーが作成されることはないため、繰り返しインポートしても安全です。",
+  "sync_pv_csv_field_label": "Prime Video視聴履歴エクスポート",
 
   "sync_cr_overrides_title": "Crunchyrollタイトルの手動対応付け",
   "sync_cr_overrides_help": "Crunchyrollはシリーズ全体のタイトル（全シーズンで同じ名前）を報告しますが、AniListでは続編シーズンが独自の接尾辞付きタイトル（例：「Kingdom 2nd Season」）で登録されていることがよくあります。同期はすでにAniListの一般的な命名規則を自動的に試みています — これは、それでも間違えてしまう、またはまったく見つからないタイトルのためのものです。Crunchyrollが報告する通りのシリーズタイトル、シーズン番号、対応するAniListの正しいエントリーを設定すると、以降の同期では再照合せずにこれを使用します。",

@@ -39,6 +39,24 @@ one-click manual fix and never touches your score or notes.
 (from Netflix's own "download your viewing history" export) is available as a bootstrap
 alternative to walking your full history through the API on first connect.
 
+## Prime Video
+
+Same idea as Crunchyroll/Netflix — a cookie-authenticated live sync against Prime
+Video's own watch-history endpoint, set up the same way (grab the cookie header from
+DevTools, save it in Settings). One real caveat worth knowing up front: Amazon's
+session for this specific endpoint expires noticeably faster than general
+browsing/playback does, by design on Amazon's side — expect to need to refresh the
+cookie more often than Crunchyroll or Netflix's.
+
+**CSV import** (fallback for when the live sync's cookie keeps going stale) — request
+your Prime Video viewing history export from Amazon (Account → Privacy → "Request My
+Data" → `Digital.PrimeVideo.ViewingHistory`) and upload the resulting file in Settings.
+Unlike Netflix's CSV import, this one only updates titles already in your AniList
+library — it never creates new entries on its own, so it's always safe to re-import.
+Note: Amazon doesn't offer a direct one-click "download my history" button for Prime
+Video the way Netflix does — the "Request My Data" request can take a while to
+fulfill.
+
 ## What happens with a title you haven't added yet
 
 If a synced title matches something already on your AniList list, progress just

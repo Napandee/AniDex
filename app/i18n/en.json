@@ -193,6 +193,9 @@
   "sync_csv_import_success": "Import complete — see Sync history below for details.",
   "sync_csv_field_label": "Netflix viewing activity CSV",
   "sync_csv_import_btn": "Import",
+  "sync_pv_csv_import_title": "Prime Video CSV import",
+  "sync_pv_csv_import_help": "Fallback for when the live Prime Video sync's cookie keeps going stale — Amazon's watch-history session expires much faster than general browsing, by design. Request your Prime Video viewing history export from Amazon (Account → Privacy → \"Request My Data\" → Digital.PrimeVideo.ViewingHistory) and upload the resulting file here. This only updates titles already in your AniList library — it never creates new entries, so it's safe to import repeatedly.",
+  "sync_pv_csv_field_label": "Prime Video watch-history export",
 
   "sync_cr_overrides_title": "Crunchyroll title overrides",
   "sync_cr_overrides_help": "Crunchyroll reports a franchise-level title (the same name for every season), while AniList often lists a sequel season under its own suffixed title (e.g. \"Kingdom 2nd Season\"). Sync already tries common AniList naming conventions automatically — this is only for a title it still gets wrong, or can't find at all. Set the series title exactly as Crunchyroll reports it, the season number, and the AniList entry it should match; sync uses it from then on instead of re-matching.",

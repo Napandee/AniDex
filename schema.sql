@@ -649,7 +649,8 @@ CREATE TABLE sync_log (
     id              SERIAL PRIMARY KEY,
     user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     run_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    type            TEXT NOT NULL,          -- 'full_sync' | 'force_full_resync' | 'recommender' | 'netflix_csv_import'
+    type            TEXT NOT NULL,          -- 'full_sync' | 'force_full_resync' | 'recommender' |
+                                             -- 'netflix_csv_import' | 'primevideo_csv_import'
     status          TEXT NOT NULL,          -- 'running' (transient) | 'ok' | 'partial' | 'error'
     entries_updated INTEGER,                -- sum of steps[].entries_updated across non-skipped
                                              -- steps (issue #46) — real entries touched this run,

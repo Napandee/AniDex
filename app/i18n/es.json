@@ -193,6 +193,9 @@
   "sync_csv_import_success": "Importación completa — consulta el historial de sincronización más abajo para más detalles.",
   "sync_csv_field_label": "CSV de actividad de visualización de Netflix",
   "sync_csv_import_btn": "Importar",
+  "sync_pv_csv_import_title": "Importar CSV de Prime Video",
+  "sync_pv_csv_import_help": "Alternativa para cuando la cookie de la sincronización en vivo de Prime Video sigue caducando — la sesión del historial de visualización de Amazon caduca mucho más rápido que la navegación general, por diseño. Solicita tu exportación del historial de visualización de Prime Video a Amazon (Cuenta → Privacidad → «Solicitar mis datos» → Digital.PrimeVideo.ViewingHistory) y sube aquí el archivo resultante. Esto solo actualiza títulos que ya están en tu biblioteca de AniList — nunca crea entradas nuevas, así que es seguro importarlo repetidamente.",
+  "sync_pv_csv_field_label": "Exportación del historial de visualización de Prime Video",
 
   "sync_cr_overrides_title": "Correcciones de título de Crunchyroll",
   "sync_cr_overrides_help": "Crunchyroll informa un título a nivel de franquicia (el mismo nombre para cada temporada), mientras que AniList suele listar una temporada secuela con su propio título con sufijo (por ejemplo, \"Kingdom 2nd Season\"). La sincronización ya prueba automáticamente las convenciones de nombres habituales de AniList — esto es solo para un título que aún se equivoca, o que no encuentra en absoluto. Indica el título de la serie tal como lo informa Crunchyroll, el número de temporada y la entrada de AniList correcta; la sincronización la usará a partir de entonces en lugar de volver a buscar coincidencias.",

@@ -509,6 +509,30 @@
       </form>
     </div>
 
+    {# ── Prime Video CSV import (issue #389) ──────────────────────────── #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('sync_pv_csv_import_title') }}
+        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-pv-csv-import">i</button>
+      </h2>
+      <div class="help-disclosure-panel" id="help-pv-csv-import"><div>
+        <p class="help-disclosure-panel-body">
+          {{ t('sync_pv_csv_import_help') }}
+        </p>
+      </div></div>
+      {% if saved == 'primevideo_csv_import' %}<p class="settings-success">{{ t('sync_csv_import_success') }}</p>{% endif %}
+
+      <form method="post" action="/settings/primevideo-csv-import" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-field">
+          <label class="form-label" for="primevideo_csv">{{ t('sync_pv_csv_field_label') }}</label>
+          <input class="form-input" type="file" id="primevideo_csv" name="primevideo_csv" accept=".csv,text/csv" required>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-save">{{ t('sync_csv_import_btn') }}</button>
+        </div>
+      </form>
+    </div>
+
     {# ── Crunchyroll title overrides ──────────────────────────────────── #}
     <div class="settings-section">
       <h2 class="settings-section-title">{{ t('sync_cr_overrides_title') }}
@@ -959,7 +983,7 @@ document.addEventListener('DOMContentLoaded', function () {
       display: 'preferences',
       credentials_anilist: 'sync', credentials_crunchyroll: 'sync', credentials_netflix: 'sync',
       credentials_primevideo: 'sync', plex_disconnected: 'sync',
-      netflix_csv_import: 'sync',
+      netflix_csv_import: 'sync', primevideo_csv_import: 'sync',
       cr_override: 'sync', cr_override_deleted: 'sync', streaming_services: 'sync',
       notifications: 'notifications', privacy: 'privacy',
       twofa_disabled: 'account', session_revoked: 'account',
@@ -1221,7 +1245,8 @@ function renderStepChips(steps) {
     const base = t === 'full_sync' ? 'Full sync'
       : t === 'force_full_resync' ? 'Force full resync'
       : t === 'recommender' ? 'Recommender'
-      : t === 'netflix_csv_import' ? 'Netflix CSV import' : t;
+      : t === 'netflix_csv_import' ? 'Netflix CSV import'
+      : t === 'primevideo_csv_import' ? 'Prime Video CSV import' : t;
     // Issue #46 — trigger is only ever set for full_sync/force_full_resync rows.
     const triggerLabel = trigger === 'manual' ? 'manual' : trigger === 'scheduled' ? 'scheduled' : null;
     return triggerLabel ? `${base} (${triggerLabel})` : base;
