@@ -13,8 +13,9 @@ This is a new *source* feeding the exact same per-series bounded-diff pipeline
 sync_netflix.py's live path already uses — not a new/separate write path or matching
 threshold. Reused as-is from sync_netflix.py: aggregate_by_series(), _new_episode_count(),
 process() (and its _update()/_save_state() writers), load_nf_state(), ensure_table(),
-_set_walk_complete(), the title-search cache helpers. Reused from anilist_sync_common.py:
-find_anilist_id(), is_plausible_match(), load_user_list_from_db(), seed_search_cache().
+the title-search cache helpers. Reused from anilist_sync_common.py: find_anilist_id(),
+is_plausible_match(), load_user_list_from_db(), seed_search_cache(), set_walk_complete()
+(issue #387 — moved here from sync_netflix.py, now shared by all four provider scripts).
 
 Invoked as its own subprocess by app/main.py's upload route, same USER_ID/DATABASE_URL/
 ANILIST_TOKEN/ANILIST_USERNAME env-var contract as every other scripts/sync_*.py script
@@ -241,7 +242,7 @@ def run_import(csv_path: str) -> dict:
     # pagination (issue #97's walk_complete). Set unconditionally, not gated on
     # updated > 0 — a CSV full of titles the user's AniList library doesn't (yet)
     # cover is still a complete review of Netflix's own record.
-    nf._set_walk_complete(conn, True)
+    nf.set_walk_complete(conn, "netflix", USER_ID, True)
     log("Netflix CSV export treated as authoritative — full walk marked complete")
 
     conn.close()

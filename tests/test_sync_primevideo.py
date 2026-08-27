@@ -64,12 +64,27 @@ def test_parse_season_and_title_double_space_before_season():
     assert pv._parse_season_and_title("Lioness -  Season 2") == ("Lioness", 2)
 
 
-def test_parse_season_and_title_bare_season_with_no_show_name_falls_back_to_original():
-    # Observed live: a season entry with no show name attached at all — can't
-    # extract a usable base title, so this deliberately keeps the original
-    # string (which won't resolve against AniList, and gets skipped downstream
-    # like any other unmatched title) rather than claiming a title of "".
-    assert pv._parse_season_and_title("Season 3") == ("Season 3", 1)
+def test_parse_season_and_title_bare_season_returns_empty_title_issue_387():
+    # Issue #387 — this used to keep the literal string "Season 3" as the
+    # "title" (a season entry with no show name attached at all can't extract
+    # anything usable), on the stated assumption that a title like that
+    # "simply won't resolve against AniList and gets skipped downstream." That
+    # assumption was wrong: confirmed live, the bare query "Season 3" matched
+    # AniList's search to the real, unrelated anime "Dorohedoro Season 3" —
+    # a false positive, one of 16 bogus entries a real Prime Video sync
+    # auto-created in one run. Returns "" now so parse_items()'s `if not
+    # title: continue` guard actually skips it, instead of relying on a
+    # search finding nothing.
+    assert pv._parse_season_and_title("Season 3") == ("", 1)
+    assert pv._parse_season_and_title("season 03") == ("", 1)
+    assert pv._parse_season_and_title("SEASON 3") == ("", 1)
+
+
+def test_parse_season_and_title_still_extracts_real_show_name_before_season():
+    # Regression guard for #387's fix: a real "<show> Season N" string must
+    # still parse correctly — only a BARE "Season N" (nothing else) is treated
+    # as unusable.
+    assert pv._parse_season_and_title("Dorohedoro Season 3") == ("Dorohedoro", 3)
 
 
 def test_parse_season_and_title_empty_input():
@@ -286,3 +301,53 @@ def test_new_entry_branch_checked_before_every_other_branch(monkeypatch):
     result = pv.process("Some New Show", pv_ep=12, entry=entry, pv_state=None, conn=None)
     assert ("update", 42, {"progress": 12, "status": "WATCHING"}) in calls
     assert "COMPLETED" not in result
+
+
+# ── DRY_RUN mode (issue #387, Part 2) — this script had none before; every
+# conn-taking write function must safely no-op with conn=None, and the reads
+# must return an empty/from-scratch shape, matching sync_netflix.py's existing
+# DRY_RUN precedent exactly.
+
+def test_load_title_search_cache_empty_when_conn_is_none():
+    assert pv.load_title_search_cache(None) == {}
+
+
+def test_save_title_search_cache_entry_noop_when_conn_is_none():
+    pv.save_title_search_cache_entry(None, "Some Western Show", None)  # must not raise
+
+
+def test_save_pv_state_noop_when_conn_is_none():
+    pv.save_pv_state(None, 154587, "Attack on Titan", 5, False)  # must not raise
+
+
+def test_save_watermark_noop_when_conn_is_none():
+    pv.save_watermark(None, 154587, "Attack on Titan", datetime.now(timezone.utc))  # must not raise
+
+
+def test_update_logs_instead_of_enqueueing_when_dry_run(monkeypatch):
+    monkeypatch.setattr(pv, "DRY_RUN", True)
+    called = []
+    monkeypatch.setattr(pv, "enqueue_outbox_update", lambda *a, **kw: called.append((a, kw)))
+    pv._update(None, 154587, status="WATCHING", progress=3)
+    assert called == []
+
+
+def test_save_state_logs_instead_of_saving_when_dry_run(monkeypatch):
+    monkeypatch.setattr(pv, "DRY_RUN", True)
+    called = []
+    monkeypatch.setattr(pv, "save_pv_state", lambda *a, **kw: called.append((a, kw)))
+    pv._save_state(None, 154587, "Attack on Titan", 5, False)
+    assert called == []
+
+
+def test_update_and_save_state_call_through_when_not_dry_run(monkeypatch):
+    assert pv.DRY_RUN is False
+    enqueue_called = []
+    monkeypatch.setattr(pv, "enqueue_outbox_update", lambda *a, **kw: enqueue_called.append((a, kw)))
+    pv._update(object(), 154587, status="WATCHING")
+    assert len(enqueue_called) == 1
+
+    save_called = []
+    monkeypatch.setattr(pv, "save_pv_state", lambda *a, **kw: save_called.append((a, kw)))
+    pv._save_state(object(), 154587, "Attack on Titan", 5, False)
+    assert len(save_called) == 1

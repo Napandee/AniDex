@@ -123,7 +123,10 @@ def _patch_common(monkeypatch, nf_state=None, title_search_cache=None):
     monkeypatch.setattr(nf, "load_title_search_cache", lambda conn: title_search_cache or {})
     monkeypatch.setattr(nf, "save_title_search_cache_entry", lambda conn, title, mid: None)
     walk_complete_calls = []
-    monkeypatch.setattr(nf, "_set_walk_complete", lambda conn, complete: walk_complete_calls.append(complete))
+    monkeypatch.setattr(
+        nf, "set_walk_complete",
+        lambda conn, provider, user_id, complete: walk_complete_calls.append(complete),
+    )
 
     updates = []
     monkeypatch.setattr(nf, "_update", lambda conn, anilist_id, **kw: updates.append((anilist_id, kw)))
