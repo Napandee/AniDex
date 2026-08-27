@@ -3866,12 +3866,15 @@ a.drop-tag-chip-link:focus-visible {
 
   .site-name { flex: 0 0 auto; white-space: nowrap; }
 
-  .nav-search-form { order: 2; flex: 1; min-width: 0; margin-right: 7rem; }
+  /* issue #367 — flex: 1; min-width: 0 on the same row as .site-name let this
+     shrink to ~57px (squeezed by the site name plus the 7rem margin reserved
+     for .account-fabs), truncating the placeholder to a few characters.
+     flex-basis: 100% drops it to its own row instead, where it has the full
+     width and doesn't need to dodge .account-fabs (fixed-positioned, only
+     over the row above). */
+  .nav-search-form { order: 2; flex: 1 1 100%; min-width: 0; }
   .nav-search { width: 100%; }
   .nav-search:focus { width: 100%; }
-
-  /* leaves room for .account-fabs (settings/admin/logout), which stays fixed top-right
-     at all widths; margin-right above is sized for the 3-icon admin case */
   .account-fabs { top: 0.85rem; right: 1rem; gap: 0.35rem; }
   .icon-fab, .logout-fab { width: 1.75rem; height: 1.75rem; }
   .icon-fab svg, .logout-fab svg { width: 0.95rem; height: 0.95rem; }
@@ -4036,8 +4039,12 @@ a.drop-tag-chip-link:focus-visible {
 
 @media (max-width: 480px) {
 
-  /* ── Single column card grid on small phones ──────────────────────────── */
-  .grid { grid-template-columns: repeat(2, 1fr); }
+  /* ── 2-column card grid on small phones (issue #366) ────────────────────
+     Was mislabeled "single column" here — it's repeat(2, 1fr). The fixed
+     .add-anime-fab (bottom: 2rem, 3.25rem tall) has no mobile override and
+     sat directly on top of the second column's card content at this width
+     without this bottom padding to clear it. */
+  .grid { grid-template-columns: repeat(2, 1fr); padding-bottom: 6rem; }
 
   /* ── Hide less-critical meta on tiny screens ──────────────────────────── */
   .avg-score { display: none; }
