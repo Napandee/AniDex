@@ -39,6 +39,32 @@ one-click manual fix and never touches your score or notes.
 (from Netflix's own "download your viewing history" export) is available as a bootstrap
 alternative to walking your full history through the API on first connect.
 
+## Prime Video
+
+Log into primevideo.com, open DevTools → Network, find a request to
+`primevideo.com/api/getWatchHistorySettingsPage`, and copy the full `cookie`
+request header value as `PRIMEVIDEO_COOKIE_HEADER` in Settings (or `.env`).
+
+Progress is tracked as an absolute episode number, same as Crunchyroll's approach —
+accurate even watching out of order.
+
+**A note specific to Prime Video, unlike Crunchyroll/Netflix:** Amazon's session for
+the watch-history endpoint expires much faster than ordinary browsing/playback stays
+logged in, so a manually-captured cookie tends to go stale within a day or so — this
+isn't a bug in AniDex, it's how Amazon's own session model works (every other
+community tool that reads this same endpoint hits the same limit). Two ways to make
+this less painful than re-capturing the cookie by hand every time it dies:
+
+- **[Prime Video Cookie Sync browser extension](../../browser-extension/primevideo-cookie-sync/)**
+  (issue #390) — a small companion extension that reads your browser's current
+  Prime Video cookies and pushes them to your AniDex instance automatically (hourly,
+  or on demand). Recommended if the manual recapture is happening often enough to be
+  annoying.
+- **CSV import** (issue #389) — a one-time export of your Prime Video watch history
+  from Amazon's own account settings, imported the same way Netflix's CSV import
+  works above. A good fallback for whenever the live cookie sync is stale between
+  refreshes, rather than something to redo constantly.
+
 ## What happens with a title you haven't added yet
 
 If a synced title matches something already on your AniList list, progress just
