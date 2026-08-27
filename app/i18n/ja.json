@@ -691,6 +691,9 @@
   "admin_pending_migrations_warning": "{count} 件のマイグレーションがこのデータベースに未適用です — migrations/ とCLAUDE.mdの手動適用手順を確認してください",
   "admin_pending_migrations_none": "なし — 最新の状態です",
   "admin_pending_migrations_unknown": "不明（マーカー未設定）",
+  "admin_anilist_ratelimit": "AniList レート制限",
+  "admin_anilist_ratelimit_active": "現在レート制限中（最後に {source} で検出）— 自動的に再試行しています",
+  "admin_anilist_ratelimit_clear": "クリア — 現在レート制限は発生していません",
 
   "admin_audit_log_title": "監査ログ",
   "admin_audit_log_desc": "管理者操作（招待、OAuth設定、プライバシーのデフォルト、パスワードリセット、ユーザー無効化）の時系列記録。新しい順。",

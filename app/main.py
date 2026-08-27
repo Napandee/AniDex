@@ -2508,7 +2508,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 35
+LATEST_MIGRATION = 36
 
 
 def _build_version() -> str | None:
@@ -2541,6 +2541,37 @@ def _pending_migration_count() -> int | None:
     return max(0, LATEST_MIGRATION - row["highest_applied_migration"])
 
 
+def _anilist_rate_limit_status() -> dict | None:
+    """Issue #381 — the most recent AniList 429 any of app/outbox.py,
+    scripts/anilist_sync_common.py's gql() (Crunchyroll/Netflix/Plex/Prime
+    Video), or scripts/sync_anilist.py's own gql() observed, if any. Every one
+    of those already retries using AniList's own Retry-After header — this is
+    visibility on top of that existing behavior, not a change to it.
+
+    Returns None when nothing's ever been observed (no row — the correct
+    default, same "absence is fine" contract as migration_state) or the table
+    doesn't exist yet (an instance mid-upgrade, swallowed the same way
+    _pending_migration_count() swallows a missing migration_state so one
+    missing table can't break the whole Instance Health page). `active` is
+    True only while the recorded retry-after window hasn't elapsed yet — an
+    old 429 from hours ago shouldn't still read as "currently rate-limited."
+    """
+    try:
+        row = db.fetchone(
+            "SELECT source, retry_after_seconds, observed_at FROM anilist_rate_limit_state WHERE id = 1"
+        )
+    except Exception:
+        return None
+    if row is None:
+        return None
+    resumes_at = row["observed_at"] + timedelta(seconds=row["retry_after_seconds"])
+    return {
+        "source": row["source"],
+        "observed_at": row["observed_at"],
+        "active": resumes_at > datetime.now(timezone.utc),
+    }
+
+
 def _instance_health() -> dict:
     """Read-only instance-health data for the admin panel (issue #86): running
     build version (if baked into the image via the Dockerfile's GIT_SHA build
@@ -2559,6 +2590,7 @@ def _instance_health() -> dict:
             "users": db.fetchone("SELECT COUNT(*) AS n FROM users")["n"],
         },
         "pending_migrations": _pending_migration_count(),
+        "anilist_rate_limit": _anilist_rate_limit_status(),
     }
 
 

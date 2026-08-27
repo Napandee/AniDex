@@ -29,6 +29,31 @@ USER_ID = int(os.environ["USER_ID"])
 MAX_RATE_LIMIT_RETRIES = 5
 
 
+def _record_rate_limit(source: str, retry_after_seconds: float) -> None:
+    """Issue #381 — visibility-only marker for Admin > Instance Health, read via
+    app.main's _anilist_rate_limit_status(). This module runs as its own
+    subprocess (see module docstring), so unlike app/outbox.py's in-process
+    app.db, it opens a short-lived connection of its own for this rare event —
+    never changes gql()'s own retry behavior above, which is untouched."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO anilist_rate_limit_state (id, source, retry_after_seconds, observed_at)
+                VALUES (1, %s, %s, now())
+                ON CONFLICT (id) DO UPDATE SET
+                    source = EXCLUDED.source,
+                    retry_after_seconds = EXCLUDED.retry_after_seconds,
+                    observed_at = EXCLUDED.observed_at
+                """,
+                (source, int(retry_after_seconds)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def gql(query: str, variables: dict | None = None, token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if token:
@@ -48,6 +73,7 @@ def gql(query: str, variables: dict | None = None, token: str | None = None) -> 
         )
         if resp.status_code == 429 and attempt < MAX_RATE_LIMIT_RETRIES - 1:
             wait = float(resp.headers.get("retry-after", 5))
+            _record_rate_limit("anilist_sync_common", wait)
             time.sleep(wait)
             continue
         break

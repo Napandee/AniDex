@@ -203,3 +203,68 @@ def test_latest_migration_constant_matches_highest_migration_file(monkeypatch):
         f"migration file present is {highest_file:03d}_*.sql. Bump LATEST_MIGRATION "
         "to match in the same commit that adds a new migration file."
     )
+
+
+# ── AniList rate-limit visibility (issue #381) ──────────────────────────────
+
+
+def test_no_rate_limit_row_reports_none(pg_conn, instance_health):
+    """No row means never observed — the correct default for both a fresh
+    install and an upgrade, same "absence is fine" contract as
+    migration_state (issue #380)."""
+    with pg_conn.cursor() as cur:
+        cur.execute("DELETE FROM anilist_rate_limit_state")
+    assert instance_health()["anilist_rate_limit"] is None
+
+
+def test_recent_rate_limit_reports_active(pg_conn, instance_health):
+    """The exact scenario #381 exists to catch: a 429 was observed recently
+    enough that its retry-after window hasn't elapsed yet."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO anilist_rate_limit_state (id, source, retry_after_seconds, observed_at) "
+            "VALUES (1, 'outbox', 3600, now()) "
+            "ON CONFLICT (id) DO UPDATE SET source = EXCLUDED.source, "
+            "retry_after_seconds = EXCLUDED.retry_after_seconds, observed_at = EXCLUDED.observed_at"
+        )
+    result = instance_health()["anilist_rate_limit"]
+    assert result is not None
+    assert result["active"] is True
+    assert result["source"] == "outbox"
+
+
+def test_old_rate_limit_reports_inactive(pg_conn, instance_health):
+    """A 429 from hours ago, well past its own retry-after window, shouldn't
+    still read as "currently rate-limited" — that would be stale, misleading
+    information on the panel, not a real current state."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO anilist_rate_limit_state (id, source, retry_after_seconds, observed_at) "
+            "VALUES (1, 'sync_anilist', 60, now() - interval '2 hours') "
+            "ON CONFLICT (id) DO UPDATE SET source = EXCLUDED.source, "
+            "retry_after_seconds = EXCLUDED.retry_after_seconds, observed_at = EXCLUDED.observed_at"
+        )
+    result = instance_health()["anilist_rate_limit"]
+    assert result is not None
+    assert result["active"] is False
+
+
+def test_missing_rate_limit_table_reports_none_not_a_crash(pg_conn, instance_health):
+    """An instance mid-upgrade that hasn't reached migration 036 yet won't have
+    this table at all — must degrade gracefully, not break the whole Instance
+    Health page, same contract as migration_state's own missing-table test
+    above."""
+    with pg_conn.cursor() as cur:
+        cur.execute("DROP TABLE anilist_rate_limit_state")
+    try:
+        assert instance_health()["anilist_rate_limit"] is None
+    finally:
+        with pg_conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE anilist_rate_limit_state (
+                    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+                    source TEXT NOT NULL,
+                    retry_after_seconds INTEGER NOT NULL,
+                    observed_at TIMESTAMPTZ NOT NULL
+                )
+            """)

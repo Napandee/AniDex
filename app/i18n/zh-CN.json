@@ -691,6 +691,9 @@
   "admin_pending_migrations_warning": "有 {count} 个迁移尚未应用到此数据库 — 请查看 migrations/ 和 CLAUDE.md 中的手动应用步骤",
   "admin_pending_migrations_none": "无 — 已是最新",
   "admin_pending_migrations_unknown": "未知（标记尚未设置）",
+  "admin_anilist_ratelimit": "AniList 速率限制",
+  "admin_anilist_ratelimit_active": "当前处于速率限制状态（最近一次来自 {source}）——正在自动重试",
+  "admin_anilist_ratelimit_clear": "正常——当前没有速率限制",
 
   "admin_audit_log_title": "审计日志",
   "admin_audit_log_desc": "管理员操作的时间顺序记录（邀请、OAuth 设置、隐私默认设置、密码重置、用户停用）。最新的排在最前。",
