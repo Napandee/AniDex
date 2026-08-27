@@ -134,6 +134,7 @@
     <div class="chart-card">
       <h2 class="chart-title">{{ t('stats_chart_status') }}</h2>
       <canvas id="chart-status"></canvas>
+      <p class="drop-patterns-empty" id="chart-status-empty" hidden>{{ t('stats_chart_status_empty') }}</p>
     </div>
     <div class="chart-card">
       <h2 class="chart-title">{{ t('stats_chart_scores') }}</h2>
@@ -142,10 +143,12 @@
     <div class="chart-card chart-card--wide">
       <h2 class="chart-title">{{ t('stats_chart_genres') }}</h2>
       <canvas id="chart-genres"></canvas>
+      <p class="drop-patterns-empty" id="chart-genres-empty" hidden>{{ t('stats_chart_genres_empty') }}</p>
     </div>
     <div class="chart-card chart-card--wide">
       <h2 class="chart-title">{{ t('stats_chart_year') }}</h2>
       <canvas id="chart-year"></canvas>
+      <p class="drop-patterns-empty" id="chart-year-empty" hidden>{{ t('stats_chart_year_empty') }}</p>
     </div>
     <div class="chart-card chart-card--wide">
       <h2 class="chart-title">{{ t('stats_chart_activity') }}</h2>
@@ -389,26 +392,38 @@
     'Completed': '#4ade80', 'Watching': '#60a5fa', 'Dropped': '#f87171',
     'Planning': '#a78bfa', 'Paused': '#facc15', 'Repeating': '#fb923c',
   };
-  new Chart(document.getElementById('chart-status'), {
-    type: 'doughnut',
-    data: {
-      labels: data.status.map(d => d.label),
-      datasets: [{
-        data: data.status.map(d => d.value),
-        backgroundColor: data.status.map(d => statusColors[d.label] || '#888'),
-        borderWidth: 0,
-      }],
-    },
-    options: {
-      ...baseOpts,
-      cutout: '60%',
-      onHover: pointerOnHover,
-      onClick: (evt, elements) => {
-        if (!elements.length) return;
-        goToLibrary(data.status[elements[0].index].label.toUpperCase());
+  // Issue #363 — a brand-new account has no library_entries at all, so
+  // data.status/.genres/.by_year come back as empty arrays (not null, unlike
+  // the gated .stats-grid sections above — these three always render, see
+  // their template comment). Chart.js silently draws an axis-only canvas for
+  // an empty dataset rather than erroring, which read as a broken/blank card
+  // with no explanation. Same empty-state pattern already used below for
+  // rewatch/drop-patterns (a hidden <p>, shown in place of the canvas).
+  if (data.status.length) {
+    new Chart(document.getElementById('chart-status'), {
+      type: 'doughnut',
+      data: {
+        labels: data.status.map(d => d.label),
+        datasets: [{
+          data: data.status.map(d => d.value),
+          backgroundColor: data.status.map(d => statusColors[d.label] || '#888'),
+          borderWidth: 0,
+        }],
       },
-    },
-  });
+      options: {
+        ...baseOpts,
+        cutout: '60%',
+        onHover: pointerOnHover,
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          goToLibrary(data.status[elements[0].index].label.toUpperCase());
+        },
+      },
+    });
+  } else {
+    document.getElementById('chart-status').hidden = true;
+    document.getElementById('chart-status-empty').hidden = false;
+  }
 
   // Score bar — le.score is set independent of status (any entry can be rated,
   // not just COMPLETED ones — see the .star-rating widget on every library
@@ -454,31 +469,36 @@
   // text (see script.js's applyLibraryFilters). library.html now renders every
   // genre (not just the first 4 shown) so this always matches the chart's true
   // per-genre count, not just what's visually displayed on a card.
-  new Chart(document.getElementById('chart-genres'), {
-    type: 'bar',
-    data: {
-      labels: data.genres.map(d => d.genre),
-      datasets: [{
-        data: data.genres.map(d => d.count),
-        backgroundColor: '#7c3aed',
-        borderRadius: 4,
-      }],
-    },
-    options: {
-      ...baseOpts,
-      indexAxis: 'y',
-      plugins: { legend: { display: false } },
-      onHover: pointerOnHover,
-      onClick: (evt, elements) => {
-        if (!elements.length) return;
-        goToLibrary('COMPLETED', { q: data.genres[elements[0].index].genre });
+  if (data.genres.length) {
+    new Chart(document.getElementById('chart-genres'), {
+      type: 'bar',
+      data: {
+        labels: data.genres.map(d => d.genre),
+        datasets: [{
+          data: data.genres.map(d => d.count),
+          backgroundColor: '#7c3aed',
+          borderRadius: 4,
+        }],
       },
-      scales: {
-        x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
-        y: { grid: { color: 'transparent' }, ticks: { color: LABEL_COLOR } },
+      options: {
+        ...baseOpts,
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        onHover: pointerOnHover,
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          goToLibrary('COMPLETED', { q: data.genres[elements[0].index].genre });
+        },
+        scales: {
+          x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+          y: { grid: { color: 'transparent' }, ticks: { color: LABEL_COLOR } },
+        },
       },
-    },
-  });
+    });
+  } else {
+    document.getElementById('chart-genres').hidden = true;
+    document.getElementById('chart-genres-empty').hidden = false;
+  }
 
   // By year bar — deliberately left without a drill-down (issue #225). Each bar
   // is COMPLETED entries grouped by a.season_year (release year), but the only
@@ -488,25 +508,30 @@
   // regardless of season", and building one would be new filter logic (out of
   // scope per the issue). Would need 4 separate clicks (one per season) to
   // reconstruct one bar's count, which isn't a clean 1:1 drill-down.
-  new Chart(document.getElementById('chart-year'), {
-    type: 'bar',
-    data: {
-      labels: data.by_year.map(d => d.year),
-      datasets: [{
-        data: data.by_year.map(d => d.count),
-        backgroundColor: '#0891b2',
-        borderRadius: 4,
-      }],
-    },
-    options: {
-      ...baseOpts,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
-        y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+  if (data.by_year.length) {
+    new Chart(document.getElementById('chart-year'), {
+      type: 'bar',
+      data: {
+        labels: data.by_year.map(d => d.year),
+        datasets: [{
+          data: data.by_year.map(d => d.count),
+          backgroundColor: '#0891b2',
+          borderRadius: 4,
+        }],
       },
-    },
-  });
+      options: {
+        ...baseOpts,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
+          y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR, precision: 0 } },
+        },
+      },
+    });
+  } else {
+    document.getElementById('chart-year').hidden = true;
+    document.getElementById('chart-year-empty').hidden = false;
+  }
 
   // Taste-profile drift (issue #176) — stacked bar of the COMPLETED library's
   // genre mix per time bucket (quarterly or yearly, chosen server-side based on
