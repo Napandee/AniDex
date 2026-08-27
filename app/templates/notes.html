@@ -92,7 +92,11 @@
             <div class="related-title">{{ r.title }}</div>
             <div class="related-meta">
               {% if r.format %}<span class="related-format">{{ r.format }}</span>{% endif %}
-              {% if r.in_library %}<span class="related-in-library">{{ t('notes_in_library') }}</span>{% endif %}
+              {% if r.status %}
+              <span class="badge-status badge-{{ r.status|lower }}">
+                {{ t('status_' + r.status.lower()) }}{% if r.progress %} · {% if r.episodes %}{{ r.progress }}/{{ r.episodes }}{% else %}{{ r.progress }} ep{% endif %}{% endif %}
+              </span>
+              {% endif %}
             </div>
           </div>
         </a>

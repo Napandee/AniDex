@@ -3572,15 +3572,28 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
                  if r["relation_type"] in _RELATION_ORDER else 99)
 
     if related:
-        in_library = {
-            row["anime_id"]
-            for row in db.fetchall(
-                "SELECT anime_id FROM library_entries WHERE anime_id = ANY(%s) AND user_id = %s",
-                ([r["id"] for r in related], user["id"]),
-            )
+        related_ids = [r["id"] for r in related]
+        # Issue #373 — was just a boolean "in your library" flag; a franchise view
+        # is supposed to show watch ORDER/completion, which needs the real status
+        # and progress, not just membership. episodes comes from anime (not the
+        # relations JSON snapshot, which only carries format) so progress can show
+        # as "8/12" — only present for a related title that has its own local row
+        # (i.e. someone has actually synced/tracked it at some point).
+        status_rows = db.fetchall(
+            "SELECT anime_id, status, progress FROM library_entries WHERE anime_id = ANY(%s) AND user_id = %s",
+            (related_ids, user["id"]),
+        )
+        status_map = {row["anime_id"]: row for row in status_rows}
+        episodes_map = {
+            row["id"]: row["episodes"]
+            for row in db.fetchall("SELECT id, episodes FROM anime WHERE id = ANY(%s)", (related_ids,))
         }
         for r in related:
-            r["in_library"] = r["id"] in in_library
+            entry = status_map.get(r["id"])
+            r["in_library"] = entry is not None
+            r["status"] = entry["status"] if entry else None
+            r["progress"] = entry["progress"] if entry else None
+            r["episodes"] = episodes_map.get(r["id"])
 
     return templates.TemplateResponse(
         request,
