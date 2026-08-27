@@ -35,7 +35,7 @@ log = logging.getLogger("anime_tracker")
 
 load_dotenv()
 
-from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server, csrf, plex_auth
+from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server, csrf, plex_auth, vapid
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
 
 def _get_anilist_token(user_id: int) -> str:
@@ -2691,7 +2691,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 37
+LATEST_MIGRATION = 38
 
 
 def _build_version() -> str | None:
@@ -5540,6 +5540,14 @@ def settings_page(
     # configured instead of showing a grey dot for every possible provider.
     cred_status_json = json.dumps(cred_status, ensure_ascii=False).replace("<", "\\u003c")
 
+    # Issue #377 — get_or_create_keypair() lazily generates the instance's VAPID
+    # keypair on the very first Settings page load if it doesn't exist yet, no
+    # separate setup step needed. Only the public half goes to the template/browser.
+    vapid_public_key, _ = vapid.get_or_create_keypair()
+    push_subscription_count = db.fetchone(
+        "SELECT count(*) AS n FROM push_subscriptions WHERE user_id = %s", (user["id"],)
+    )["n"]
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -5574,6 +5582,8 @@ def settings_page(
             "pat_tokens": pat_tokens,
             "all_streaming_services": sorted(STREAMING_SITES),
             "owned_streaming_services": owned_streaming_services,
+            "vapid_public_key": vapid_public_key,
+            "push_subscription_count": push_subscription_count,
             "privacy": {
                 "hidden_tags": ", ".join(json.loads(config.get(user["id"], "hidden_tags") or "[]")),
                 "anonymize_activity": config.get(user["id"], "anonymize_activity") == "true",
@@ -6084,6 +6094,52 @@ def settings_save_notifications(
         config.set_value(user["id"], "ntfy_auth_token", ntfy_auth_token.strip())
 
     return RedirectResponse(url="/settings?saved=notifications", status_code=303)
+
+
+@app.post("/settings/push/subscribe")
+async def settings_push_subscribe(request: Request):
+    """Issue #377 — stores a browser's PushManager.subscribe() result so
+    app/notify.py's WebPushChannel can deliver to it. JSON body (this route has no
+    HTML form counterpart, unlike most POST routes here), driven entirely by
+    settings.html's own JS: {"endpoint": ..., "keys": {"p256dh": ..., "auth": ...}}.
+    ON CONFLICT upserts the keys — a browser re-subscribing after its keys rotate
+    keeps the same (user_id, endpoint) row rather than accumulating a duplicate."""
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    endpoint = (body.get("endpoint") or "").strip()
+    keys = body.get("keys") or {}
+    p256dh, auth = (keys.get("p256dh") or "").strip(), (keys.get("auth") or "").strip()
+    if not endpoint or not p256dh or not auth:
+        return JSONResponse({"ok": False, "error": "Incomplete subscription"}, status_code=400)
+
+    db.execute(
+        "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (user_id, endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth",
+        (user["id"], endpoint, p256dh, auth),
+    )
+    count = db.fetchone(
+        "SELECT count(*) AS n FROM push_subscriptions WHERE user_id = %s", (user["id"],)
+    )["n"]
+    return JSONResponse({"ok": True, "count": count})
+
+
+@app.post("/settings/push/unsubscribe")
+async def settings_push_unsubscribe(request: Request):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    endpoint = (body.get("endpoint") or "").strip()
+    if endpoint:
+        db.execute(
+            "DELETE FROM push_subscriptions WHERE user_id = %s AND endpoint = %s",
+            (user["id"], endpoint),
+        )
+    return JSONResponse({"ok": True})
 
 
 @app.post("/settings/schedule")

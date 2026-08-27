@@ -62,6 +62,12 @@ ENCRYPTED_KEYS = {
 INSTANCE_ENCRYPTED_KEYS = {
     "google_client_secret",
     "discord_client_secret",
+    # Issue #377 — the VAPID private key signs every Web Push message this
+    # instance sends; a leak lets an attacker impersonate this server to every
+    # subscribed browser's push service. vapid_public_key stays plaintext on
+    # purpose — it's handed to every subscribing browser anyway (the
+    # applicationServerKey), no secrecy to protect.
+    "vapid_private_key",
 }
 
 _SETTINGS_ENCRYPTION_KEY = os.environ.get("SETTINGS_ENCRYPTION_KEY")
@@ -149,4 +155,30 @@ def set_value(user_id: int, key: str, value: str) -> None:
         "INSERT INTO settings (user_id, key, value) VALUES (%s, %s, %s) "
         "ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value",
         (user_id, key, stored_value),
+    )
+
+
+# Issue #377 — app/main.py already has its own _instance_config_get/_instance_config_set
+# with identical logic (gated on config.INSTANCE_ENCRYPTED_KEYS, same as here). Duplicated
+# here rather than imported from there: app/notify.py needs the VAPID private key to sign
+# a push, but app/notify.py is imported BY app/main.py — importing app.main back from
+# notify.py (or from this module) would be circular. config.py already owns
+# INSTANCE_ENCRYPTED_KEYS and the encrypt/decrypt primitives, so it's the natural home for
+# a table-agnostic version of the same read/write pair; app/main.py's own copy is left
+# untouched (out of scope for this issue to refactor its many existing OAuth call sites
+# onto this one instead).
+def get_instance_value(key: str) -> str:
+    row = db.fetchone("SELECT value FROM instance_config WHERE key = %s", (key,))
+    value = row["value"] if row else ""
+    if key in INSTANCE_ENCRYPTED_KEYS:
+        return decrypt_secret(value)
+    return value
+
+
+def set_instance_value(key: str, value: str) -> None:
+    stored_value = encrypt_secret(value) if key in INSTANCE_ENCRYPTED_KEYS else value
+    db.execute(
+        "INSERT INTO instance_config (key, value) VALUES (%s, %s) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        (key, stored_value),
     )

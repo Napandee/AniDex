@@ -7,14 +7,16 @@ Discord/ntfy plug into the same protocol (see issues #54/#55).
 
 import html
 import ipaddress
+import json
 import logging
 import re
 from typing import Protocol
 from urllib.parse import urlsplit
 
 import httpx
+from pywebpush import WebPushException, webpush
 
-from app import config
+from app import config, db, vapid
 
 log = logging.getLogger("anime_tracker")
 
@@ -152,7 +154,55 @@ class NtfyChannel:
             log.warning("ntfy send failed for user %s: %s", user_id, type(e).__name__)
 
 
-CHANNELS: list[Channel] = [TelegramChannel(), DiscordChannel(), NtfyChannel()]
+class WebPushChannel:
+    key = "webpush"
+
+    def is_configured(self, user_id: int) -> bool:
+        # "Configured" here means "subscribed at least one device" — unlike the
+        # other three channels, there's no separate token/URL to save first;
+        # subscribing (a browser permission grant, issue #377) IS the setup.
+        return db.fetchone(
+            "SELECT 1 FROM push_subscriptions WHERE user_id = %s LIMIT 1", (user_id,)
+        ) is not None
+
+    def send(self, user_id: int, title: str, body: str) -> None:
+        _, private_pem = vapid.get_or_create_keypair()
+        payload = json.dumps({"title": title, "body": body})
+        subs = db.fetchall(
+            "SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = %s",
+            (user_id,),
+        )
+        for sub in subs:
+            subscription_info = {
+                "endpoint": sub["endpoint"],
+                "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+            }
+            try:
+                webpush(
+                    subscription_info=subscription_info,
+                    data=payload,
+                    vapid_private_key=private_pem,
+                    # sub is a contact URI push services may use to reach the sender
+                    # about this VAPID identity (per the spec) — not a secret, not
+                    # user-facing; a fixed placeholder is standard practice for a
+                    # self-hosted instance with no operator contact field to draw from.
+                    vapid_claims={"sub": "mailto:admin@localhost"},
+                    timeout=10,
+                )
+            except WebPushException as e:
+                # 404/410 means the push service itself has discarded this
+                # subscription (uninstalled, browser data cleared, etc.) — remove it
+                # so every future notify() doesn't keep retrying a dead endpoint.
+                status = e.response.status_code if e.response is not None else None
+                if status in (404, 410):
+                    db.execute("DELETE FROM push_subscriptions WHERE id = %s", (sub["id"],))
+                else:
+                    log.warning("Web Push send failed for user %s: %s", user_id, type(e).__name__)
+            except Exception as e:
+                log.warning("Web Push send failed for user %s: %s", user_id, type(e).__name__)
+
+
+CHANNELS: list[Channel] = [TelegramChannel(), DiscordChannel(), NtfyChannel(), WebPushChannel()]
 
 
 def notify(user_id: int, title: str, body: str) -> None:
