@@ -2435,6 +2435,16 @@ a.drop-tag-chip-link:focus-visible {
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
 }
+/* Issue #364 — .stats-grid never set `display` conditionally itself, so the
+   author rule above always won over the browser's default `[hidden] {
+   display: none }` UA rule, even while JS left the `hidden` attribute set on
+   #studio-loyalty-section/#taste-drift-section/#watch-activity-section (each
+   waiting on real data before unhiding, see stats.html). Confirmed live: an
+   element with hidden===true still occupied a full grid track, rendering an
+   empty card with a heading and nothing else. Same bug class .genre[hidden]
+   above already guards against — belt-and-braces here too rather than assume
+   it stays fixed. */
+.stats-grid[hidden] { display: none; }
 .chart-card {
   background: var(--bg-surface-alt);
   border: 1px solid var(--border);
