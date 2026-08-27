@@ -332,6 +332,7 @@
   "queue_rewatch_singular": "{count}回再視聴",
   "queue_rewatch_plural": "{count}回再視聴",
   "queue_watched_btn": "視聴済み",
+  "queue_watched_confirm": "残り{num}話をすべて視聴済みにして、ステータスを完了に設定しますか?",
   "queue_notes_edit_title": "ノートを編集／優先度を設定",
   "queue_notes_link_label": "ノート",
   "queue_move_planning_btn": "視聴予定に移動",

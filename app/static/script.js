@@ -1320,11 +1320,23 @@ document.querySelectorAll('.queue-item[data-anime-id]').forEach(item => {
 });
 
 // ── Mark watched (queue page) ─────────────────────────────────────────────────
+// Issue #365 — this used to jump straight from whatever progress a title was at
+// (including 0) to full episode count + COMPLETED in one click, no confirmation.
+// One misclick on a long, unstarted Planning title silently completed it and
+// pushed that to AniList. Only gate behind a confirm() when the jump actually
+// skips real episodes (>1 remaining) — a title already on its last episode has
+// "Watched" and "mark complete" mean the same thing, so that case stays frictionless.
 document.querySelectorAll('.btn-mark-watched').forEach(btn => {
   btn.addEventListener('click', async () => {
     const animeId = btn.dataset.animeId;
     const episodes = btn.dataset.episodes ? parseInt(btn.dataset.episodes) : null;
+    const progress = btn.dataset.progress ? parseInt(btn.dataset.progress) : 0;
     const item = btn.closest('.queue-item');
+
+    if (episodes && (episodes - progress) > 1) {
+      const ok = confirm(t('queue_watched_confirm', {num: episodes - progress}));
+      if (!ok) return;
+    }
 
     btn.disabled = true;
     btn.textContent = '…';

@@ -332,6 +332,7 @@
   "queue_rewatch_singular": "{count} बार फिर से देखा",
   "queue_rewatch_plural": "{count} बार फिर से देखा",
   "queue_watched_btn": "देखा गया",
+  "queue_watched_confirm": "सभी {num} शेष एपिसोड को देखा गया चिह्नित करें और स्थिति को पूर्ण पर सेट करें?",
   "queue_notes_edit_title": "नोट्स संपादित करें / प्राथमिकता सेट करें",
   "queue_notes_link_label": "नोट्स",
   "queue_move_planning_btn": "योजना में ले जाएँ",
