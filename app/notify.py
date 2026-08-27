@@ -197,9 +197,15 @@ class WebPushChannel:
                 if status in (404, 410):
                     db.execute("DELETE FROM push_subscriptions WHERE id = %s", (sub["id"],))
                 else:
-                    log.warning("Web Push send failed for user %s: %s", user_id, type(e).__name__)
+                    log.warning("Web Push send failed for user %s: %s: %s", user_id, type(e).__name__, e)
             except Exception as e:
-                log.warning("Web Push send failed for user %s: %s", user_id, type(e).__name__)
+                # Issue #377 — a real bug here (VAPID key stored in a format
+                # pywebpush couldn't deserialize) was caught by this exact except
+                # clause and logged as only "ValueError" with no message, which
+                # would have made the real cause invisible in production logs —
+                # found live, not from a log line, and fixed by including str(e)
+                # here so a future failure like it is actually diagnosable.
+                log.warning("Web Push send failed for user %s: %s: %s", user_id, type(e).__name__, e)
 
 
 CHANNELS: list[Channel] = [TelegramChannel(), DiscordChannel(), NtfyChannel(), WebPushChannel()]

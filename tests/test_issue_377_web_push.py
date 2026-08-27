@@ -19,6 +19,16 @@ Covers:
      not a freshly generated pair.
   6. Unauthenticated requests to either route redirect to login, same as any other
      session-authenticated settings route.
+  7. The generated private key actually parses through py_vapid's REAL
+     Vapid.from_string() — the exact call pywebpush.webpush() makes internally on
+     every real send, which every other test above deliberately mocks out. This
+     is the one gap that let a real bug ship past 100% test-passing CI: an earlier
+     version of get_or_create_keypair() stored private_pem() (PEM text, with
+     "-----BEGIN PRIVATE KEY-----" armor) where pywebpush expects base64url(DER),
+     so every real send failed with "ValueError: Could not deserialize key data"
+     — caught silently by WebPushChannel's own except clause, never surfaced by
+     any of the mocked tests above, only found by actually subscribing a real
+     browser and sending a real push in a live dev stack.
 """
 
 import os
@@ -304,3 +314,20 @@ def test_get_or_create_keypair_is_idempotent(app_client):
     first = m.vapid.get_or_create_keypair()
     second = m.vapid.get_or_create_keypair()
     assert first == second
+
+
+def test_generated_private_key_actually_parses_via_real_py_vapid(app_client):
+    """Regression test — see this file's module docstring, point 7. Feeds the
+    real generated private key through py_vapid.Vapid.from_string() with
+    nothing mocked, since that's the exact call pywebpush.webpush() makes
+    internally on every real send. A PEM-formatted key (this bug's actual
+    shape, live in production once) fails this with a ValueError; every other
+    test in this file mocks webpush() itself, so none of them could ever have
+    caught this."""
+    from py_vapid import Vapid
+
+    _client, m = app_client
+    _public_b64, private_b64 = m.vapid.get_or_create_keypair()
+
+    v = Vapid.from_string(private_key=private_b64)
+    assert v.private_key is not None
