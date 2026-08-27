@@ -166,7 +166,7 @@
 
     <input type="checkbox" class="bulk-checkbox" data-anime-id="{{ e.id }}" hidden>
     {% if e.cover_image_url %}
-    <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+    <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover" onerror="this.onerror=null;this.style.opacity='0';">
     {% endif %}
     {% if e.status == 'REPEATING' %}
     {# Issue #330 — .card already has position:relative + overflow:hidden (see
@@ -197,9 +197,9 @@
                 aria-label="{{ t('lib_favorite_toggle_title') }}"
                 aria-pressed="{{ 'true' if e.favorite else 'false' }}">♥</button>
         <div class="progress-stepper" data-anime-id="{{ e.id }}" data-episodes="{{ e.episodes or '' }}">
-          <button class="prog-btn" data-delta="-1">−</button>
+          <button class="prog-btn" data-delta="-1" aria-label="{{ t('lib_progress_decrease') }}">−</button>
           <span class="prog-val">{{ e.progress or 0 }}</span>
-          <button class="prog-btn" data-delta="1">+</button>
+          <button class="prog-btn" data-delta="1" aria-label="{{ t('lib_progress_increase') }}">+</button>
           {% if e.episodes %}<span class="prog-total">/{{ e.episodes }}</span>{% endif %}
           <span class="prog-unit">{{ t('lib_ep_unit') }}</span>
         </div>
@@ -291,7 +291,7 @@
           {% if e.status == 'WATCHING' %}
           <button class="btn-drop" data-anime-id="{{ e.id }}">{{ t('lib_drop_btn') }}</button>
           {% endif %}
-          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+          <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}" aria-label="{{ t('link_view_anilist') }}">↗</a>
           <button class="btn-delete-sm" data-anime-id="{{ e.id }}" title="{{ t('lib_remove_title') }}">✗</button>
         </div>
       </div>

@@ -4,7 +4,7 @@
 {% macro entry_card(e) %}
     <li class="upcoming-item">
       {% if e.cover_image_url %}
-      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="upcoming-cover">
+      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="upcoming-cover" onerror="this.onerror=null;this.style.opacity='0';">
       {% endif %}
       <div class="upcoming-info">
         <div class="upcoming-title">{{ e.title_english or e.title_romaji }}</div>

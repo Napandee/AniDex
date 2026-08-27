@@ -26,7 +26,7 @@
   <div class="rec-card" data-anime-id="{{ e.id }}" data-genres="{{ e.genres | join(',') if e.genres else '' }}" data-source="{{ e.source }}">
     <div class="rec-cover-wrap">
       {% if e.cover_image_url %}
-      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover" onerror="this.onerror=null;this.style.opacity='0';">
       {% endif %}
       {% if e.season_label %}
       <div class="rec-season-badge" title="{{ t('rec_season_badge_title') }}">{{ e.season_label }}</div>
