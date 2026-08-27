@@ -100,6 +100,80 @@ jobs:
           fi
           echo "Smoke test passed: auth page rendered correctly."
 
+      # Issue #379 — the check above only proves an UNauthenticated route renders;
+      # issue #50 (which added it) already flagged that a break in an authenticated
+      # route or a POST handler would slip straight through. This seeds a real local
+      # user (bcrypt-hashed via the already-built image itself, so this never invents
+      # a second hashing path that could drift from the app's own bcrypt pin) so the
+      # next step can log in for real.
+      - name: Seed a local test user for authenticated smoke checks
+        run: |
+          hash=$(docker run --rm anidex:pr-test python3 -c \
+            "import bcrypt; print(bcrypt.hashpw(b'ci-smoke-test-password', bcrypt.gensalt()).decode())")
+          PGPASSWORD=anidex_test psql -h localhost -U anidex_test -d anidex_test -c \
+            "INSERT INTO users (auth_provider, auth_provider_id, email, password_hash, is_admin, last_login_at)
+             VALUES ('local', 'smoketest@ci.local', 'smoketest@ci.local', '$hash', false, now());"
+
+      # A real login, a real authenticated templates.TemplateResponse route (the
+      # library page, rendering actual user data — not the pre-login auth template
+      # the check above already covers), and a real CSRF-protected POST write, all
+      # exercised against the built image end to end. /settings/display was picked
+      # for the POST check specifically because it only ever touches the local
+      # `settings` table (config.set_value) — no AniList call, no outbound network,
+      # safe to run unattended in CI.
+      - name: Smoke-test an authenticated route and a POST handler
+        run: |
+          cookiejar=$(mktemp)
+
+          # Anonymous GET first — issues the session cookie and this session's CSRF
+          # token (app/csrf.py's get_or_create_token runs on every TemplateResponse
+          # render, including pre-login; embedded as <meta name="csrf-token">, see
+          # app/templates/base.html).
+          curl -sL -c "$cookiejar" -b "$cookiejar" -o /tmp/pre-login.html http://localhost:8888/auth/login
+          csrf=$(grep -o 'name="csrf-token" content="[^"]*"' /tmp/pre-login.html | sed 's/.*content="//;s/"$//')
+          if [ -z "$csrf" ]; then
+            echo "Could not extract a CSRF token from /auth/login"
+            docker logs anidex-smoke
+            exit 1
+          fi
+
+          status=$(curl -sL -c "$cookiejar" -b "$cookiejar" -o /tmp/home.html -w '%{http_code}' \
+            -d "email=smoketest@ci.local" -d "password=ci-smoke-test-password" -d "csrf_token=$csrf" \
+            http://localhost:8888/auth/login)
+          if [ "$status" != "200" ]; then
+            echo "POST /auth/login (following redirects) returned $status, expected 200"
+            docker logs anidex-smoke
+            exit 1
+          fi
+          if ! grep -q 'id="library-search"' /tmp/home.html; then
+            echo "Post-login redirect doesn't look like a rendered library page — login or an authenticated TemplateResponse route may be broken"
+            cat /tmp/home.html
+            docker logs anidex-smoke
+            exit 1
+          fi
+          echo "Authenticated GET / rendered correctly."
+
+          csrf=$(grep -o 'name="csrf-token" content="[^"]*"' /tmp/home.html | sed 's/.*content="//;s/"$//')
+          status=$(curl -sL -c "$cookiejar" -b "$cookiejar" -o /dev/null -w '%{http_code}' \
+            -d "timezone=Europe/London" -d "language=en" -d "theme=dark" -d "csrf_token=$csrf" \
+            http://localhost:8888/settings/display)
+          if [ "$status" != "200" ]; then
+            echo "POST /settings/display (following redirects) returned $status, expected 200"
+            docker logs anidex-smoke
+            exit 1
+          fi
+
+          # Confirms the write actually landed, not just that the route returned a
+          # plausible-looking redirect.
+          written=$(PGPASSWORD=anidex_test psql -h localhost -U anidex_test -d anidex_test -tA -c \
+            "SELECT value FROM settings WHERE key = 'theme' AND user_id = (SELECT id FROM users WHERE email = 'smoketest@ci.local')")
+          if [ "$written" != "dark" ]; then
+            echo "POST /settings/display didn't persist — settings.theme was '$written', expected 'dark'"
+            docker logs anidex-smoke
+            exit 1
+          fi
+          echo "Smoke test passed: authenticated route rendered correctly and a real POST write was persisted."
+
       - name: Container logs
         if: always()
         run: docker logs anidex-smoke || true
