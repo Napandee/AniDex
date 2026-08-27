@@ -400,6 +400,16 @@
               {% endif %}
             </td>
           </tr>
+          <tr>
+            <th>{{ t('admin_anilist_ratelimit') }}</th>
+            <td>
+              {% if instance_health.anilist_rate_limit and instance_health.anilist_rate_limit.active %}
+              <span class="status-warn">{{ t('admin_anilist_ratelimit_active', source=instance_health.anilist_rate_limit.source) }}</span>
+              {% else %}
+              {{ t('admin_anilist_ratelimit_clear') }}
+              {% endif %}
+            </td>
+          </tr>
         </tbody>
       </table>
       </div>

@@ -2724,6 +2724,37 @@ def _pending_migration_count() -> int | None:
     return max(0, LATEST_MIGRATION - row["highest_applied_migration"])
 
 
+def _anilist_rate_limit_status() -> dict | None:
+    """Issue #381 — the most recent AniList 429 any of app/outbox.py,
+    scripts/anilist_sync_common.py's gql() (Crunchyroll/Netflix/Plex/Prime
+    Video), or scripts/sync_anilist.py's own gql() observed, if any. Every one
+    of those already retries using AniList's own Retry-After header — this is
+    visibility on top of that existing behavior, not a change to it.
+
+    Returns None when nothing's ever been observed (no row — the correct
+    default, same "absence is fine" contract as migration_state) or the table
+    doesn't exist yet (an instance mid-upgrade, swallowed the same way
+    _pending_migration_count() swallows a missing migration_state so one
+    missing table can't break the whole Instance Health page). `active` is
+    True only while the recorded retry-after window hasn't elapsed yet — an
+    old 429 from hours ago shouldn't still read as "currently rate-limited."
+    """
+    try:
+        row = db.fetchone(
+            "SELECT source, retry_after_seconds, observed_at FROM anilist_rate_limit_state WHERE id = 1"
+        )
+    except Exception:
+        return None
+    if row is None:
+        return None
+    resumes_at = row["observed_at"] + timedelta(seconds=row["retry_after_seconds"])
+    return {
+        "source": row["source"],
+        "observed_at": row["observed_at"],
+        "active": resumes_at > datetime.now(timezone.utc),
+    }
+
+
 def _instance_health() -> dict:
     """Read-only instance-health data for the admin panel (issue #86): running
     build version (if baked into the image via the Dockerfile's GIT_SHA build
@@ -2742,6 +2773,7 @@ def _instance_health() -> dict:
             "users": db.fetchone("SELECT COUNT(*) AS n FROM users")["n"],
         },
         "pending_migrations": _pending_migration_count(),
+        "anilist_rate_limit": _anilist_rate_limit_status(),
     }
 
 
@@ -3736,15 +3768,28 @@ def notes_form(request: Request, anime_id: int, back: str = "WATCHING"):
                  if r["relation_type"] in _RELATION_ORDER else 99)
 
     if related:
-        in_library = {
-            row["anime_id"]
-            for row in db.fetchall(
-                "SELECT anime_id FROM library_entries WHERE anime_id = ANY(%s) AND user_id = %s",
-                ([r["id"] for r in related], user["id"]),
-            )
+        related_ids = [r["id"] for r in related]
+        # Issue #373 — was just a boolean "in your library" flag; a franchise view
+        # is supposed to show watch ORDER/completion, which needs the real status
+        # and progress, not just membership. episodes comes from anime (not the
+        # relations JSON snapshot, which only carries format) so progress can show
+        # as "8/12" — only present for a related title that has its own local row
+        # (i.e. someone has actually synced/tracked it at some point).
+        status_rows = db.fetchall(
+            "SELECT anime_id, status, progress FROM library_entries WHERE anime_id = ANY(%s) AND user_id = %s",
+            (related_ids, user["id"]),
+        )
+        status_map = {row["anime_id"]: row for row in status_rows}
+        episodes_map = {
+            row["id"]: row["episodes"]
+            for row in db.fetchall("SELECT id, episodes FROM anime WHERE id = ANY(%s)", (related_ids,))
         }
         for r in related:
-            r["in_library"] = r["id"] in in_library
+            entry = status_map.get(r["id"])
+            r["in_library"] = entry is not None
+            r["status"] = entry["status"] if entry else None
+            r["progress"] = entry["progress"] if entry else None
+            r["episodes"] = episodes_map.get(r["id"])
 
     return templates.TemplateResponse(
         request,

@@ -92,6 +92,32 @@ query ($userName: String, $chunk: Int, $perChunk: Int) {
 """
 
 
+def _record_rate_limit(source: str, retry_after_seconds: int) -> None:
+    """Issue #381 — visibility-only marker for Admin > Instance Health, read via
+    app.main's _anilist_rate_limit_status(). Own short-lived connection, same
+    pattern as anilist_sync_common.py's copy of this helper — this script has
+    no shared import path with that module (see CLAUDE.md's Architecture
+    section on sync_anilist.py running before the four provider scripts, each
+    with their own gql()). Never changes retry behavior itself."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO anilist_rate_limit_state (id, source, retry_after_seconds, observed_at)
+                VALUES (1, %s, %s, now())
+                ON CONFLICT (id) DO UPDATE SET
+                    source = EXCLUDED.source,
+                    retry_after_seconds = EXCLUDED.retry_after_seconds,
+                    observed_at = EXCLUDED.observed_at
+                """,
+                (source, retry_after_seconds),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def gql(query: str, variables: dict, retries: int = 5) -> dict:
     headers = {
         "Content-Type": "application/json",
@@ -109,6 +135,7 @@ def gql(query: str, variables: dict, retries: int = 5) -> dict:
         )
         if resp.status_code == 429:
             wait = int(resp.headers.get("Retry-After", 60))
+            _record_rate_limit("sync_anilist", wait)
             print(f"  Rate limited — waiting {wait}s before retry...", flush=True)
             time.sleep(wait)
             continue

@@ -704,6 +704,9 @@
   "admin_pending_migrations_warning": "{count} migración(es) aún no aplicadas a esta base de datos — consulta migrations/ y los pasos de aplicación manual de CLAUDE.md",
   "admin_pending_migrations_none": "Ninguna — actualizado",
   "admin_pending_migrations_unknown": "Desconocido (marcador aún no establecido)",
+  "admin_anilist_ratelimit": "Límite de solicitudes de AniList",
+  "admin_anilist_ratelimit_active": "Actualmente limitado (visto por última vez en {source}) — reintentando automáticamente",
+  "admin_anilist_ratelimit_clear": "Sin límite activo actualmente",
 
   "admin_audit_log_title": "Registro de auditoría",
   "admin_audit_log_desc": "Registro cronológico de acciones administrativas (invitaciones, ajustes de OAuth, privacidad predeterminada, restablecimientos de contraseña, desactivación de usuarios). Más recientes primero.",
