@@ -4176,3 +4176,22 @@ a.drop-tag-chip-link:focus-visible {
 .import-msg--ok { color: var(--pill-success-text); background: var(--pill-success-bg); }
 .import-msg--error { color: var(--pill-danger-text); background: var(--pill-danger-bg); }
 .import-msg--partial { color: var(--pill-warning-text-strong); background: var(--pill-warning-bg); }
+
+/* ── Tag management page (issue #376) ───────────────────────────────────── */
+.tags-table { width: 100%; border-collapse: collapse; }
+.tags-table th, .tags-table td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tags-table th { font-size: 0.78rem; font-weight: 600; color: var(--t7); text-transform: uppercase; letter-spacing: 0.02em; }
+.tags-name { font-weight: 500; }
+.tags-count { color: var(--t6); }
+.tags-inline-form { display: flex; gap: 0.5rem; align-items: center; }
+.btn-danger-sm {
+  padding: 0.35rem 0.75rem;
+  background: var(--pill-danger-bg);
+  color: var(--pill-danger-text-strong);
+  border: 1px solid var(--pill-danger-text);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn-danger-sm:hover { background: var(--pill-danger-text); color: #fff; }

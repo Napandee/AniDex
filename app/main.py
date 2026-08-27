@@ -8926,6 +8926,146 @@ def _bulk_apply_tags(user_id: int, anime_ids: list, tags: list) -> int:
     return len(anime_ids)
 
 
+# ── Tag management page (issue #376) ────────────────────────────────────────
+# Manages the tag VOCABULARY itself (rename/merge/delete across every entry that
+# has a tag) — distinct from #15's bulk-apply-tags above, which only ever adds
+# tags to an explicit set of entries. Deliberately scoped to personal_tags only;
+# mood_tags is a separate, closed, app-defined picklist (MOOD_TAGS) validated
+# against an allowlist, not arbitrary freeform text a user could ever want to
+# rename/merge/delete here.
+
+
+def _tag_summary(user_id: int) -> list[dict]:
+    """Every distinct personal tag this user has ever applied, with how many
+    entries carry it. Case-insensitively grouped (matches how _bulk_apply_tags
+    above and privacy.py/run_recommender.py already compare tags elsewhere in
+    this app) — "Comfort" and "comfort" are the same tag, not two."""
+    return db.fetchall(
+        """
+        SELECT (array_agg(tag ORDER BY tag))[1] AS tag, count(*) AS entry_count
+        FROM personal_notes, jsonb_array_elements_text(personal_tags) AS tag
+        WHERE user_id = %s
+        GROUP BY lower(tag)
+        ORDER BY count(*) DESC, lower((array_agg(tag ORDER BY tag))[1])
+        """,
+        (user_id,),
+    )
+
+
+def _rename_or_merge_tag(user_id: int, old_tag: str, new_tag: str) -> int:
+    """Renames old_tag to new_tag across every entry that has it, in one atomic
+    UPDATE. This IS the merge operation too (issue #376's own framing: "a merge
+    is a rename where the target tag already exists") — no separate code path,
+    since the DISTINCT ON dedup below already collapses old_tag/new_tag into one
+    entry on any row that happened to carry both. Returns the number of entries
+    touched."""
+    return db.execute_returning(
+        """
+        WITH updated AS (
+            UPDATE personal_notes
+            SET personal_tags = (
+                SELECT COALESCE(jsonb_agg(tag ORDER BY ord), '[]'::jsonb)
+                FROM (
+                    SELECT DISTINCT ON (lower(tag)) tag, ord
+                    FROM (
+                        SELECT
+                            CASE WHEN lower(t.tag) = lower(%(old_tag)s) THEN %(new_tag)s ELSE t.tag END AS tag,
+                            t.ord
+                        FROM jsonb_array_elements_text(personal_notes.personal_tags) WITH ORDINALITY AS t(tag, ord)
+                    ) replaced
+                    ORDER BY lower(tag), ord
+                ) deduped
+            ),
+            updated_at = now()
+            WHERE user_id = %(user_id)s
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(personal_notes.personal_tags) AS existing(tag)
+                WHERE lower(existing.tag) = lower(%(old_tag)s)
+              )
+            RETURNING 1
+        )
+        SELECT count(*) AS n FROM updated
+        """,
+        {"user_id": user_id, "old_tag": old_tag, "new_tag": new_tag},
+    )["n"]
+
+
+def _delete_tag(user_id: int, tag: str) -> int:
+    """Removes tag from every entry that has it, leaving every other tag on
+    those entries untouched. Returns the number of entries touched."""
+    return db.execute_returning(
+        """
+        WITH updated AS (
+            UPDATE personal_notes
+            SET personal_tags = (
+                SELECT COALESCE(jsonb_agg(t.tag ORDER BY t.ord), '[]'::jsonb)
+                FROM jsonb_array_elements_text(personal_notes.personal_tags) WITH ORDINALITY AS t(tag, ord)
+                WHERE lower(t.tag) != lower(%(tag)s)
+            ),
+            updated_at = now()
+            WHERE user_id = %(user_id)s
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(personal_notes.personal_tags) AS existing(tag)
+                WHERE lower(existing.tag) = lower(%(tag)s)
+              )
+            RETURNING 1
+        )
+        SELECT count(*) AS n FROM updated
+        """,
+        {"user_id": user_id, "tag": tag},
+    )["n"]
+
+
+@app.get("/tags", response_class=HTMLResponse)
+def tags_page(request: Request, renamed: str = "", deleted: str = "", tag_error: str = ""):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    return templates.TemplateResponse(
+        request,
+        "tags.html",
+        {
+            "tags": _tag_summary(user["id"]),
+            "renamed": renamed,
+            "deleted": deleted,
+            "tag_error": tag_error,
+        },
+    )
+
+
+@app.post("/tags/rename")
+def tags_rename(request: Request, csrf_token: str = Form(...),
+                 old_tag: str = Form(...), new_tag: str = Form(...)):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    old_tag, new_tag = old_tag.strip(), new_tag.strip()
+    if not old_tag or not new_tag:
+        return RedirectResponse(url="/tags?tag_error=Tag+name+can%27t+be+empty", status_code=303)
+
+    count = _rename_or_merge_tag(user["id"], old_tag, new_tag)
+    return RedirectResponse(
+        url="/tags?renamed=1" if count else "/tags",
+        status_code=303,
+    )
+
+
+@app.post("/tags/delete")
+def tags_delete(request: Request, csrf_token: str = Form(...), tag: str = Form(...)):
+    user, denied = _require_user(request)
+    if denied:
+        return denied
+
+    tag = tag.strip()
+    if not tag:
+        return RedirectResponse(url="/tags", status_code=303)
+
+    _delete_tag(user["id"], tag)
+    return RedirectResponse(url="/tags?deleted=1", status_code=303)
+
+
 @app.post("/api/anime/{anime_id}/progress")
 async def set_progress(anime_id: int, request: Request):
     user, denied = _require_user_api(request)
