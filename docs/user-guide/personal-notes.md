@@ -12,7 +12,7 @@ Open any anime's detail page to edit these fields:
 - **Custom tags** — your own labels, independent of AniList's genre/tag system. Used by
   [Collections](collections.md) and bulk-tagging.
 - **Mood tags** — a fixed picklist (comfort, hype, intense, sad, wholesome, dark, funny,
-  relaxing, thought-provoking, bittersweet) for filtering by "what kind of watch is
+  relaxing, thought_provoking, bittersweet) for filtering by "what kind of watch is
   this," separate from freeform tags.
 - **Notes** — freeform text for anything else.
 - **Watch-next priority** — a manual number that factors into the [queue](queue-and-upcoming.md)'s

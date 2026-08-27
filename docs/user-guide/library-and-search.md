@@ -4,8 +4,9 @@
 
 Your full AniList list, one card per anime: cover art, star rating, status, episode
 progress, and (where AniList has them) streaming links. Filter by format, season, tag,
-and score. Click a card to open its notes/detail view, or use the pencil icon for a
-quick inline edit without leaving the list.
+and score. Click anywhere on a card to open its notes/detail view. For a quick edit
+without leaving the list, use the star-rating widget to set your score or the episode
+stepper (−/+) to bump progress — both update in place on the card.
 
 **Bulk edit** — select multiple entries to change status or apply tags to all of them
 at once. Status changes go through the same outbox queue as everything else that talks

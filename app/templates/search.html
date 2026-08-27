@@ -17,7 +17,7 @@
       <div class="card">
         {% if e.cover_image_url %}
         <a href="/anime/{{ e.id }}/notes?back={{ e.status }}" class="search-card-link">
-          <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover">
+          <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="cover" onerror="this.onerror=null;this.style.opacity='0';">
         </a>
         {% endif %}
         <div class="card-body">
@@ -48,8 +48,8 @@
           {% endif %}
           <div class="card-footer">
             <span class="status-chip status-chip--{{ e.status | lower }}">{{ t('status_' + e.status.lower()) }}</span>
-            <a href="/?status={{ e.status }}#card-{{ e.id }}" class="btn-anilist-sm" title="{{ t('link_go_to_library') }}">→</a>
-            <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}">↗</a>
+            <a href="/?status={{ e.status }}#card-{{ e.id }}" class="btn-anilist-sm" title="{{ t('link_go_to_library') }}" aria-label="{{ t('link_go_to_library') }}">→</a>
+            <a href="https://anilist.co/anime/{{ e.id }}" target="_blank" rel="noopener" class="btn-anilist-sm" title="{{ t('link_view_anilist') }}" aria-label="{{ t('link_view_anilist') }}">↗</a>
           </div>
         </div>
       </div>

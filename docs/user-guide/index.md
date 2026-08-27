@@ -23,6 +23,8 @@ This guide covers using an already-running instance.
 - [Home Assistant integration](home-assistant.md) — the `/api/ha/status` sensor
 - [MCP server](../mcp.md) — connecting an AI client (Claude Code, etc.) to your own library
 - [Data model](../data-model.md) — how your data is organized, for the curious
+- [Troubleshooting](troubleshooting.md) — sync failures, wrong matches, common fixes
+- [Upgrading and migrations](../admin/upgrading.md) — for whoever runs your instance
 
 ## The short version
 

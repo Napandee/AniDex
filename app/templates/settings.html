@@ -612,7 +612,10 @@
                 <input class="form-input" type="text" id="cr_override_series_title" name="series_title" required autocomplete="off">
               </div>
               <div class="form-field">
-                <label class="form-label" for="cr_override_season_number">{{ t('sync_cr_overrides_field_season') }}</label>
+                <label class="form-label" for="cr_override_season_number">
+                  {{ t('sync_cr_overrides_field_season') }}
+                  <span class="form-label-hint">{{ t('sync_cr_overrides_field_season_hint') }}</span>
+                </label>
                 <input class="form-input form-input--narrow" type="number" id="cr_override_season_number"
                        name="season_number" min="1" value="2" required>
               </div>
