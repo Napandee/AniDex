@@ -18,7 +18,7 @@ This guide covers using an already-running instance.
 - [Stats](stats.md) — watch time, heatmaps, year-in-anime, drop patterns
 - [Streaming coverage](streaming-coverage.md) — which service unlocks the most next-up episodes
 - [Multi-user and admin](multi-user.md) — invites, 2FA, sessions, admin panel
-- [Sync providers](sync-providers.md) — Crunchyroll and Netflix progress sync
+- [Sync providers](sync-providers.md) — Crunchyroll, Netflix, Plex, and Prime Video progress sync
 - [Notifications](notifications.md) — Telegram, Discord, ntfy alerts
 - [Home Assistant integration](home-assistant.md) — the `/api/ha/status` sensor
 - [MCP server](../mcp.md) — connecting an AI client (Claude Code, etc.) to your own library
