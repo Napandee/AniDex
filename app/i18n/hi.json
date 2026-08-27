@@ -684,6 +684,10 @@
   "admin_build_version_unknown": "अज्ञात (इस इमेज में शामिल नहीं)",
   "admin_db_size": "डेटाबेस आकार",
   "admin_rows_suffix": "पंक्तियाँ",
+  "admin_pending_migrations": "लंबित माइग्रेशन",
+  "admin_pending_migrations_warning": "{count} माइग्रेशन अभी तक इस डेटाबेस पर लागू नहीं हुए — migrations/ और CLAUDE.md के मैन्युअल-अप्लाई चरण देखें",
+  "admin_pending_migrations_none": "कोई नहीं — अद्यतित",
+  "admin_pending_migrations_unknown": "अज्ञात (मार्कर अभी सेट नहीं है)",
 
   "admin_audit_log_title": "ऑडिट लॉग",
   "admin_audit_log_desc": "एडमिन कार्रवाइयों का कालानुक्रमिक रिकॉर्ड (आमंत्रण, OAuth सेटिंग्स, गोपनीयता डिफ़ॉल्ट, पासवर्ड रीसेट, उपयोगकर्ता निष्क्रियकरण)। नवीनतम पहले।",

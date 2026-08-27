@@ -684,6 +684,10 @@
   "admin_build_version_unknown": "不明（このイメージには含まれていません）",
   "admin_db_size": "データベースサイズ",
   "admin_rows_suffix": "件",
+  "admin_pending_migrations": "未適用のマイグレーション",
+  "admin_pending_migrations_warning": "{count} 件のマイグレーションがこのデータベースに未適用です — migrations/ とCLAUDE.mdの手動適用手順を確認してください",
+  "admin_pending_migrations_none": "なし — 最新の状態です",
+  "admin_pending_migrations_unknown": "不明（マーカー未設定）",
 
   "admin_audit_log_title": "監査ログ",
   "admin_audit_log_desc": "管理者操作（招待、OAuth設定、プライバシーのデフォルト、パスワードリセット、ユーザー無効化）の時系列記録。新しい順。",

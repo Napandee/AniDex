@@ -347,6 +347,18 @@
             <th><code>users</code> {{ t('admin_rows_suffix') }}</th>
             <td>{{ instance_health.row_counts.users }}</td>
           </tr>
+          <tr>
+            <th>{{ t('admin_pending_migrations') }}</th>
+            <td>
+              {% if instance_health.pending_migrations %}
+              <span class="status-warn">{{ t('admin_pending_migrations_warning', count=instance_health.pending_migrations) }}</span>
+              {% elif instance_health.pending_migrations == 0 %}
+              {{ t('admin_pending_migrations_none') }}
+              {% else %}
+              <span class="status-empty">{{ t('admin_pending_migrations_unknown') }}</span>
+              {% endif %}
+            </td>
+          </tr>
         </tbody>
       </table>
       </div>
