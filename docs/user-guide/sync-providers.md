@@ -97,7 +97,7 @@ If a synced title matches something already on your AniList list, progress just
 updates normally. If it doesn't match anything yet:
 
 - On your **very first sync** (or a **Force Full Resync**, Settings → Sync → "Force
-  full resync"), AniDex is conservative and won't auto-create new entries — walking
+  Full Resync"), AniDex is conservative and won't auto-create new entries — walking
   your entire watch history for the first time and creating dozens of new AniList
   entries all at once would flood your real list.
 - On a normal **day-to-day incremental sync**, a genuinely new title *will* be added
