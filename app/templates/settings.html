@@ -456,180 +456,252 @@
       </div>
     </div>
 
-    {# ── Manual sync trigger ──────────────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_manual_title') }}</h2>
-      <p class="settings-section-desc">
-        {{ t('sync_manual_desc') }}
-      </p>
-      <div class="sync-row">
-        <button id="sync-btn" class="btn-save" onclick="triggerSync()">{{ t('sync_now_btn') }}</button>
-        <button id="sync-full-btn" class="btn-save btn-warning" onclick="triggerSync(true)">{{ t('sync_force_full_btn') }}</button>
-        <span id="sync-status" class="sync-status-text">
-          {% if last_synced %}{{ t('sync_last_synced_prefix') }} <time id="sync-ts" datetime="{{ last_synced }}">{{ last_synced }}</time>{% else %}{{ t('sync_never_synced') }}{% endif %}
-        </span>
+    {# ── Settings-tab groups (issue #370) — collapses the remaining 9 sections
+       (previously one unbroken ~2700px scroll) into 3 logically-grouped,
+       independently collapsible sections, reusing the exact .cred-card
+       collapse mechanism above. "Sync status & operations" defaults open
+       (checked most often); the other two default collapsed. Library health
+       stays outside any group — see its own comment below for why. ────────── #}
+    <div class="settings-groups">
+
+      {# ── Group: Sync status & operations (Manual sync, Outbox, Sync history) #}
+      <div class="settings-group">
+        <button type="button" class="settings-group-header" data-cred-toggle="settings-group-ops" aria-expanded="true">
+          <span class="settings-group-icon">OPS</span>
+          <span class="settings-group-name">{{ t('settings_group_sync_ops_title') }}</span>
+          <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="settings-group-body help-disclosure-panel open" id="settings-group-ops"><div><div>
+
+          {# ── Manual sync trigger ──────────────────────────────────────── #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_manual_title') }}</h2>
+            <p class="settings-section-desc">
+              {{ t('sync_manual_desc') }}
+            </p>
+            <div class="sync-row">
+              <button id="sync-btn" class="btn-save" onclick="triggerSync()">{{ t('sync_now_btn') }}</button>
+              <button id="sync-full-btn" class="btn-save btn-warning" onclick="triggerSync(true)">{{ t('sync_force_full_btn') }}</button>
+              <span id="sync-status" class="sync-status-text">
+                {% if last_synced %}{{ t('sync_last_synced_prefix') }} <time id="sync-ts" datetime="{{ last_synced }}">{{ last_synced }}</time>{% else %}{{ t('sync_never_synced') }}{% endif %}
+              </span>
+            </div>
+            <div id="sync-msg" class="sync-msg" hidden></div>
+          </div>
+
+          {# ── AniList delivery queue ───────────────────────────────────── #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_outbox_title') }}
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-outbox">i</button>
+            </h2>
+            <div class="help-disclosure-panel" id="help-outbox"><div>
+              <p class="help-disclosure-panel-body">
+                {{ t('sync_outbox_help') }}
+              </p>
+            </div></div>
+            <div id="outbox-status" class="sync-status-text">Checking…</div>
+          </div>
+
+          {# ── Sync history ─────────────────────────────────────────────── #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_history_title') }}</h2>
+            <div class="table-scroll">
+            <table class="sync-log-table" id="sync-log-table">
+              <thead>
+                <tr>
+                  <th>{{ t('sync_history_col_time') }}</th>
+                  <th>{{ t('sync_history_col_type') }}</th>
+                  <th>{{ t('sync_history_col_status') }}</th>
+                  <th>{{ t('sync_history_col_entries') }}</th>
+                  <th>{{ t('sync_history_col_error') }}</th>
+                </tr>
+              </thead>
+              <tbody id="sync-log-body">
+                <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+            </div>
+          </div>
+
+        </div></div></div>
       </div>
-      <div id="sync-msg" class="sync-msg" hidden></div>
-    </div>
 
-    {# ── AniList delivery queue ───────────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_outbox_title') }}
-        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-outbox">i</button>
-      </h2>
-      <div class="help-disclosure-panel" id="help-outbox"><div>
-        <p class="help-disclosure-panel-body">
-          {{ t('sync_outbox_help') }}
-        </p>
-      </div></div>
-      <div id="outbox-status" class="sync-status-text">Checking…</div>
-    </div>
+      {# ── Group: Provider-specific tools (CSV import, CR overrides, Streaming) #}
+      <div class="settings-group">
+        <button type="button" class="settings-group-header" data-cred-toggle="settings-group-provider-tools" aria-expanded="false">
+          <span class="settings-group-icon">CFG</span>
+          <span class="settings-group-name">{{ t('settings_group_provider_tools_title') }}</span>
+          <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="settings-group-body help-disclosure-panel" id="settings-group-provider-tools"><div><div>
 
-    {# ── Netflix CSV import ───────────────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_csv_import_title') }}
-        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-csv-import">i</button>
-      </h2>
-      <div class="help-disclosure-panel" id="help-csv-import"><div>
-        <p class="help-disclosure-panel-body">
-          {{ t('sync_csv_import_help') }}
-        </p>
-      </div></div>
-      {% if saved == 'netflix_csv_import' %}<p class="settings-success">{{ t('sync_csv_import_success') }}</p>{% endif %}
+          {# ── Netflix CSV import ───────────────────────────────────────── #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_csv_import_title') }}
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-csv-import">i</button>
+            </h2>
+            <div class="help-disclosure-panel" id="help-csv-import"><div>
+              <p class="help-disclosure-panel-body">
+                {{ t('sync_csv_import_help') }}
+              </p>
+            </div></div>
+            {% if saved == 'netflix_csv_import' %}<p class="settings-success">{{ t('sync_csv_import_success') }}</p>{% endif %}
 
-      <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-field">
-          <label class="form-label" for="netflix_csv">{{ t('sync_csv_field_label') }}</label>
-          <input class="form-input" type="file" id="netflix_csv" name="netflix_csv" accept=".csv,text/csv" required>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-save">{{ t('sync_csv_import_btn') }}</button>
-        </div>
-      </form>
-    </div>
+            <form method="post" action="/settings/netflix-csv-import" enctype="multipart/form-data">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-field">
+                <label class="form-label" for="netflix_csv">{{ t('sync_csv_field_label') }}</label>
+                <input class="form-input" type="file" id="netflix_csv" name="netflix_csv" accept=".csv,text/csv" required>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn-save">{{ t('sync_csv_import_btn') }}</button>
+              </div>
+            </form>
+          </div>
 
-    {# ── Crunchyroll title overrides ──────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_cr_overrides_title') }}
-        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-cr-overrides">i</button>
-      </h2>
-      <div class="help-disclosure-panel" id="help-cr-overrides"><div>
-        <p class="help-disclosure-panel-body">
-          {{ t('sync_cr_overrides_help') }}
-        </p>
-      </div></div>
-      {% if saved == 'cr_override' %}<p class="settings-success">{{ t('sync_cr_override_saved') }}</p>{% endif %}
-      {% if saved == 'cr_override_deleted' %}<p class="settings-success">{{ t('sync_cr_override_deleted') }}</p>{% endif %}
-      {% if cr_override_error %}<p class="settings-error">{{ cr_override_error }}</p>{% endif %}
+          {# ── Crunchyroll title overrides ──────────────────────────────── #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_cr_overrides_title') }}
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-cr-overrides">i</button>
+            </h2>
+            <div class="help-disclosure-panel" id="help-cr-overrides"><div>
+              <p class="help-disclosure-panel-body">
+                {{ t('sync_cr_overrides_help') }}
+              </p>
+            </div></div>
+            {% if saved == 'cr_override' %}<p class="settings-success">{{ t('sync_cr_override_saved') }}</p>{% endif %}
+            {% if saved == 'cr_override_deleted' %}<p class="settings-success">{{ t('sync_cr_override_deleted') }}</p>{% endif %}
+            {% if cr_override_error %}<p class="settings-error">{{ cr_override_error }}</p>{% endif %}
 
-      {% if cr_overrides %}
-      <div class="table-scroll">
-      <table class="sync-log-table">
-        <thead>
-          <tr>
-            <th>{{ t('sync_cr_overrides_col_title') }}</th>
-            <th>{{ t('sync_cr_overrides_col_season') }}</th>
-            <th>{{ t('sync_cr_overrides_col_anilist_id') }}</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for ov in cr_overrides %}
-          <tr>
-            <td>{{ ov.series_title }}</td>
-            <td>{{ ov.season_number }}</td>
-            <td><a href="https://anilist.co/anime/{{ ov.anilist_id }}" target="_blank" rel="noopener">{{ ov.anilist_id }}</a></td>
-            <td>
-              <form method="post" action="/settings/cr-overrides/{{ ov.id }}/delete">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn-unlink">{{ t('sync_cr_overrides_delete_btn') }}</button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            {% if cr_overrides %}
+            <div class="table-scroll">
+            <table class="sync-log-table">
+              <thead>
+                <tr>
+                  <th>{{ t('sync_cr_overrides_col_title') }}</th>
+                  <th>{{ t('sync_cr_overrides_col_season') }}</th>
+                  <th>{{ t('sync_cr_overrides_col_anilist_id') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for ov in cr_overrides %}
+                <tr>
+                  <td>{{ ov.series_title }}</td>
+                  <td>{{ ov.season_number }}</td>
+                  <td><a href="https://anilist.co/anime/{{ ov.anilist_id }}" target="_blank" rel="noopener">{{ ov.anilist_id }}</a></td>
+                  <td>
+                    <form method="post" action="/settings/cr-overrides/{{ ov.id }}/delete">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button type="submit" class="btn-unlink">{{ t('sync_cr_overrides_delete_btn') }}</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p class="settings-section-desc">{{ t('sync_cr_overrides_empty') }}</p>
+            {% endif %}
+
+            <form method="post" action="/settings/cr-overrides">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-field">
+                <label class="form-label" for="cr_override_series_title">{{ t('sync_cr_overrides_field_title') }}</label>
+                <input class="form-input" type="text" id="cr_override_series_title" name="series_title" required autocomplete="off">
+              </div>
+              <div class="form-field">
+                <label class="form-label" for="cr_override_season_number">{{ t('sync_cr_overrides_field_season') }}</label>
+                <input class="form-input form-input--narrow" type="number" id="cr_override_season_number"
+                       name="season_number" min="1" value="2" required>
+              </div>
+              <div class="form-field">
+                <label class="form-label" for="cr_override_anilist_id">
+                  {{ t('sync_cr_overrides_field_anilist_id') }}
+                  <span class="form-label-hint">{{ t('sync_cr_overrides_field_anilist_id_hint') }}</span>
+                </label>
+                <input class="form-input form-input--narrow" type="number" id="cr_override_anilist_id"
+                       name="anilist_id" min="1" required>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn-save">{{ t('sync_cr_overrides_add_btn') }}</button>
+              </div>
+            </form>
+          </div>
+
+          {# ── Streaming services you own (issue #182) — scored against the
+             library on the separate /streaming page; this is the only place
+             that set is edited. #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('streaming_services_title') }}
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-streaming-services">i</button>
+            </h2>
+            <div class="help-disclosure-panel" id="help-streaming-services"><div>
+              <p class="help-disclosure-panel-body">
+                {{ t('streaming_services_help') }}
+              </p>
+            </div></div>
+            {% if saved == 'streaming_services' %}<p class="settings-success">{{ t('streaming_services_saved') }}</p>{% endif %}
+
+            <form method="post" action="/settings/streaming-services">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="streaming-services-grid">
+                {% for s in all_streaming_services %}
+                <label class="form-checkbox-label streaming-service-checkbox">
+                  <input type="checkbox" name="service" value="{{ s }}" {% if s in owned_streaming_services %}checked{% endif %}>
+                  {{ s }}
+                </label>
+                {% endfor %}
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn-save">{{ t('streaming_services_save_btn') }}</button>
+              </div>
+            </form>
+
+            <p class="streaming-manage-link"><a href="/streaming">{{ t('streaming_services_view_link') }}</a></p>
+          </div>
+
+        </div></div></div>
       </div>
-      {% else %}
-      <p class="settings-section-desc">{{ t('sync_cr_overrides_empty') }}</p>
-      {% endif %}
 
-      <form method="post" action="/settings/cr-overrides">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-field">
-          <label class="form-label" for="cr_override_series_title">{{ t('sync_cr_overrides_field_title') }}</label>
-          <input class="form-input" type="text" id="cr_override_series_title" name="series_title" required autocomplete="off">
-        </div>
-        <div class="form-field">
-          <label class="form-label" for="cr_override_season_number">{{ t('sync_cr_overrides_field_season') }}</label>
-          <input class="form-input form-input--narrow" type="number" id="cr_override_season_number"
-                 name="season_number" min="1" value="2" required>
-        </div>
-        <div class="form-field">
-          <label class="form-label" for="cr_override_anilist_id">
-            {{ t('sync_cr_overrides_field_anilist_id') }}
-            <span class="form-label-hint">{{ t('sync_cr_overrides_field_anilist_id_hint') }}</span>
-          </label>
-          <input class="form-input form-input--narrow" type="number" id="cr_override_anilist_id"
-                 name="anilist_id" min="1" required>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-save">{{ t('sync_cr_overrides_add_btn') }}</button>
-        </div>
-      </form>
-    </div>
+      {# ── Group: Data export & import #}
+      <div class="settings-group">
+        <button type="button" class="settings-group-header" data-cred-toggle="settings-group-data" aria-expanded="false">
+          <span class="settings-group-icon">DATA</span>
+          <span class="settings-group-name">{{ t('settings_group_data_title') }}</span>
+          <svg class="cred-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="settings-group-body help-disclosure-panel" id="settings-group-data"><div><div>
 
-    {# ── Streaming services you own (issue #182) — scored against the library on
-       the separate /streaming page; this is the only place that set is edited. #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('streaming_services_title') }}
-        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-streaming-services">i</button>
-      </h2>
-      <div class="help-disclosure-panel" id="help-streaming-services"><div>
-        <p class="help-disclosure-panel-body">
-          {{ t('streaming_services_help') }}
-        </p>
-      </div></div>
-      {% if saved == 'streaming_services' %}<p class="settings-success">{{ t('streaming_services_saved') }}</p>{% endif %}
+          {# ── Data export ──────────────────────────────────────────────── #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_export_title') }}</h2>
+            <p class="settings-section-desc">{{ t('sync_export_desc') }}</p>
+            <a href="/api/export" class="btn-save" download>{{ t('sync_export_btn') }}</a>
+          </div>
 
-      <form method="post" action="/settings/streaming-services">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="streaming-services-grid">
-          {% for s in all_streaming_services %}
-          <label class="form-checkbox-label streaming-service-checkbox">
-            <input type="checkbox" name="service" value="{{ s }}" {% if s in owned_streaming_services %}checked{% endif %}>
-            {{ s }}
-          </label>
-          {% endfor %}
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-save">{{ t('streaming_services_save_btn') }}</button>
-        </div>
-      </form>
+          {# ── Data import (issue #87) — restores the personal layer from a
+             previously downloaded library.json. Self-contained block: its own
+             markup here, its own <script> at the end of the file, no shared
+             state with any other section on this page. #}
+          <div class="settings-section">
+            <h2 class="settings-section-title">{{ t('sync_import_title') }}
+              <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-data-import">i</button>
+            </h2>
+            <div class="help-disclosure-panel" id="help-data-import"><div>
+              <p class="help-disclosure-panel-body">{{ t('sync_import_help') }}</p>
+            </div></div>
+            <input type="file" id="import-file-input" accept="application/json,.json" class="form-input" style="max-width: 320px;">
+            <div class="form-actions">
+              <button type="button" id="import-btn" class="btn-save" disabled>{{ t('sync_import_btn') }}</button>
+            </div>
+            <div id="import-msg" class="import-msg" hidden></div>
+          </div>
 
-      <p class="streaming-manage-link"><a href="/streaming">{{ t('streaming_services_view_link') }}</a></p>
-    </div>
-
-    {# ── Sync history ─────────────────────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_history_title') }}</h2>
-      <div class="table-scroll">
-      <table class="sync-log-table" id="sync-log-table">
-        <thead>
-          <tr>
-            <th>{{ t('sync_history_col_time') }}</th>
-            <th>{{ t('sync_history_col_type') }}</th>
-            <th>{{ t('sync_history_col_status') }}</th>
-            <th>{{ t('sync_history_col_entries') }}</th>
-            <th>{{ t('sync_history_col_error') }}</th>
-          </tr>
-        </thead>
-        <tbody id="sync-log-body">
-          <tr><td colspan="5" class="sync-log-empty">Loading…</td></tr>
-        </tbody>
-      </table>
+        </div></div></div>
       </div>
+
     </div>
 
     {# ── Library health (issue #337) — the personal-scope companion to #202's
@@ -638,9 +710,15 @@
        the same orphan/drift visibility an admin already gets across everyone.
        Deliberately a small always-visible card, not a click-to-expand — the
        common case (nothing wrong) is a single line, not something worth hiding
-       behind a disclosure toggle. ─────────────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('library_health_title') }}</h2>
+       behind a disclosure toggle. Issue #370 gave it real visual distinction
+       (border/icon matching the credential cards) and moved it outside the
+       collapsible groups above for the same reason — it must stay visible by
+       default, not get buried inside a defaults-collapsed group. ──────────── #}
+    <div class="library-health-card">
+      <div class="library-health-card-header">
+        <span class="library-health-icon">LIB</span>
+        <h2 class="settings-section-title" style="margin: 0;">{{ t('library_health_title') }}</h2>
+      </div>
       {% if library_health.is_healthy %}
       <p class="status-ok">{{ t('library_health_all_clear') }}</p>
       {% else %}
@@ -682,31 +760,6 @@
         {% endif %}
       </ul>
       {% endif %}
-    </div>
-
-    {# ── Data export ──────────────────────────────────────────────────── #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_export_title') }}</h2>
-      <p class="settings-section-desc">{{ t('sync_export_desc') }}</p>
-      <a href="/api/export" class="btn-save" download>{{ t('sync_export_btn') }}</a>
-    </div>
-
-    {# ── Data import (issue #87) — restores the personal layer from a previously
-       downloaded library.json. Self-contained block: its own markup here, its own
-       <script> at the end of the file, no shared state with any other section on
-       this page. #}
-    <div class="settings-section">
-      <h2 class="settings-section-title">{{ t('sync_import_title') }}
-        <button type="button" class="help-disclosure-btn" aria-expanded="false" aria-controls="help-data-import">i</button>
-      </h2>
-      <div class="help-disclosure-panel" id="help-data-import"><div>
-        <p class="help-disclosure-panel-body">{{ t('sync_import_help') }}</p>
-      </div></div>
-      <input type="file" id="import-file-input" accept="application/json,.json" class="form-input" style="max-width: 320px;">
-      <div class="form-actions">
-        <button type="button" id="import-btn" class="btn-save" disabled>{{ t('sync_import_btn') }}</button>
-      </div>
-      <div id="import-msg" class="import-msg" hidden></div>
     </div>
   </div>
 

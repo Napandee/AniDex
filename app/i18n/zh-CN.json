@@ -178,6 +178,10 @@
   "cred_guide_primevideo_step3": "点击任意 getWatchHistorySettingsPage 请求 —— 请求标头 —— 复制完整的 cookie 值。",
   "cred_guide_primevideo_step4": "粘贴到上方。",
 
+  "settings_group_sync_ops_title": "同步状态与操作",
+  "settings_group_provider_tools_title": "特定服务工具",
+  "settings_group_data_title": "数据导出与导入",
+
   "sync_manual_title": "手动同步",
   "sync_manual_desc": "按需触发完整同步流程，而不用等待计划任务运行。",
   "sync_now_btn": "立即同步",

@@ -178,6 +178,10 @@
   "cred_guide_primevideo_step3": "Haz clic en cualquier solicitud getWatchHistorySettingsPage → Encabezados de solicitud → copia el valor completo de la cookie.",
   "cred_guide_primevideo_step4": "Pégalo arriba.",
 
+  "settings_group_sync_ops_title": "Estado y operaciones de sincronización",
+  "settings_group_provider_tools_title": "Herramientas específicas del proveedor",
+  "settings_group_data_title": "Exportar e importar datos",
+
   "sync_manual_title": "Sincronización manual",
   "sync_manual_desc": "Activa el proceso de sincronización completo bajo demanda en lugar de esperar a la ejecución programada.",
   "sync_now_btn": "Sincronizar ahora",
