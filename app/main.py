@@ -1007,9 +1007,28 @@ async def _csrf_protect(request: Request) -> None:
     with `grep -n "@app.post|@app.put|@app.patch|@app.delete" app/main.py`
     (extended regex) before writing this: zero hits under /auth/callback or
     /auth/link-callback.
-    """
+
+    Issue #390 added the first write route on this app's own router (as opposed
+    to the separately-mounted /mcp sub-app) meant to be called with no browser
+    session at all — a Bearer-PAT-authenticated write from an external client
+    (a companion browser extension keeping Prime Video's stored cookie fresh),
+    same shape /mcp already has, just not on its own ASGI mount. CSRF exists to
+    stop a malicious page from riding a victim's *automatically-attached*
+    session cookie; a request that instead carries an explicit, valid
+    Authorization: Bearer PAT (which an attacker's page cannot set on a
+    cross-origin request without already knowing the token) isn't vulnerable to
+    that attack by construction — same reasoning issue #312 already applied to
+    /mcp, just resolved here instead of via a structural mount boundary. Must
+    resolve to an actually-valid, non-revoked token — a bare/garbage
+    Authorization header must NOT skip the check, or this would just be a CSRF
+    bypass for anyone able to set an arbitrary header value."""
     if request.method in _CSRF_SAFE_METHODS:
         return
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        if pat.resolve_token(auth_header[7:]):
+            return
 
     supplied = request.headers.get(csrf.HEADER_NAME)
     if not supplied:
@@ -3083,6 +3102,28 @@ def _require_pat_user(request: Request):
     user = pat.resolve_token(raw_token)
     if not user:
         return None, JSONResponse({"error": "not authenticated"}, status_code=401)
+    return user, None
+
+
+def _require_pat_write_user(request: Request):
+    """Issue #390 — same PAT bearer-token gate as _require_pat_user, but additionally
+    rejects a read-scoped token. Written as its own function rather than adding a
+    scope-check parameter to _require_pat_user: the HA status route that function
+    exists for is intentionally scope-agnostic (read-only endpoint, any scope is
+    fine), so folding a write requirement into it would make every future PAT-gated
+    read route have to remember to pass "don't require write" — a foot-gun in the
+    safe direction, but a foot-gun. Mirrors mcp_server.py's _require_write_scope()
+    (same pat_scope check, same SCOPE_READ_WRITE constant) adapted to this module's
+    plain (user, denied) return-tuple convention instead of that module's
+    raise-ToolError one, since this is an ordinary FastAPI route, not an MCP tool."""
+    user, denied = _require_pat_user(request)
+    if denied:
+        return None, denied
+    if user.get("pat_scope") != pat.SCOPE_READ_WRITE:
+        return None, JSONResponse(
+            {"error": "this token is read-only; issue a read+write token in Settings → API Access"},
+            status_code=403,
+        )
     return user, None
 
 
@@ -5400,6 +5441,39 @@ def settings_save_credentials_primevideo(
         config.set_value(user["id"], "primevideo_cookie_header", primevideo_cookie_header.strip())
 
     return RedirectResponse(url="/settings?saved=credentials_primevideo", status_code=303)
+
+
+@app.post("/api/pat/primevideo-cookie")
+async def api_pat_save_primevideo_cookie(request: Request):
+    """Issue #390 — write target for a companion browser extension that keeps
+    Prime Video's stored cookie fresh, so the manual copy-paste into Settings
+    (settings_save_credentials_primevideo above) doesn't have to happen every
+    time Amazon's short-lived "account settings" session tier expires (root
+    cause confirmed live during #387/#389's investigation: general
+    browsing/playback survives far longer than the tier this specific cookie
+    needs, independent of anything this app's request shape does).
+
+    PAT-only, read_write scope required (_require_pat_write_user) — deliberately
+    NOT the session-cookie route above, which a background extension has no way
+    to authenticate against (no logged-in browser session, no CSRF token to
+    carry). Writes through the exact same config.set_value() encrypted-storage
+    path settings_save_credentials_primevideo already uses — same at-rest
+    encryption (primevideo_cookie_header is in config.ENCRYPTED_KEYS), no
+    parallel/weaker write path introduced here.
+
+    JSON body only ({"cookie_header": "..."}) — this route has no HTML form
+    counterpart to also support, unlike most POST routes in this file."""
+    user, denied = _require_pat_write_user(request)
+    if denied:
+        return denied
+
+    body = await request.json()
+    cookie_header = (body.get("cookie_header") or "").strip()
+    if not cookie_header:
+        return JSONResponse({"error": "cookie_header is required"}, status_code=400)
+
+    config.set_value(user["id"], "primevideo_cookie_header", cookie_header)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/settings/plex/connect")
