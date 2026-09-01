@@ -2894,6 +2894,140 @@ a.drop-tag-chip-link:focus-visible {
 .wrapped-pace-icon { font-size: 1.3rem; line-height: 1; }
 .wrapped-score-list { display: flex; flex-wrap: wrap; gap: 0.35rem; padding-top: 0.4rem; }
 
+/* ── "Your year so far" — full-screen animated slide flow (issue #444/#452) ──
+   Always dark regardless of the site's own light/dark theme, deliberately —
+   the same full-bleed theatrical treatment Spotify Wrapped and Instagram/
+   Snapchat Stories use, not something that should compete with the app's own
+   surface colors. AniDexWrappedFlow (script.js) drives everything inside
+   #wrapped-stage; the markup here is an empty shell populated client-side. */
+#wrapped-stage {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  color: #fff;
+  z-index: 500;
+  overscroll-behavior: contain;
+}
+#wrapped-stage[hidden] { display: none; }
+
+.wrapped-slide-bg {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  background: var(--wrapped-slide-grad, radial-gradient(circle at 50% 30%, #1e293b, #020617));
+}
+.wrapped-slide-bg.active { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .wrapped-slide-bg { transition: none; } }
+
+.wrapped-slide-bg .wrapped-cover-art {
+  position: absolute;
+  inset: -6%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(18px) saturate(1.15) brightness(0.55);
+  transform: scale(1.08);
+}
+.wrapped-slide-bg .wrapped-cover-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.75) 100%);
+}
+
+.wrapped-stage-bars { position: absolute; top: 0.7rem; left: 0.7rem; right: 0.7rem; display: flex; gap: 5px; z-index: 20; }
+.wrapped-bar { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.28); overflow: hidden; }
+.wrapped-bar-fill { height: 100%; width: 0%; background: #fff; border-radius: 2px; }
+.wrapped-bar-fill.done { width: 100%; }
+.wrapped-bar-fill.anim { transition: width linear; }
+
+.wrapped-stage-topbar {
+  position: absolute; top: 1.5rem; left: 0.9rem; right: 0.9rem;
+  display: flex; align-items: center; justify-content: space-between; z-index: 20;
+}
+.wrapped-stage-brand { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; color: rgba(255,255,255,0.68); }
+.wrapped-stage-close {
+  background: rgba(255,255,255,0.14); border: none; color: #fff; width: 30px; height: 30px; border-radius: 999px;
+  font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.wrapped-stage-close:hover { background: rgba(255,255,255,0.24); }
+
+.wrapped-tapzone { position: absolute; top: 0; bottom: 0; width: 35%; z-index: 10; cursor: pointer; }
+.wrapped-tapzone.left { left: 0; }
+.wrapped-tapzone.right { right: 0; }
+.wrapped-chev {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 12; opacity: 0; transition: opacity 0.15s;
+  width: 2.4rem; height: 2.4rem; border-radius: 999px; background: rgba(255,255,255,0.12); border: none;
+  display: flex; align-items: center; justify-content: center; color: #fff; font-size: 1.1rem; pointer-events: none;
+}
+#wrapped-stage:hover .wrapped-chev { opacity: 0.55; }
+.wrapped-chev.prev { left: 0.9rem; }
+.wrapped-chev.next { right: 0.9rem; }
+
+.wrapped-slide-content {
+  /* Absolutely positioned and stacked directly on top of each other (issue
+     #452 fix, found live) — without this, every inactive slide (opacity:0
+     but still fully hit-testable) piles up in normal document flow below the
+     active one, and a later slide's invisible box ends up overlapping and
+     intercepting clicks meant for the tap zones underneath.
+
+     pointer-events stays 'none' even for the active slide — its own full-
+     bleed box must never block .wrapped-tapzone underneath (that's the
+     actual navigation surface, tap-anywhere per #444's decision); only real
+     interactive children (the recap card's Save/Replay buttons) opt back
+     into pointer-events below. */
+  position: absolute; inset: 0; z-index: 15; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; padding: 5.5rem 1.75rem 2.5rem;
+  opacity: 0; transform: scale(0.96); transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
+}
+.wrapped-slide-content.active { opacity: 1; transform: scale(1); }
+.wrapped-slide-content .wrapped-recap-btn { pointer-events: auto; }
+@media (prefers-reduced-motion: reduce) { .wrapped-slide-content { transition: none; transform: none; } }
+
+.wrapped-slide-eyebrow { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.68); margin-bottom: 0.6rem; }
+.wrapped-slide-big { font-size: clamp(2.6rem, 11vw, 4.6rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 0.5rem; text-wrap: balance; }
+.wrapped-slide-sub { font-size: 1.05rem; color: rgba(255,255,255,0.68); max-width: 30ch; margin: 0; }
+.wrapped-slide-title { font-size: clamp(1.6rem, 6vw, 2.3rem); font-weight: 800; max-width: 22ch; margin: 0 0 0.6rem; text-wrap: balance; }
+
+.wrapped-mini-bars { display: flex; align-items: flex-end; gap: 0.5rem; height: 5rem; margin-top: 0.75rem; }
+.wrapped-mini-bar-col { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; width: 2rem; }
+.wrapped-mini-bar { width: 100%; border-radius: 4px 4px 0 0; background: rgba(255,255,255,0.85); }
+.wrapped-mini-bar-label { font-size: 0.65rem; color: rgba(255,255,255,0.68); }
+
+.wrapped-poster {
+  width: min(210px, 46vw); aspect-ratio: 2/3; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 22px 55px rgba(0,0,0,0.55); margin: 0 0 1.3rem; border: 1px solid rgba(255,255,255,0.14);
+}
+.wrapped-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wrapped-poster.wrapped-poster--lg { width: min(240px, 52vw); }
+
+.wrapped-collage { position: relative; width: min(280px, 70vw); height: 9.5rem; margin: 0 0 1.5rem; }
+.wrapped-collage img {
+  position: absolute; top: 0; width: 6.4rem; aspect-ratio: 2/3; object-fit: cover; border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.18);
+}
+.wrapped-collage img:nth-child(1) { left: 0; transform: rotate(-9deg); z-index: 1; }
+.wrapped-collage img:nth-child(2) { left: 50%; margin-left: -3.2rem; transform: translateY(-0.4rem); z-index: 3; }
+.wrapped-collage img:nth-child(3) { right: 0; transform: rotate(9deg); z-index: 2; }
+
+.wrapped-recap-card {
+  width: min(300px, 78vw); border-radius: 16px; padding: 1.5rem 1.4rem;
+  background: linear-gradient(160deg, #1e293b, #0f172a); border: 1px solid rgba(255,255,255,0.14);
+  text-align: left; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+}
+.wrapped-recap-card h3 { margin: 0 0 0.9rem; font-size: 0.85rem; letter-spacing: 0.03em; color: rgba(255,255,255,0.68); text-transform: uppercase; }
+.wrapped-recap-thumbs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.wrapped-recap-thumb { width: 2.6rem; aspect-ratio: 2/3; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
+.wrapped-recap-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wrapped-recap-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.wrapped-recap-row:last-child { border-bottom: none; }
+.wrapped-recap-row b { font-weight: 700; }
+.wrapped-recap-actions { display: flex; gap: 0.6rem; margin-top: 1.4rem; justify-content: center; }
+.wrapped-recap-btn { font: inherit; font-size: 0.85rem; font-weight: 700; border-radius: 8px; padding: 0.6rem 1.1rem; cursor: pointer; border: none; }
+.wrapped-recap-btn.primary { background: #fff; color: #0f172a; }
+.wrapped-recap-btn.ghost { background: rgba(255,255,255,0.12); color: #fff; }
+.wrapped-recap-note { font-size: 0.7rem; color: rgba(255,255,255,0.68); margin-top: 0.8rem; max-width: 26ch; }
+
 /* ── Stats: watch-activity heatmap (issue #10) ───────────────────────────── */
 .heatmap-wrap {
   display: flex;

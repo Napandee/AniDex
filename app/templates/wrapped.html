@@ -24,17 +24,22 @@
   <p class="wrapup-empty">{{ t('stats_wrapped_empty', year=wrapped.year) }}</p>
   {% else %}
 
-  {# Issue #236 — replays the sequential reveal (auto-played once, the first time
-     this year's page is viewed — see the AniDexWrapupReveal auto-init at the
-     bottom of script.js, keyed off #wrapped-reveal's data-wrapup-reveal-year) on
-     demand, any time afterward. #}
-  <button type="button" class="wrapup-replay-btn" id="wrapped-replay-btn">{{ t('stats_wrapup_replay_btn') }}</button>
+  {# Issue #444/#452 — the animated full-screen slide flow replaces #236's old
+     in-place stagger on THIS page only (auto-launched once per year via the same
+     localStorage-tracked scope, see AniDexWrappedFlow.autoInit() in script.js).
+     /stats' own #wrapup-card (scope 'card') is untouched — separate reveal,
+     separate button, out of #452's scope entirely. #}
+  <button type="button" class="wrapup-replay-btn" id="wrapped-play-btn">{{ t('stats_wrapped_play_btn') }}</button>
 
-  <div id="wrapped-reveal" data-wrapup-reveal-scope="wrapped" data-wrapup-reveal-year="{{ wrapped.year }}" data-wrapup-reveal-replay-btn="wrapped-replay-btn">
+  <script>window.WRAPPED_DATA = {{ wrapped_json|safe }};</script>
 
-  {# ── Pace vs. last year (issue #164, folded in) — passive/visual only, no
-       notification tied specifically to this stat. ───────────────────────────── #}
-  <div class="wrapped-pace-card pace-{{ wrapped.pace.status }} wrapup-reveal-step">
+  {# ── Static fallback/detail view — everything the animated flow shows,
+       always rendered underneath it for no-JS/accessibility and for re-reading
+       a stat at leisure without replaying the whole sequence. No longer
+       staggered — see the comment above. ──────────────────────────────────── #}
+  <div id="wrapped-detail">
+
+  <div class="wrapped-pace-card pace-{{ wrapped.pace.status }}">
     <span class="wrapped-pace-icon" aria-hidden="true">
       {% if wrapped.pace.status == 'ahead' %}↑{% elif wrapped.pace.status == 'behind' %}↓{% elif wrapped.pace.status == 'on_pace' %}→{% else %}—{% endif %}
     </span>
@@ -52,15 +57,15 @@
   </div>
 
   <div class="stats-headlines">
-    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.total_episodes }}</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
-    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.total_watch_display }}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
-    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.top_genre or '—' }}</span><span class="stat-label">{{ t('stats_wrapped_hl_top_genre') }}</span></div>
-    <div class="stat-headline wrapup-reveal-step"><span class="stat-num">{{ wrapped.status_snapshot.planning_to_completed }}</span><span class="stat-label">{{ t('stats_wrapped_planning_completed') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.total_episodes }}</span><span class="stat-label">{{ t('stats_hl_episodes') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.total_watch_display }}</span><span class="stat-label">{{ t('stats_hl_watchtime') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.top_genre or '—' }}</span><span class="stat-label">{{ t('stats_wrapped_hl_top_genre') }}</span></div>
+    <div class="stat-headline"><span class="stat-num">{{ wrapped.status_snapshot.planning_to_completed }}</span><span class="stat-label">{{ t('stats_wrapped_planning_completed') }}</span></div>
   </div>
 
   <div class="chart-card chart-card--wide">
     <div class="wrapped-detail-grid">
-      <div class="wrapped-detail wrapup-reveal-step">
+      <div class="wrapped-detail">
         <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_hl_highest_rated') }}</h3>
         {% if wrapped.highest_rated %}
         <p>{{ wrapped.highest_rated.title }} — {{ wrapped.highest_rated.score }} ★</p>
@@ -68,7 +73,15 @@
         <p>{{ t('stats_wrapped_highest_rated_empty') }}</p>
         {% endif %}
       </div>
-      <div class="wrapped-detail wrapup-reveal-step">
+      <div class="wrapped-detail">
+        <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_hl_most_rewatched') }}</h3>
+        {% if wrapped.most_rewatched %}
+        <p>{{ wrapped.most_rewatched.title }} — {% if wrapped.most_rewatched.count == 1 %}{{ t('queue_rewatch_singular', count=wrapped.most_rewatched.count) }}{% else %}{{ t('queue_rewatch_plural', count=wrapped.most_rewatched.count) }}{% endif %}</p>
+        {% else %}
+        <p>—</p>
+        {% endif %}
+      </div>
+      <div class="wrapped-detail">
         <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_binge') }}</h3>
         <p>
           {% if wrapped.binge_week %}
@@ -76,7 +89,7 @@
           {% else %}—{% endif %}
         </p>
       </div>
-      <div class="wrapped-detail wrapped-detail--wide wrapup-reveal-step">
+      <div class="wrapped-detail wrapped-detail--wide">
         <h3 class="drop-patterns-subhead">{{ t('stats_wrapped_score_shift') }}</h3>
         {% if wrapped.score_shift.has_prior_year_data %}
         <div class="genre-list wrapped-score-list">
@@ -94,6 +107,24 @@
     </div>
   </div>
 
+  </div>
+
+  {# ── Full-screen animated slide flow (issue #444/#452) — built entirely from
+       window.WRAPPED_DATA above by AniDexWrappedFlow (script.js). Empty shell
+       here; content is generated client-side, same "no data baked into markup
+       twice" principle the rest of this app's JS-driven pieces already follow. #}
+  <div id="wrapped-stage" data-wrapped-year="{{ wrapped.year }}" role="dialog" aria-modal="true" aria-label="{{ t('stats_wrapped_recap_title', year=wrapped.year) }}" hidden>
+    <div id="wrapped-stage-bg"></div>
+    <div class="wrapped-stage-bars" id="wrapped-stage-bars"></div>
+    <div class="wrapped-stage-topbar">
+      <span class="wrapped-stage-brand">ANIDEX</span>
+      <button type="button" class="wrapped-stage-close" id="wrapped-stage-close" aria-label="{{ t('stats_wrapped_flow_close') }}">✕</button>
+    </div>
+    <div class="wrapped-tapzone left" id="wrapped-zone-left"></div>
+    <div class="wrapped-tapzone right" id="wrapped-zone-right"></div>
+    <button type="button" class="wrapped-chev prev" aria-hidden="true" tabindex="-1">‹</button>
+    <button type="button" class="wrapped-chev next" aria-hidden="true" tabindex="-1">›</button>
+    <div id="wrapped-stage-slides"></div>
   </div>
 
   {% endif %}

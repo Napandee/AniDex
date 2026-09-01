@@ -10,29 +10,33 @@ user seen this year's reveal" is tracked client-side only (localStorage, see
 script.js's AniDexWrapupReveal module) — there's deliberately no schema change
 and nothing server-side records reveal-seen state.
 
+Issue #444/#452 replaced /stats/wrapped's own use of this reveal with a
+full-screen animated slide flow (AniDexWrappedFlow) — #wrapup-card on /stats
+is untouched and still uses AniDexWrapupReveal exactly as before. Section 2
+below covers the new flow's server-side contract instead of the old one.
+
 What's actually testable from pytest (server-side contract only — the actual
-auto-play/replay sequencing is client-side JS, same "nothing for pytest to
-exercise there" note tests/test_stats_drilldown.py and tests/test_collections.py
-make about their own client-side replay mechanics; verified live instead, see
-the PR description):
+auto-play/replay/slide sequencing is client-side JS, same "nothing for pytest
+to exercise there" note tests/test_stats_drilldown.py and
+tests/test_collections.py make about their own client-side replay mechanics;
+verified live instead, see the PR description):
 
   1. /stats renders #wrapup-card with a "Show reveal" replay button
      (id="wrapup-replay", server-rendered hidden — script.js reveals it once
      data loads) and the `wrapup-reveal-step` marker class on every element
      the sequential reveal paces through (the 4 wrapup-body stats + the 3
      wrapup-extras details from #193).
-  2. /stats/wrapped renders its own reveal container (#wrapped-reveal) keyed
-     to the actual year via data-wrapup-reveal-year, its own independently-
-     scoped replay button (id="wrapped-replay-btn", data-wrapup-reveal-
-     scope="wrapped" — kept separate from #wrapup-card's "card" scope per the
-     issue's own reasoning: #196's page is always the current calendar year,
-     while #wrapup-card's year picker can revisit any past year), and the
-     `wrapup-reveal-step` marker on every element it paces through (the pace
-     card + 4 headline stats + 3 details).
-  3. Neither page's reveal markup appears when there's no data to reveal
+  2. /stats/wrapped renders the new slide-flow's server-side contract: a
+     "Play recap" trigger (id="wrapped-play-btn"), the inlined
+     window.WRAPPED_DATA payload AniDexWrappedFlow builds its slides from,
+     and the empty #wrapped-stage shell keyed to the actual year via
+     data-wrapped-year — no `wrapup-reveal-step`/`data-wrapup-reveal-*`
+     markup at all anymore (that belonged to the old in-place stagger this
+     replaced; #wrapup-card's own use of those on /stats is untouched).
+  3. Neither page's reveal/flow markup appears when there's no data to show
      (#wrapup-card hidden entirely when the user has no library_entries at
      all; /stats/wrapped's empty-state branch when there's nothing completed
-     this year) — nothing to auto-play, no dangling button.
+     this year) — nothing to auto-play, no dangling button, no WRAPPED_DATA.
 """
 
 import datetime
@@ -176,10 +180,10 @@ def test_wrapup_card_replay_button_server_rendered_hidden_with_no_completions(pg
     assert 'id="wrapup-replay" hidden' in resp.text
 
 
-# ── 2. /stats/wrapped's own reveal markup ───────────────────────────────────
+# ── 2. /stats/wrapped's slide-flow markup (issue #444/#452) ─────────────────
 
 
-def test_wrapped_page_renders_own_reveal_container_and_replay_button(pg_conn, app_module, client):
+def test_wrapped_page_renders_play_button_and_stage_shell(pg_conn, app_module, client):
     _register_and_login(client, email="wrapped-reveal@example.com")
     uid = _user_id(pg_conn, "wrapped-reveal@example.com")
     today = datetime.date.today()
@@ -189,35 +193,42 @@ def test_wrapped_page_renders_own_reveal_container_and_replay_button(pg_conn, ap
     resp = client.get("/stats/wrapped")
     assert resp.status_code == 200
 
-    assert 'id="wrapped-replay-btn"' in resp.text
-    assert "Show reveal" in resp.text
+    assert 'id="wrapped-play-btn"' in resp.text
+    assert "Play recap" in resp.text
 
-    assert f'data-wrapup-reveal-year="{today.year}"' in resp.text
-    assert 'data-wrapup-reveal-scope="wrapped"' in resp.text
-    assert 'data-wrapup-reveal-replay-btn="wrapped-replay-btn"' in resp.text
+    assert "window.WRAPPED_DATA = " in resp.text
+    assert '"has_data": true' in resp.text  # real completion above → non-empty payload
 
-    # Pace card + 4 headline stats + 3 details (highest-rated, binge, score
-    # shift) = 8 paced steps.
-    assert resp.text.count("wrapup-reveal-step") == 8
+    assert f'data-wrapped-year="{today.year}"' in resp.text
+    assert 'id="wrapped-stage"' in resp.text
+    assert 'id="wrapped-stage-slides"' in resp.text
+
+    # The old in-place stagger's markup this flow replaced must be fully gone
+    # from this page — #wrapup-card on /stats still uses it untouched.
+    assert "wrapup-reveal-step" not in resp.text
+    assert "data-wrapup-reveal-scope" not in resp.text
+    assert 'id="wrapped-replay-btn"' not in resp.text
 
 
-def test_wrapped_page_empty_state_has_no_reveal_markup(pg_conn, app_module, client):
+def test_wrapped_page_empty_state_has_no_stage_markup(pg_conn, app_module, client):
     _register_and_login(client, email="wrapped-empty@example.com")
 
     resp = client.get("/stats/wrapped")
     assert resp.status_code == 200
-    assert 'id="wrapped-replay-btn"' not in resp.text
-    assert "data-wrapup-reveal-year" not in resp.text
+    assert 'id="wrapped-play-btn"' not in resp.text
+    assert 'id="wrapped-stage"' not in resp.text
+    assert "window.WRAPPED_DATA" not in resp.text
 
 
-# ── 3. The two reveal scopes stay independently keyed ───────────────────────
+# ── 3. The two reveal/flow mechanisms stay independent ──────────────────────
 
 
-def test_wrapup_card_and_wrapped_page_use_different_reveal_scopes(pg_conn, app_module, client):
-    """#wrapup-card's year picker can revisit any past year, while /stats/wrapped
-    is always the current calendar year — the two auto-play states must not be
-    coupled through a shared localStorage key. Regression guard for the
-    scope="card" vs scope="wrapped" split (see script.js's AniDexWrapupReveal)."""
+def test_wrapup_card_and_wrapped_page_use_different_mechanisms(pg_conn, app_module, client):
+    """#wrapup-card's year picker can revisit any past year and still uses the
+    old in-place AniDexWrapupReveal stagger (scope 'card'); /stats/wrapped is
+    always the current calendar year and now uses the full-screen
+    AniDexWrappedFlow instead (issue #444/#452) — the two must not leak each
+    other's markup."""
     _register_and_login(client, email="dual-scope@example.com")
     uid = _user_id(pg_conn, "dual-scope@example.com")
     today = datetime.date.today()
@@ -227,9 +238,8 @@ def test_wrapup_card_and_wrapped_page_use_different_reveal_scopes(pg_conn, app_m
     stats_resp = client.get("/stats")
     wrapped_resp = client.get("/stats/wrapped")
 
-    assert 'data-wrapup-reveal-scope="wrapped"' in wrapped_resp.text
-    # #wrapup-card doesn't carry a static data-wrapup-reveal-scope attribute at
-    # all (its year/scope is set client-side after the async /api/stats fetch
-    # resolves — see stats.html's loadWrapup calling AniDexWrapupReveal.init
-    # with scope: 'card'), so it must never collide with "wrapped".
-    assert 'data-wrapup-reveal-scope="wrapped"' not in stats_resp.text
+    assert 'id="wrapped-stage"' in wrapped_resp.text
+    assert 'id="wrapped-stage"' not in stats_resp.text
+
+    assert 'id="wrapup-replay"' in stats_resp.text
+    assert 'id="wrapup-replay"' not in wrapped_resp.text

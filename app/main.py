@@ -14,6 +14,7 @@ import time
 import zipfile
 from collections import Counter
 from datetime import datetime, timezone, timedelta, date
+from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
 import httpx
@@ -6840,8 +6841,8 @@ def _yearly_completion_rows(user_id: int, year: int) -> list[dict]:
     """
     return db.fetchall(
         """
-        SELECT le.anime_id, le.finish_date, le.progress, le.score,
-               a.title_english, a.title_romaji, a.genres, a.duration
+        SELECT le.anime_id, le.finish_date, le.progress, le.score, le.repeat_count,
+               a.title_english, a.title_romaji, a.genres, a.duration, a.cover_image_url
         FROM library_entries le
         JOIN anime a ON a.id = le.anime_id
         WHERE le.user_id = %s
@@ -7064,7 +7065,34 @@ def _compute_wrapped_page(user_id: int, today: date | None = None) -> dict:
     highest_rated = None
     if scored_rows:
         best = min(scored_rows, key=lambda r: (-r["score"], _title(r)))
-        highest_rated = {"title": _title(best), "score": best["score"]}
+        highest_rated = {"title": _title(best), "score": best["score"], "cover_image_url": best["cover_image_url"]}
+
+    # Issue #444 — the year-scoped counterpart to _compute_rewatch_stats()'
+    # instance-wide "most rewatched" on /stats: which of THIS year's completions
+    # has the highest repeat_count. Same deterministic tie-break as top_genre/
+    # highest_rated above — _yearly_completion_rows() has no ORDER BY.
+    rewatched_rows = [r for r in rows if (r["repeat_count"] or 0) > 0]
+    most_rewatched = None
+    if rewatched_rows:
+        best = min(rewatched_rows, key=lambda r: (-r["repeat_count"], _title(r)))
+        most_rewatched = {"title": _title(best), "count": best["repeat_count"], "cover_image_url": best["cover_image_url"]}
+
+    # Issue #444 — a small pool of this year's top-rated titles' cover art, for
+    # the animated recap flow's purely decorative per-slide backdrops (not a
+    # claim that a given slide's stat is "about" any specific one of these).
+    # Highest score first, deterministic tie-break, capped, deduped, and only
+    # entries that actually have art (a stale/never-refreshed anime row can have
+    # a null cover_image_url).
+    HIGHLIGHT_COVER_LIMIT = 8
+    seen_covers: set[str] = set()
+    highlight_covers: list[str] = []
+    for r in sorted(rows, key=lambda r: (-(r["score"] or 0), _title(r))):
+        url = r["cover_image_url"]
+        if url and url not in seen_covers:
+            seen_covers.add(url)
+            highlight_covers.append(url)
+        if len(highlight_covers) >= HIGHLIGHT_COVER_LIMIT:
+            break
 
     return {
         "year": year,
@@ -7082,6 +7110,8 @@ def _compute_wrapped_page(user_id: int, today: date | None = None) -> dict:
         "total_watch_display": total_watch_display,
         "top_genre": top_genre,
         "highest_rated": highest_rated,
+        "most_rewatched": most_rewatched,
+        "highlight_covers": highlight_covers,
         "binge_week": _biggest_binge_week(rows),
         "status_snapshot": _status_distribution_snapshot(rows),
         "score_shift": _score_distribution_shift(rows, prior_rows),
@@ -7893,8 +7923,26 @@ def stats_wrapped(request: Request):
         return denied
 
     wrapped = _compute_wrapped_page(user["id"])
+    # Issue #444/#452 — same window.I18N-style embed pattern as i18n_json (see
+    # base.html) — the full-screen animated slide flow is a client-side state
+    # machine (script.js's AniDexWrappedFlow) that needs this same data as a
+    # plain JS object, not a second server round trip.
+    #
+    # highest_rated.score is a NUMERIC(3,1) column (schema.sql) — psycopg2
+    # hands that back as a Decimal, which json.dumps can't serialize natively.
+    # A bare `default=str` would silently turn it into the JS string "5.0"
+    # instead of the number 5 (confirmed live during #452's own dev-stack
+    # verification) — float() is the correct conversion for a score that's
+    # only ever compared/formatted numerically client-side, never used at
+    # Decimal precision.
+    def _wrapped_json_default(o):
+        if isinstance(o, Decimal):
+            return float(o)
+        return str(o)
 
-    return templates.TemplateResponse(request, "wrapped.html", {"wrapped": wrapped})
+    wrapped_json = json.dumps(wrapped, ensure_ascii=False, default=_wrapped_json_default).replace("<", "\\u003c")
+
+    return templates.TemplateResponse(request, "wrapped.html", {"wrapped": wrapped, "wrapped_json": wrapped_json})
 
 
 # Security-review finding (issue #314): /api/export and /admin/export-all return a

@@ -189,22 +189,22 @@ def _seeded_user(pg_conn):
         )
 
 
-def _insert_anime(pg_conn, anime_id, genres=None, duration=24, title=None):
+def _insert_anime(pg_conn, anime_id, genres=None, duration=24, title=None, cover_image_url=None):
     import json as _json
 
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO anime (id, title_romaji, genres, duration) VALUES (%s, %s, %s::jsonb, %s)",
-            (anime_id, title or f"Anime {anime_id}", _json.dumps(genres or []), duration),
+            "INSERT INTO anime (id, title_romaji, genres, duration, cover_image_url) VALUES (%s, %s, %s::jsonb, %s, %s)",
+            (anime_id, title or f"Anime {anime_id}", _json.dumps(genres or []), duration, cover_image_url),
         )
 
 
-def _insert_entry(pg_conn, anime_id, finish_date, progress, score=None, user_id=USER_ID):
+def _insert_entry(pg_conn, anime_id, finish_date, progress, score=None, user_id=USER_ID, repeat_count=0):
     with pg_conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO library_entries (user_id, anime_id, status, progress, score, finish_date) "
-            "VALUES (%s, %s, 'COMPLETED', %s, %s, %s)",
-            (user_id, anime_id, progress, score, finish_date),
+            "INSERT INTO library_entries (user_id, anime_id, status, progress, score, finish_date, repeat_count) "
+            "VALUES (%s, %s, 'COMPLETED', %s, %s, %s, %s)",
+            (user_id, anime_id, progress, score, finish_date, repeat_count),
         )
 
 
@@ -266,7 +266,7 @@ def test_compute_wrapped_page_end_to_end_values(pg_conn, db_module, _seeded_user
     assert wrapped["total_episodes"] == 25
     assert wrapped["total_minutes"] == 25 * 24
     assert wrapped["top_genre"] == "Action"  # appears on both anime 1 and 2
-    assert wrapped["highest_rated"] == {"title": "Anime 1", "score": 5}
+    assert wrapped["highest_rated"] == {"title": "Anime 1", "score": 5, "cover_image_url": None}
     assert wrapped["binge_week"]["episodes"] == 25  # both completions in same week
     assert wrapped["status_snapshot"] == {"planning_to_completed": 2}
     assert wrapped["score_shift"]["has_prior_year_data"] is True
@@ -278,6 +278,8 @@ def test_compute_wrapped_page_no_completions_this_year_has_no_data(pg_conn, db_m
     assert wrapped["has_data"] is False
     assert wrapped["top_genre"] is None
     assert wrapped["highest_rated"] is None
+    assert wrapped["most_rewatched"] is None
+    assert wrapped["highlight_covers"] == []
     assert wrapped["binge_week"] is None
     assert wrapped["status_snapshot"] == {"planning_to_completed": 0}
 
@@ -319,7 +321,70 @@ def test_compute_wrapped_page_highest_rated_tiebreak_is_deterministic(pg_conn, d
 
     wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
 
-    assert wrapped["highest_rated"] == {"title": "Alpha Show", "score": 5}
+    assert wrapped["highest_rated"] == {"title": "Alpha Show", "score": 5, "cover_image_url": None}
+
+
+# ── most_rewatched / highlight_covers (issue #444) ──────────────────────────
+
+def test_compute_wrapped_page_most_rewatched_none_when_no_rewatches(pg_conn, db_module, _seeded_user):
+    _insert_anime(pg_conn, 1, genres=["Action"])
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=12)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["most_rewatched"] is None
+
+
+def test_compute_wrapped_page_most_rewatched_picks_highest_repeat_count(pg_conn, db_module, _seeded_user):
+    _insert_anime(pg_conn, 1, genres=["Action"], title="Once", cover_image_url="https://example.test/once.jpg")
+    _insert_anime(pg_conn, 2, genres=["Action"], title="Thrice", cover_image_url="https://example.test/thrice.jpg")
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=12, repeat_count=1)
+    _insert_entry(pg_conn, 2, _d("2026-01-11"), progress=12, repeat_count=3)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["most_rewatched"] == {
+        "title": "Thrice", "count": 3, "cover_image_url": "https://example.test/thrice.jpg",
+    }
+
+
+def test_compute_wrapped_page_most_rewatched_tiebreak_is_deterministic(pg_conn, db_module, _seeded_user):
+    _insert_anime(pg_conn, 1, genres=["Action"], title="Zeta Show")
+    _insert_anime(pg_conn, 2, genres=["Action"], title="Alpha Show")
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=1, repeat_count=2)
+    _insert_entry(pg_conn, 2, _d("2026-01-11"), progress=1, repeat_count=2)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["most_rewatched"]["title"] == "Alpha Show"
+
+
+def test_compute_wrapped_page_highlight_covers_ranked_deduped_and_capped(pg_conn, db_module, _seeded_user):
+    # 9 completions, only 8 should come back (HIGHLIGHT_COVER_LIMIT), highest
+    # score first, and a repeated cover_image_url across two anime rows must
+    # only appear once.
+    for i in range(1, 9):
+        _insert_anime(pg_conn, i, genres=["Action"], title=f"Show {i}", cover_image_url=f"https://example.test/{i}.jpg")
+        _insert_entry(pg_conn, i, _d(f"2026-01-{i:02d}"), progress=1, score=(10 - i))
+    _insert_anime(pg_conn, 9, genres=["Action"], title="Show 9", cover_image_url="https://example.test/1.jpg")  # dup cover
+    _insert_entry(pg_conn, 9, _d("2026-01-09"), progress=1, score=1)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert len(wrapped["highlight_covers"]) == 8
+    assert wrapped["highlight_covers"][0] == "https://example.test/1.jpg"  # highest score
+    assert len(set(wrapped["highlight_covers"])) == 8  # no duplicate cover URLs
+
+
+def test_compute_wrapped_page_highlight_covers_skips_missing_art(pg_conn, db_module, _seeded_user):
+    _insert_anime(pg_conn, 1, genres=["Action"], title="Has Art", cover_image_url="https://example.test/a.jpg")
+    _insert_anime(pg_conn, 2, genres=["Action"], title="No Art", cover_image_url=None)
+    _insert_entry(pg_conn, 1, _d("2026-01-10"), progress=1, score=5)
+    _insert_entry(pg_conn, 2, _d("2026-01-11"), progress=1, score=4)
+
+    wrapped = db_module._compute_wrapped_page(USER_ID, today=_d("2026-06-15"))
+
+    assert wrapped["highlight_covers"] == ["https://example.test/a.jpg"]
 
 
 def test_notify_wrapped_checkin_raises_on_unknown_occasion(pg_conn, db_module):
