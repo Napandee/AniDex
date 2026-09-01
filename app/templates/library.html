@@ -273,6 +273,35 @@
       </div>
       {% endif %}
 
+      {% if e.manga_adaptations %}
+      {# Issue #454 — manga/light-novel "living integration" badge + detail
+         drawer, per spike #450's own recommended concept. Reuses #141's
+         help-disclosure toggle mechanism as-is (same aria-expanded/
+         aria-controls contract, same global script.js click handler) —
+         .manga-status-badge below only overrides its visual shape, not its
+         behavior. Server-rendered from manga_adaptation_cache (read-only,
+         populated by scripts/sync_manga_data.py) — no client-side fetch, no
+         JSON payload to embed or keep in sync with Jinja's own rendering. #}
+      <button type="button" class="help-disclosure-btn manga-status-badge" aria-expanded="false" aria-controls="manga-detail-{{ e.id }}" title="{{ t('lib_manga_badge_title') }}">
+        📖 {{ t('lib_manga_badge') }}
+      </button>
+      <div class="help-disclosure-panel manga-status-panel" id="manga-detail-{{ e.id }}"><div>
+        <div class="manga-status-panel-body">
+          {% for src in e.manga_adaptations %}
+          <div class="manga-source-row">
+            <span class="manga-source-type">{{ t('lib_manga_type_novel') if src.source_type == 'NOVEL' else t('lib_manga_type_manga') }}</span>
+            <span class="manga-source-detail">
+              {{ t('lib_manga_status_' + src.status.lower()) if src.status else '—' }}
+              {% if src.latest_chapter %} · {{ t('lib_manga_chapter_fmt', chapter=src.latest_chapter) }}{% endif %}
+              {% if not src.latest_chapter and src.latest_volume %} · {{ t('lib_manga_volume_fmt', volume=src.latest_volume) }}{% endif %}
+              {% if src.licensor_name %}<br>{{ t('lib_manga_licensor_fmt', name=src.licensor_name) }}{% endif %}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      </div></div>
+      {% endif %}
+
       {% if e.streaming_links %}
       <div class="stream-links">
         {% for lnk in e.streaming_links[:4] %}
