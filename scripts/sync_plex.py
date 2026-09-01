@@ -21,11 +21,13 @@ Title matching: reuses anilist_sync_common.py's find_anilist_id()/
 is_plausible_match() — the same title-index-then-search-fallback pair
 Crunchyroll/Netflix already share — keyed on grandparentTitle (episodes) or
 title (movies), with season_number passed through for AniList's "2nd Season"
-naming convention (issue #159's fix, general enough to reuse here). A Plex
-library item's `Guid` list (AniDB/MAL ids, only present if the user has an
-anime-specific metadata agent like HAMA or MyAnimeList.bundle installed) is
-checked first as a strictly-better opportunistic signal before falling back
-to title matching — see notes/2026-08-19-plex-sync-research.md, section 3.
+naming convention (issue #159's fix, general enough to reuse here). Title
+matching is the whole matching path for now — a Plex library item's `Guid`
+list can carry an AniDB/MAL id (only present if the user has an anime-
+specific metadata agent like HAMA or MyAnimeList.bundle installed) that
+would be a strictly better match signal, but that's deliberately not wired
+in for v1 pending an AniDB/MAL → AniList id mapping table; see
+notes/2026-08-19-plex-sync-research.md, section 3.
 
 Auth: X-Plex-Token (server-scoped, from the OAuth PIN connect flow in
 app/plex_auth.py — see that module's docstring for why this isn't a
@@ -167,20 +169,6 @@ def _item_watched_at(item: dict) -> datetime | None:
 
 def _is_episode(item: dict) -> bool:
     return item.get("type") == "episode"
-
-
-def _agent_media_id(item: dict) -> int | None:
-    """Opportunistic AniDB/MAL id from an anime-specific agent's Guid list, if the
-    user has one installed — see module docstring. Not yet mapped to an AniList
-    id here (that mapping table is explicitly not built for v1, see
-    notes/2026-08-19-plex-sync-research.md's decision) — this returns None until
-    that follow-up exists; the hook is left in place (called, always None today)
-    so wiring a mapping table later doesn't need to touch parse_items() again."""
-    for guid in item.get("Guid") or []:
-        gid = guid.get("id") or ""
-        if gid.startswith(_ANIME_AGENT_GUID_PREFIXES):
-            return None  # TODO(#153 follow-up): AniDB/MAL -> AniList id mapping
-    return None
 
 
 def parse_items(items: list[dict]) -> dict[tuple[str, int], dict]:

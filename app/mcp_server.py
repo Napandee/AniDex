@@ -678,7 +678,7 @@ async def start() -> None:
 
 
 async def stop() -> None:
-    global _session_manager_task, _stop_event
+    global _session_manager_task
     if _stop_event is not None:
         _stop_event.set()
     if _session_manager_task is not None:
