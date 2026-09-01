@@ -1149,6 +1149,25 @@
 </script>
 
 <script>
+// Issue #445 — fade whichever edge(s) still have pill content cut off,
+// standing in for the native scrollbar this row deliberately hides. Left
+// fade only once actually scrolled (nothing to imply at the very start);
+// re-checked on scroll and whenever a nav link's own hidden state changes
+// below, since revealing/hiding links changes whether the row overflows
+// at all.
+const statsNav = document.querySelector('.stats-nav');
+function updateStatsNavFade() {
+  if (!statsNav) return;
+  const maxScroll = statsNav.scrollWidth - statsNav.clientWidth;
+  statsNav.classList.toggle('stats-nav--fade-left', statsNav.scrollLeft > 1);
+  statsNav.classList.toggle('stats-nav--fade-right', statsNav.scrollLeft < maxScroll - 1);
+}
+if (statsNav) {
+  updateStatsNavFade();
+  statsNav.addEventListener('scroll', updateStatsNavFade, { passive: true });
+  window.addEventListener('resize', updateStatsNavFade);
+}
+
 // Issue #432 — keeps each conditionally-rendered section's nav link in sync
 // with its target's own `hidden` state, set independently and at different
 // times by the fetch-driven IIFE above (new-account/low-sample sections
@@ -1159,7 +1178,7 @@
 document.querySelectorAll('.stats-nav-link[data-nav-target]').forEach(link => {
   const target = document.getElementById(link.dataset.navTarget);
   if (!target) return;
-  const sync = () => { link.hidden = target.hidden; };
+  const sync = () => { link.hidden = target.hidden; updateStatsNavFade(); };
   sync();
   new MutationObserver(sync).observe(target, { attributes: true, attributeFilter: ['hidden'] });
 });

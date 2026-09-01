@@ -662,7 +662,6 @@ main {
 .collections-manage-name-input { flex: 1 1 auto; min-width: 0; }
 .collections-manage-row .filter-btn { flex: 0 0 auto; }
 
-.season-filter-group { display: flex; align-items: center; }
 .season-filter-select {
   padding: 0.3rem 0.6rem;
   background: var(--bg-surface);
@@ -1242,17 +1241,6 @@ main {
   white-space: nowrap;
 }
 
-.notes-link {
-  display: block;
-  margin-top: auto;
-  padding-top: 0.5rem;
-  font-size: 0.7rem;
-  color: var(--t7);
-  text-decoration: none;
-  transition: color 0.15s;
-}
-.notes-link:hover { color: var(--t4); }
-
 /* notes edit page */
 .notes-page { max-width: 640px; margin: 0 auto; }
 
@@ -1477,7 +1465,6 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 }
 .btn-cancel:hover { color: var(--t5); border-color: var(--border-strong); }
 
-.settings-section-label { font-size: 0.8rem; color: var(--t7); padding-top: 0.5rem; }
 
 /* Used by admin.html's multi-field forms (invites, privacy defaults, OAuth settings) */
 .settings-form { display: flex; flex-direction: column; gap: 0; }
@@ -2613,17 +2600,47 @@ a.upcoming-month-cell:focus-visible { outline: 2px solid var(--accent); outline-
   top: 0;
   z-index: 10;
   display: flex;
+  /* Explicit, not just the flex default: this is a real <nav> element, so
+     it also matches the site header's own bare `nav { flex-wrap: wrap; }`
+     mobile rule — without this override the pills wrapped onto several
+     lines below 768px instead of staying a single scrollable row, which
+     also meant they never actually overflowed horizontally, silently
+     defeating the whole point of the fade-edge affordance above. Only
+     found by testing at a real narrow viewport, not just 1400px. */
+  flex-wrap: nowrap;
   gap: 0.4rem;
   overflow-x: auto;
   padding: 0.6rem 0;
   margin-bottom: 1rem;
   background: var(--bg-page);
   /* Still scrolls (drag/swipe/trackpad), just without the always-visible
-     native scrollbar track sitting under a row of small pill buttons. */
+     native scrollbar track sitting under a row of small pill buttons. In
+     its place: a fade at whichever edge(s) still have cut-off content, so
+     "there's more, scroll" stays visible without the raw scrollbar chrome.
+     script.js toggles --fade-left/--fade-right based on real scroll
+     position (left fade only once actually scrolled — nothing to imply at
+     the very start). Plain overflow:hidden with no fade at all was tried
+     and rejected: a pill cut off mid-word with zero affordance just reads
+     as a broken layout, not "scroll for more." */
   scrollbar-width: none;
   -ms-overflow-style: none;
+  --fade-w: 2rem;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 0);
+  mask-image: linear-gradient(to right, transparent, black 0);
 }
 .stats-nav::-webkit-scrollbar { display: none; }
+.stats-nav.stats-nav--fade-right {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - var(--fade-w)), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - var(--fade-w)), transparent 100%);
+}
+.stats-nav.stats-nav--fade-left {
+  -webkit-mask-image: linear-gradient(to right, transparent, black var(--fade-w));
+  mask-image: linear-gradient(to right, transparent, black var(--fade-w));
+}
+.stats-nav.stats-nav--fade-left.stats-nav--fade-right {
+  -webkit-mask-image: linear-gradient(to right, transparent, black var(--fade-w), black calc(100% - var(--fade-w)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent, black var(--fade-w), black calc(100% - var(--fade-w)), transparent 100%);
+}
 
 .stats-nav-link {
   flex-shrink: 0;
@@ -3500,30 +3517,7 @@ a.drop-tag-chip-link:focus-visible {
 }
 .btn-anilist:hover { background: var(--pill-info-bg-hover); }
 
-/* ── Inline notes panel ─────────────────────────────────────────────────────── */
-.notes-toggle {
-  background: none;
-  border: none;
-  color: var(--pill-info-text);
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 0;
-  text-align: left;
-  transition: color 0.15s;
-}
-.notes-toggle:hover { color: var(--pill-info-text-strong); }
-
-.notes-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-  padding: 0.75rem;
-  background: var(--bg-inset);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
+/* ── Notes fields (used by the notes/collections modals below) ──────────────── */
 .notes-field-label {
   display: flex;
   flex-direction: column;
@@ -3545,37 +3539,6 @@ a.drop-tag-chip-link:focus-visible {
   transition: border-color 0.15s;
 }
 .notes-field:focus { border-color: var(--accent); }
-
-.notes-panel-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.1rem;
-}
-
-.notes-save {
-  background: var(--pill-info-border);
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  color: var(--pill-info-text-strong);
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 0.3rem 0.75rem;
-  transition: background 0.15s;
-}
-.notes-save:hover { background: var(--accent); color: #fff; }
-.notes-save:disabled { opacity: 0.5; cursor: default; }
-
-.notes-cancel {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--t6);
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 0.3rem 0.6rem;
-  transition: color 0.15s;
-}
-.notes-cancel:hover { color: var(--t4); }
 
 /* ── Notes modal ─────────────────────────────────────────────────────────────── */
 .modal-backdrop {
@@ -4101,7 +4064,6 @@ a.drop-tag-chip-link:focus-visible {
 .add-result-btn:hover:not(:disabled) { background: var(--accent-violet); color: #fff; }
 .add-result-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .add-result-btn--in-lib { border-color: var(--t9); color: var(--t7); }
-.add-result-btn--added { border-color: var(--pill-success-text-strong); color: var(--pill-success-text-strong); }
 
 .add-result-item--expanded { flex-wrap: wrap; }
 
@@ -4312,7 +4274,7 @@ a.drop-tag-chip-link:focus-visible {
   .search-submit { width: 100%; }
 
   /* ── Notes / settings pages ───────────────────────────────────────────── */
-  .notes-page, .settings-page { padding: 0; }
+  .notes-page { padding: 0; }
   .form-input { font-size: 0.9rem; }
 
   /* ── Upcoming page ────────────────────────────────────────────────────── */
@@ -4339,7 +4301,11 @@ a.drop-tag-chip-link:focus-visible {
   .bulk-status-select { width: 5.6rem; }
 
   /* ── Modal — full screen on mobile ───────────────────────────────────── */
-  .modal-box {
+  /* Issue #415 — was `.modal-box`, a class no real modal markup ever
+     applied (every modal uses `.modal` — see .modal-backdrop/.modal-title/
+     .modal-actions above), so this bottom-sheet treatment never actually
+     fired on mobile. Renamed to the class that's really there. */
+  .modal {
     width: 100%;
     max-width: 100%;
     margin: 0;
