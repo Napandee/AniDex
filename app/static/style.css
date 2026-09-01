@@ -1252,6 +1252,14 @@ main {
 /* notes edit page */
 .notes-page { max-width: 640px; margin: 0 auto; }
 
+/* Issue #431 — admin.html was reusing .notes-page (640px, sized for a
+   single-anime notes layout) as its own outer wrapper, capping every tab's
+   content — including wide tables like Users — to 640px regardless of
+   viewport. That was the real reason the Users table needed horizontal
+   scroll with a single row: not too many columns for the page, too little
+   page for the columns. */
+.admin-page { max-width: 1100px; margin: 0 auto; }
+
 .notes-context {
   display: flex;
   gap: 1rem;
@@ -1494,6 +1502,13 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
    it holds a form or not — so save/UI state in one never bleeds into another. */
 .settings-section { max-width: 640px; margin: 2rem auto 0; border-top: 1px solid var(--border); padding-top: 1.5rem; }
 .settings-section--first { margin-top: 0; border-top: none; padding-top: 0; }
+/* Issue #431 — .settings-section's own 640px cap suits Settings' narrow,
+   form-centric content, but the same class wraps Admin's wide tables too.
+   .admin-page's own wider max-width (see above) wasn't enough on its own —
+   this inner cap was still independently constraining the Users table.
+   Scoped to .admin-page specifically so Settings' own sections are
+   untouched. */
+.admin-page .settings-section { max-width: none; }
 .settings-section-title { font-size: 1rem; font-weight: 600; color: var(--t2); margin: 0 0 0.4rem; }
 .settings-section-desc { font-size: 0.85rem; color: var(--t6); margin: 0 0 1rem; line-height: 1.5; }
 .settings-section form { display: flex; flex-direction: column; gap: 1.25rem; }
@@ -1835,13 +1850,17 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
   border-bottom: 1px solid var(--border);
   color: var(--t6);
   font-weight: 500;
-  white-space: nowrap;
+  /* Issue #431 — same fix as .admin-table above: was nowrap, forcing every
+     header onto one line pushed the table wider than necessary. */
+  white-space: normal;
 }
 .sync-log-table td {
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--t4);
   vertical-align: top;
+  max-width: 220px;
+  overflow-wrap: break-word;
 }
 .sync-log-table tr:last-child td { border-bottom: none; }
 .sync-log-table .log-ok { color: var(--pill-success-text); }
@@ -1880,13 +1899,21 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
   border-bottom: 1px solid var(--border);
   color: var(--t6);
   font-weight: 500;
-  white-space: nowrap;
+  /* Issue #431 — was nowrap: forcing every header onto one line (e.g. "Last
+     recommender") made the whole table wider than it needed to be, to the
+     point the Users table already needed horizontal scroll with a single
+     row. Letting headers wrap, and letting td content below wrap/break
+     instead of forcing width, meaningfully shrinks the table's natural
+     width without a bigger column-hiding redesign. */
+  white-space: normal;
 }
 .admin-table td {
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--t4);
   vertical-align: top;
+  max-width: 220px;
+  overflow-wrap: break-word;
 }
 .admin-table tr:last-child td { border-bottom: none; }
 .admin-table .status-ok { color: var(--pill-success-text); }
@@ -2560,6 +2587,42 @@ a.upcoming-month-cell:focus-visible { outline: 2px solid var(--accent); outline-
 /* ── Stats page ──────────────────────────────────────────────────────────── */
 /* .stats body class no longer used — page now uses normal layout */
 .stats-page { max-width: 960px; margin: 0 auto; }
+
+/* Issue #432 — jump-to-section nav for the long Stats page. Sticky so it
+   stays reachable while scrolling past ~15 stacked chart sections; a
+   horizontal scroller rather than a sidebar since the page is a single
+   960px-max centered column, not a two-column layout, and a sidebar would
+   have meant restructuring around every chart's canvas (Chart.js reads its
+   container's width on init — safer not to touch that layout). */
+.stats-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.6rem 0;
+  margin-bottom: 1rem;
+  background: var(--bg-page);
+}
+
+.stats-nav-link {
+  flex-shrink: 0;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  color: var(--t4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  transition: background 0.15s, color 0.15s;
+}
+.stats-nav-link:hover { background: var(--bg-surface-hover); color: var(--t3); }
+
+/* Offsets every jump target so the sticky .stats-nav above doesn't cover a
+   section's own heading right after landing on it. */
+.stats-page [id] { scroll-margin-top: 4.5rem; }
 
 .stats-drilldown-hint {
   font-size: 0.8rem;
