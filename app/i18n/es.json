@@ -10,10 +10,10 @@
   "nav_admin_title": "Administración",
   "nav_logout_title": "Cerrar sesión",
 
-  "title_login": "Iniciar sesión — Anime Tracker",
-  "title_register": "Crear cuenta — Anime Tracker",
-  "title_reset_password": "Restablecer contraseña — Anime Tracker",
-  "title_settings": "Ajustes — Anime Tracker",
+  "title_login": "Iniciar sesión — AniDex",
+  "title_register": "Crear cuenta — AniDex",
+  "title_reset_password": "Restablecer contraseña — AniDex",
+  "title_settings": "Ajustes — AniDex",
 
   "login_title": "Iniciar sesión",
   "email_label": "Correo electrónico",
@@ -103,7 +103,7 @@
   "twofa_disable_password_placeholder": "contraseña actual",
   "twofa_disabled_success": "La autenticación de dos factores se ha desactivado.",
 
-  "title_2fa_setup": "Configurar autenticación de dos factores — Anime Tracker",
+  "title_2fa_setup": "Configurar autenticación de dos factores — AniDex",
   "twofa_setup_heading": "Configurar autenticación de dos factores",
   "twofa_setup_intro": "Escanea este código QR con una app de autenticación (Google Authenticator, Authy, 1Password, etc.) y luego introduce el código de 6 dígitos que muestra para confirmar la configuración.",
   "twofa_setup_qr_alt": "Código QR para configurar la app de autenticación",
@@ -112,13 +112,13 @@
   "twofa_setup_code_placeholder": "123456",
   "twofa_setup_submit_btn": "Confirmar y activar",
 
-  "title_2fa_recovery_codes": "Guarda tus códigos de recuperación — Anime Tracker",
+  "title_2fa_recovery_codes": "Guarda tus códigos de recuperación — AniDex",
   "twofa_recovery_heading": "Guarda tus códigos de recuperación",
   "twofa_recovery_desc": "La autenticación de dos factores ya está activada en tu cuenta.",
   "twofa_recovery_warning": "Estos códigos solo se muestran una vez. Guárdalos en un lugar seguro — cada uno se puede usar una sola vez para iniciar sesión si pierdes el acceso a tu app de autenticación.",
   "twofa_recovery_continue_btn": "Ya guardé estos códigos — continuar",
 
-  "title_2fa_login": "Autenticación de dos factores — Anime Tracker",
+  "title_2fa_login": "Autenticación de dos factores — AniDex",
   "login_2fa_heading": "Introduce tu código de autenticación",
   "login_2fa_intro": "Introduce el código de 6 dígitos de tu app de autenticación.",
   "login_2fa_code_label": "Código de autenticación",
@@ -307,7 +307,7 @@
   "link_view_anilist": "Ver en AniList",
   "link_go_to_library": "Ir a la pestaña de biblioteca",
 
-  "title_search": "Buscar — Anime Tracker",
+  "title_search": "Buscar — AniDex",
   "search_placeholder": "Buscar en títulos y notas…",
   "search_submit_btn": "Buscar",
   "search_result_singular": "{count} resultado para",
@@ -315,7 +315,7 @@
   "search_empty_result": "Sin resultados para",
   "search_matched_notes": "Coincidencia en tus notas",
 
-  "title_upcoming": "Próximos — Anime Tracker",
+  "title_upcoming": "Próximos — AniDex",
   "upcoming_page_title": "Próximos episodios",
   "upcoming_page_sub": "Nuevos episodios de tu lista de viendo y planeados.",
 
@@ -347,7 +347,7 @@
   "upcoming_day_back_btn": "Volver al mes",
   "upcoming_day_empty": "Nada emitiéndose este día.",
 
-  "title_queue": "Cola de visualización — Anime Tracker",
+  "title_queue": "Cola de visualización — AniDex",
   "queue_page_title": "Cola de visualización",
   "queue_page_sub": "Ordenada por prioridad manual y, después, por puntuación del recomendador. Define una prioridad desde la página de notas de cualquier título para fijarlo arriba del todo.",
   "queue_tag_filter_all": "Todas las etiquetas",
@@ -381,7 +381,7 @@
   "filler_status_filler": "Relleno",
   "filler_status_mixed": "Mixto",
 
-  "notes_title": "Notas — {title} — Anime Tracker",
+  "notes_title": "Notas — {title} — AniDex",
   "notes_your_score": "Tu puntuación",
   "notes_not_rated": "Sin puntuar",
   "notes_anilist_average": "Promedio en AniList",
@@ -450,7 +450,7 @@
   "relation_summary": "Resumen",
   "relation_other": "Relacionado",
 
-  "title_stats": "Estadísticas — Anime Tracker",
+  "title_stats": "Estadísticas — AniDex",
   "stats_page_title": "Estadísticas",
   "stats_drilldown_hint": "Haz clic en un número, barra o sector para ver los animes detrás de él.",
   "stats_hl_episodes": "Episodios vistos",
@@ -531,7 +531,7 @@
 
   "stats_wrapped_link": "Tu año hasta ahora →",
   "stats_wrapup_replay_btn": "↻ Mostrar repaso",
-  "title_stats_wrapped": "Tu año hasta ahora — Anime Tracker",
+  "title_stats_wrapped": "Tu año hasta ahora — AniDex",
   "stats_wrapped_page_title": "Tu {year} hasta ahora",
   "stats_wrapped_page_sub": "Siempre actualizado — sin selector de año, esto solo refleja lo que llevas del año hasta hoy. Para comparaciones entre años, usa la tarjeta \"Año en anime\" de Estadísticas.",
   "stats_wrapped_empty": "Aún no has completado nada en {year} — vuelve cuando termines algo.",
@@ -543,7 +543,7 @@
   "stats_wrapped_pace_on_pace": "Justo al ritmo del año pasado ({episodes} frente a {prior_episodes} episodios en este punto del año).",
   "stats_wrapped_pace_no_data": "Todavía no hay datos de {prior_year} con los que comparar tu ritmo.",
 
-  "title_recommendations": "Recomendados — Anime Tracker",
+  "title_recommendations": "Recomendados — AniDex",
   "rec_page_title": "Recomendados para ti",
   "rec_suggestions_count": "{count} sugerencias",
   "rec_new_this_season": "({count} nuevas esta temporada)",
@@ -581,7 +581,7 @@
   "rec_empty": "Aún no hay recomendaciones — ejecuta el recomendador para generarlas.",
   "rec_seen_it_hint": "Puntúalo (opcional) y confirma para marcarlo como completado en AniList.",
 
-  "title_library": "Biblioteca — Anime Tracker",
+  "title_library": "Biblioteca — AniDex",
   "lib_search_placeholder": "Filtrar por título, género o etiqueta…",
   "lib_sort_label": "Ordenar",
   "lib_sort_score": "Puntuación",
@@ -637,7 +637,7 @@
   "lib_ep_note_quote_label": "Cita favorita / escena memorable",
   "lib_ep_note_quote_placeholder": "p. ej. una línea de diálogo, una escena que te marcó…",
 
-  "title_admin": "Administración — Anime Tracker",
+  "title_admin": "Administración — AniDex",
   "admin_page_title": "Administración",
   "admin_page_sub": "Configuración y visibilidad operativa de toda la instancia.",
   "admin_tab_users": "Usuarios",

@@ -10,10 +10,10 @@
   "nav_admin_title": "管理",
   "nav_logout_title": "退出登录",
 
-  "title_login": "登录 — Anime Tracker",
-  "title_register": "创建账户 — Anime Tracker",
-  "title_reset_password": "重置密码 — Anime Tracker",
-  "title_settings": "设置 — Anime Tracker",
+  "title_login": "登录 — AniDex",
+  "title_register": "创建账户 — AniDex",
+  "title_reset_password": "重置密码 — AniDex",
+  "title_settings": "设置 — AniDex",
 
   "login_title": "登录",
   "email_label": "邮箱",
@@ -103,7 +103,7 @@
   "twofa_disable_password_placeholder": "当前密码",
   "twofa_disabled_success": "双重认证已禁用。",
 
-  "title_2fa_setup": "设置双重认证 — Anime Tracker",
+  "title_2fa_setup": "设置双重认证 — AniDex",
   "twofa_setup_heading": "设置双重认证",
   "twofa_setup_intro": "使用身份验证器应用(Google Authenticator、Authy、1Password 等)扫描此二维码，然后输入其显示的 6 位验证码以确认设置。",
   "twofa_setup_qr_alt": "用于设置身份验证器应用的二维码",
@@ -112,13 +112,13 @@
   "twofa_setup_code_placeholder": "123456",
   "twofa_setup_submit_btn": "确认并启用",
 
-  "title_2fa_recovery_codes": "保存你的恢复代码 — Anime Tracker",
+  "title_2fa_recovery_codes": "保存你的恢复代码 — AniDex",
   "twofa_recovery_heading": "保存你的恢复代码",
   "twofa_recovery_desc": "你的账户已启用双重认证。",
   "twofa_recovery_warning": "这些代码仅显示一次。请妥善保存 — 如果你无法访问身份验证器应用，每个代码可用于登录一次。",
   "twofa_recovery_continue_btn": "我已保存这些代码 — 继续",
 
-  "title_2fa_login": "双重认证 — Anime Tracker",
+  "title_2fa_login": "双重认证 — AniDex",
   "login_2fa_heading": "输入你的验证码",
   "login_2fa_intro": "请输入身份验证器应用中显示的 6 位验证码。",
   "login_2fa_code_label": "验证码",
@@ -307,7 +307,7 @@
   "link_view_anilist": "在 AniList 上查看",
   "link_go_to_library": "前往库标签页",
 
-  "title_search": "搜索 — Anime Tracker",
+  "title_search": "搜索 — AniDex",
   "search_placeholder": "搜索标题和笔记…",
   "search_submit_btn": "搜索",
   "search_result_singular": "找到 {count} 个结果，关于",
@@ -315,7 +315,7 @@
   "search_empty_result": "没有找到关于以下内容的结果",
   "search_matched_notes": "在笔记中匹配",
 
-  "title_upcoming": "即将播出 — Anime Tracker",
+  "title_upcoming": "即将播出 — AniDex",
   "upcoming_page_title": "即将播出的剧集",
   "upcoming_page_sub": "你的观看中与计划列表中的新剧集。",
 
@@ -347,7 +347,7 @@
   "upcoming_day_back_btn": "返回月视图",
   "upcoming_day_empty": "这一天没有播出。",
 
-  "title_queue": "观看队列 — Anime Tracker",
+  "title_queue": "观看队列 — AniDex",
   "queue_page_title": "观看队列",
   "queue_page_sub": "先按手动优先级排序，再按推荐分数排序。可在任意作品的笔记页面设置优先级，将其置顶。",
   "queue_tag_filter_all": "所有标签",
@@ -381,7 +381,7 @@
   "filler_status_filler": "填充",
   "filler_status_mixed": "混合",
 
-  "notes_title": "笔记 — {title} — Anime Tracker",
+  "notes_title": "笔记 — {title} — AniDex",
   "notes_your_score": "你的评分",
   "notes_not_rated": "未评分",
   "notes_anilist_average": "AniList 平均分",
@@ -450,7 +450,7 @@
   "relation_summary": "摘要",
   "relation_other": "相关作品",
 
-  "title_stats": "统计 — Anime Tracker",
+  "title_stats": "统计 — AniDex",
   "stats_page_title": "统计",
   "stats_drilldown_hint": "点击数字、柱状图或扇区即可查看背后对应的动画列表。",
   "stats_hl_episodes": "已观看集数",
@@ -531,7 +531,7 @@
 
   "stats_wrapped_link": "你的今年进度 →",
   "stats_wrapup_replay_btn": "↻ 显示回顾",
-  "title_stats_wrapped": "你的今年进度 — Anime Tracker",
+  "title_stats_wrapped": "你的今年进度 — AniDex",
   "stats_wrapped_page_title": "你的 {year} 年进度",
   "stats_wrapped_page_sub": "始终保持最新 — 没有年份选择器，这里只反映你今天为止在这一年中的进度。如需按年对比，请使用统计页面上的“年度番剧回顾”卡片。",
   "stats_wrapped_empty": "{year} 年还没有完成任何作品 — 完成后再回来看看吧。",
@@ -543,7 +543,7 @@
   "stats_wrapped_pace_on_pace": "进度与去年基本持平（今年同一时间点 {episodes} 集，去年为 {prior_episodes} 集）。",
   "stats_wrapped_pace_no_data": "暂无 {prior_year} 年的数据可用于比较进度。",
 
-  "title_recommendations": "推荐 — Anime Tracker",
+  "title_recommendations": "推荐 — AniDex",
   "rec_page_title": "为你推荐",
   "rec_suggestions_count": "{count} 个推荐",
   "rec_new_this_season": "（本季新增 {count} 个）",
@@ -581,7 +581,7 @@
   "rec_empty": "暂无推荐——运行推荐器以生成推荐内容。",
   "rec_seen_it_hint": "为其评分（可选），然后确认将其标记为已在 AniList 上完成。",
 
-  "title_library": "库 — Anime Tracker",
+  "title_library": "库 — AniDex",
   "lib_search_placeholder": "按标题、类型或标签筛选…",
   "lib_sort_label": "排序",
   "lib_sort_score": "评分",
@@ -637,7 +637,7 @@
   "lib_ep_note_quote_label": "喜欢的台词 / 难忘场景",
   "lib_ep_note_quote_placeholder": "例如一句台词，或让你印象深刻的场景…",
 
-  "title_admin": "管理 — Anime Tracker",
+  "title_admin": "管理 — AniDex",
   "admin_page_title": "管理",
   "admin_page_sub": "实例范围的配置和运维可见性。",
   "admin_tab_users": "用户",

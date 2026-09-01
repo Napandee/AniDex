@@ -1,5 +1,5 @@
 {
-  "name": "Anime Tracker",
+  "name": "AniDex — Your anime tracker to watch them all",
   "short_name": "AniDex",
   "description": "Personal anime tracking, rating, and recommendation site backed by AniList.",
   "start_url": "/",
