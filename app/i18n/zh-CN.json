@@ -352,7 +352,9 @@
   "queue_page_title": "观看队列",
   "queue_page_sub": "先按手动优先级排序，再按推荐分数排序。可在任意作品的笔记页面设置优先级，将其置顶。",
   "queue_tag_filter_all": "所有标签",
+  "queue_tag_filter_label": "按标签筛选",
   "queue_episode_filter_all": "所有集数",
+  "queue_episode_filter_label": "按集数筛选",
   "queue_ep_short": "≤13 集",
   "queue_ep_standard": "14–26 集",
   "queue_ep_long": "27+ 集",
@@ -922,6 +924,8 @@
   "pat_created_continue_btn": "我已保存此令牌 — 继续",
 
   "lib_collections_placeholder": "收藏集…",
+  "lib_collections_select_label": "应用已保存的收藏集",
+  "lib_status_select_label": "{title} 的状态",
   "lib_collections_save_btn": "保存筛选条件",
   "lib_collections_manage_btn": "管理",
   "lib_collections_save_modal_title": "保存为收藏集",

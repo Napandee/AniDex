@@ -352,7 +352,9 @@
   "queue_page_title": "वॉच कतार",
   "queue_page_sub": "पहले मैनुअल प्राथमिकता, फिर अनुशंसा स्कोर के अनुसार क्रमबद्ध। किसी भी शीर्षक को सबसे ऊपर पिन करने के लिए उसके नोट्स पेज से प्राथमिकता सेट करें।",
   "queue_tag_filter_all": "सभी टैग",
+  "queue_tag_filter_label": "टैग से फ़िल्टर करें",
   "queue_episode_filter_all": "सभी एपिसोड संख्याएँ",
+  "queue_episode_filter_label": "एपिसोड गिनती से फ़िल्टर करें",
   "queue_ep_short": "≤13 एप",
   "queue_ep_standard": "14–26 एप",
   "queue_ep_long": "27+ एप",
@@ -922,6 +924,8 @@
   "pat_created_continue_btn": "मैंने यह टोकन सुरक्षित रख लिया है — जारी रखें",
 
   "lib_collections_placeholder": "कलेक्शन…",
+  "lib_collections_select_label": "सहेजा गया संग्रह लागू करें",
+  "lib_status_select_label": "{title} की स्थिति",
   "lib_collections_save_btn": "फ़िल्टर सहेजें",
   "lib_collections_manage_btn": "प्रबंधित करें",
   "lib_collections_save_modal_title": "कलेक्शन के रूप में सहेजें",
