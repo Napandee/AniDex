@@ -529,8 +529,13 @@ nav {
 /* ── Back-to-top (issue #420) ────────────────────────────────────────────── */
 .back-to-top-fab {
   position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
+  /* Issue #441 — was bottom:1.5rem/right:1.5rem, which overlapped
+     .add-anime-fab (bottom:2rem, right:2rem, 3.25rem — no mobile override,
+     same at every width). Stacked above it instead, with a small gap, on
+     the same right offset so the two read as a deliberate vertical stack
+     rather than two independent, colliding buttons. */
+  bottom: 6rem;
+  right: 2rem;
   z-index: 100;
   width: 2.5rem;
   height: 2.5rem;
@@ -561,7 +566,10 @@ nav {
 .back-to-top-fab svg { width: 1.15rem; height: 1.15rem; }
 
 @media (max-width: 768px) {
-  .back-to-top-fab { bottom: 1rem; right: 1rem; width: 2.25rem; height: 2.25rem; }
+  /* Issue #441 — same overlap fix as the base rule above, just a tighter
+     gap since mobile has less room to spare. .add-anime-fab still has no
+     mobile override, so its footprint here is unchanged from desktop. */
+  .back-to-top-fab { bottom: 5.75rem; right: 1.5rem; width: 2.25rem; height: 2.25rem; }
 }
 
 main {
@@ -821,15 +829,11 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1.25rem;
-  /* Issue #430 — was `stretch`: every card in a row got force-stretched to
-     match its tallest row-mate, and .card-footer's margin-top:auto then
-     absorbed all that leftover height as a gap between the card's content
-     and its status/action row. `start` lets each card size to its own
-     content instead — margin-top:auto on an unstretched flex column has no
-     leftover space to consume, so the footer just follows the content
-     directly, no gap. Rows now have uneven card bottoms when content length
-     varies, which reads as normal card-grid variety rather than a bug. */
-  align-items: start;
+  /* Issue #430 tried `start` here to kill the dead-space gap `stretch` +
+     .card-footer's margin-top:auto produces in shorter cards — reverted
+     after seeing both live: uneven card bottoms across a row read worse
+     than the gap did. Back to `stretch`, gap accepted as the tradeoff. */
+  align-items: stretch;
 }
 
 .card {
@@ -3186,9 +3190,8 @@ a.drop-tag-chip-link:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1.25rem;
-  /* Issue #430 — same fix as .grid above: stretch + .rec-footer's
-     margin-top:auto produced a dead-space gap in shorter cards. */
-  align-items: start;
+  /* Issue #430 — reverted back to stretch, same call as .grid above. */
+  align-items: stretch;
 }
 
 .rec-card {
