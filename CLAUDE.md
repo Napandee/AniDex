@@ -66,6 +66,33 @@ it all into one self-hosted page.
   only, not a "this week" window; `years_ago == 0` (today, current year) is
   filtered out — that's not an anniversary of anything. See
   `_on_this_day_anniversaries()` in `app/main.py`.
+- Scheduled automatic backups (issue #372): admin-configurable time (same
+  Instance Config form/`instance_config` keys pattern as daily sync/weekly
+  recommender), writes a full-instance export into `instance_backups`, pruning
+  down to a retention count. See `_scheduled_instance_backup()`.
+- Franchise/watch-order view (issue #373): the anime notes page's "related"
+  section upgraded from a plain "in your library" boolean to actual per-related-
+  title watch status/progress, so a franchise's prequels/sequels show where you
+  actually stand on each, not just whether it's tracked at all.
+- Airing-schedule-change alerts (issue #374): notifies when a tracked
+  Watching/Planning title's next-episode air date shifts by more than a
+  meaningful threshold, not on every minor cache refresh — see the threshold
+  comment above `_check_airing_episodes()`.
+- Monthly recap digest (issue #375): a monthly notification (1st of the month,
+  offset from the existing weekly digest's Monday slot so the two don't compete)
+  summarizing the prior month's watch activity — see
+  `_compute_monthly_recap()`/`_scheduled_monthly_recap()`.
+- Tag management page (issue #376): `/tags` — rename, merge, or delete a
+  personal tag across every entry that carries it in one action, rather than
+  editing each anime's notes individually.
+- Web Push notifications (issue #377): a fourth notification channel alongside
+  Telegram/Discord/ntfy, opted into via a browser permission grant (installed
+  PWA or browser tab) rather than a Settings-form toggle — see
+  `app/notify.py`'s `WebPushChannel` and the `push_subscriptions` table.
+- AniList rate-limit/backoff visibility (issue #381): Admin → Instance Health
+  surfaces the last observed AniList rate-limit signal (source, retry-after,
+  when) from `anilist_rate_limit_state`, so a sync slowdown is visible instead
+  of silently retrying in the background — see `_anilist_rate_limit_status()`.
 
 **Out of scope — do not build these:**
 - No re-scraping Crunchyroll directly — AniList is the only data source this app talks to
@@ -86,7 +113,7 @@ than presenting them as guaranteed-current.
 
 ## Data Model
 
-See `schema.sql` in repo root. Three categories, kept in separate tables on purpose:
+See `schema.sql` in repo root. Four categories, kept in separate tables on purpose:
 - **AniList-sourced** (`anime`, `library_entries`, `airing_schedule_cache`,
   `anilist_title_search_cache`) — fully rebuildable by the sync job. Never hand-edit rows
   in these tables.
@@ -191,6 +218,24 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   reintroducing an unconditional skip. **Any future provider sync script — Jellyfin
   (#150–153) — must implement this same full_pull-gated create-vs-skip pattern from day
   one**, not ship the original bug and need this same fix retrofitted later.
+  **Issue #387 hardened this after a real incident**: a partial/interrupted dev run
+  against a real account left a few real `primevideo_sync_state` rows behind; the next
+  real run trusted that leftover state as "walk complete" via an unsafe fallback
+  (`has_existing_state` — "if sync-state rows already exist, assume the walk finished"),
+  flipping `full_pull` to `False` on a still-mostly-unwalked year of history and
+  auto-creating 16 bogus AniList entries in one run (14 of which were false-positive
+  title matches). Two fixes: (1) `load_walk_complete()`/`set_walk_complete()` now trust
+  only an explicit, persisted `{provider}_walk_complete` flag in `settings` — no row
+  means "hasn't completed a walk yet," full stop, no inference (migration 034 backfills
+  the flag once, explicitly, for CR/Netflix/Plex users who predated it). (2)
+  `resolve_or_create_user_list_entry()` now fetches the candidate's real AniList
+  metadata (`fetch_anilist_media_metadata()`) and runs a title-similarity gate
+  (`_title_similarity()`, `TITLE_SIMILARITY_THRESHOLD = 0.6`, tightened to
+  `UNKNOWN_METADATA_TITLE_SIMILARITY_THRESHOLD = 0.85` when AniList metadata itself
+  couldn't be fetched) before ever creating an entry — a weak title match no longer
+  silently becomes a real library row. Every provider script's `main()` also gained a
+  `DRY_RUN` env var (all four, not just Prime Video) that exercises this same
+  matching/validation path for real without ever opening a DB write connection.
 - **Recommender job**: runs `run_recommender.py`, same per-user/`USER_ID` pattern as the
   sync job. Scores unwatched/planning anime against that user's taste profile, writes to
   `recommendation_scores`. Never touches the `dismissed` flag.
@@ -210,10 +255,17 @@ See `schema.sql` in repo root. Three categories, kept in separate tables on purp
   endpoint). Also pushes ratings, status, and progress to AniList via `SaveMediaListEntry`
   — real-time for single-item edits, through the shared outbox above for bulk-status
   edits.
-- **Built-in scheduler**: APScheduler runs inside the app container. Daily sync and weekly
-  recommender fire automatically for every eligible user; schedule *time* is instance-wide
-  (one cron trigger regardless of user count), configurable via Admin → Instance Config
-  (moved there from Settings once Admin was split into tabs — see Epic #93).
+- **Built-in scheduler**: APScheduler runs inside the app container, registering 10 cron
+  jobs (see the `_scheduler.add_job()` calls in `app/main.py`): `daily_sync` and
+  `weekly_recommender` (per-user, admin-configurable time via Instance Config — moved
+  there from Settings once Admin was split into tabs, see Epic #93), `airing_schedule_refresh`
+  (hourly) and `airing_check` (hourly, feeds #374's change-alerts), `filler_data_refresh`
+  (#299, fixed 03:15 UTC), `weekly_digest` (Monday mornings), `monthly_recap` (#375, 1st
+  of the month, offset from `weekly_digest`'s slot), `wrapped_midyear_checkin` /
+  `wrapped_year_end_reminder` (#196, two fixed calendar dates), and `instance_backup`
+  (#372, admin-configurable time like the first two). `daily_sync`/`weekly_recommender`/
+  `instance_backup` are the only ones with a user-configurable *time*; the rest are fixed,
+  instance-wide UTC schedules chosen to avoid competing with each other.
 
 ## Deploy
 
@@ -232,9 +284,17 @@ See `.github/workflows/build-app.yml` for the full pipeline definition.
 
 Pull requests (including Dependabot's) run `.github/workflows/pr-validate.yml` — a
 build-only check (no push, no deploy) that gates merges before the real pipeline ever
-touches production. `.github/dependabot.yml` proposes weekly version bumps for
-`requirements.txt` and both base images; Postgres major-version bumps are deliberately
-excluded (see comment in that file — needs a real migration, not just a new tag).
+touches production. It's grown beyond a plain build since a real 2026-08-13 outage
+(issue #50) — a fastapi/starlette Dependabot bump passed CI and a manual smoke test that
+only hit a template-free route, then 500'd every real page in production. It now boots
+the built image against a real throwaway Postgres service container and smoke-tests both
+an authenticated route and a real CSRF-protected POST write (#379), and flags any PR that
+adds a new file under `migrations/` with a non-blocking `::warning::` annotation
+reminding the author that migrations aren't applied automatically and `LATEST_MIGRATION`
+needs bumping in the same PR (#380). `.github/dependabot.yml` proposes weekly version
+bumps for `requirements.txt` and both base images; Postgres major-version bumps are
+deliberately excluded (see comment
+in that file — needs a real migration, not just a new tag).
 `.github/workflows/notify-dependabot.yml` pings Telegram when a Dependabot PR opens.
 
 **GHCR gotcha worth knowing:** a package's automatic `GITHUB_TOKEN` write access is tied

@@ -3,7 +3,7 @@
 You don't need to know any of this to use AniDex — this page is for understanding what
 happens to your data, not a setup guide.
 
-AniDex's database keeps three kinds of data in separate tables, on purpose:
+AniDex's database keeps four kinds of data in separate tables, on purpose:
 
 ## 1. AniList-sourced data
 
@@ -30,6 +30,15 @@ Your login, sessions, invites, notification settings, personal access tokens, an
 admins) the audit log and instance-wide configuration. Not derived from AniList, not
 part of the personal layer either — this is just "the account this app knows about
 you," same as any other multi-user app.
+
+## 4. Episode filler-status cache
+
+Which episodes of a series are filler vs. canon, sourced from
+[AniFillerPedia](https://github.com/Napandee/AniFillerPedia) rather than AniList — kept
+separate from the AniList-sourced category above because it comes from a different
+source, though it shares the same shape: catalog-wide (not tied to any one account),
+fully rebuildable, never hand-edited. Refreshed on its own daily schedule, independent
+of your personal sync.
 
 ## Where credentials live
 

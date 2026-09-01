@@ -59,9 +59,9 @@ and a recommendation engine scored against your own taste profile.
   (optional)
 - **Prime Video sync** — watch history synced from Prime Video into AniList progress,
   cookie-authenticated, incremental (optional)
-- **Notifications** — new episode alerts, sync results, and a weekly digest, delivered to
-  any combination of Telegram, Discord (webhook), and ntfy, each toggled independently
-  (optional)
+- **Notifications** — new episode alerts, sync results, weekly and monthly digests, and
+  airing-schedule-change alerts, delivered to any combination of Telegram, Discord
+  (webhook), ntfy, and Web Push, each toggled independently (optional)
 - **Multi-language UI** — English, Spanish, Hindi, Japanese, and Simplified Chinese,
   switchable per-user in Settings
 
@@ -342,12 +342,14 @@ the "Sync Now" button on the Settings page (or `POST /api/sync`).
 
 ## Notifications (optional)
 
-Configured per-user under **Settings → Notifications**. Three channels are supported,
+Configured per-user under **Settings → Notifications**. Four channels are supported,
 each with its own on/off toggle so you can run any combination of them:
 
 - New episode alerts for anything in your Watching/Planning list
 - Daily sync success/failure notification
 - Weekly digest of upcoming episodes
+- Airing-schedule-change alerts when a tracked title's next-episode air date shifts
+- Monthly recap of the prior month's watch activity
 
 **Telegram** — set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` (in Settings, or in `.env`
 before first boot). Create a bot via [@BotFather](https://t.me/BotFather) to get a token;
@@ -360,6 +362,10 @@ they're Settings-only, since they're free-text URLs rather than a fixed provider
 **ntfy** — set a topic (and optionally a non-default server URL and auth token if
 self-hosting ntfy) in Settings. Uses [ntfy.sh](https://ntfy.sh) by default; no signup
 needed, just pick an unguessable topic name and subscribe to it in the ntfy app.
+
+**Web Push** — no credential needed, just click Enable and grant the browser's own
+permission prompt. Opted into per-device (installed PWA or browser tab), not per-account
+— enabling it on one device doesn't enable it on another.
 
 See the [notifications guide](docs/user-guide/notifications.md) for more.
 

@@ -10,7 +10,9 @@ Open any anime's detail page to edit these fields:
 - **Drop reason** — freeform text, shown next to DROPPED entries so future-you knows
   *why*, not just *that*.
 - **Custom tags** — your own labels, independent of AniList's genre/tag system. Used by
-  [Collections](collections.md) and bulk-tagging.
+  [Collections](collections.md) and bulk-tagging. Manage every tag you've ever created
+  — rename, merge two into one, or delete — from the **Tags** page (linked from
+  Settings), rather than editing each anime's notes individually.
 - **Mood tags** — a fixed picklist (comfort, hype, intense, sad, wholesome, dark, funny,
   relaxing, thought_provoking, bittersweet) for filtering by "what kind of watch is
   this," separate from freeform tags.
@@ -25,6 +27,13 @@ Each rewatch gets its **own** note history, separate from your first-watch notes
 "what I thought the first time" and "what I thought on rewatch #2" don't overwrite each
 other. The repeat count itself is tracked too, and feeds into [Stats](stats.md)'s
 most-rewatched breakdown and the Watch Queue's rewatch-reminder section.
+
+## Related titles / watch order
+
+If a title has prequels, sequels, or other AniList-defined relations, its notes page
+lists them in watch order along with your real status and progress on each one you've
+tracked — not just whether it's in your library, but where you actually stand on it.
+Useful for picking up a franchise partway through without hunting down what's next.
 
 ## None of this touches AniList
 
