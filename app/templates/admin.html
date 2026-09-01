@@ -73,6 +73,7 @@
               {% endif %}
             </td>
             <td>
+              <div class="admin-row-actions">
               <form method="post" action="/admin/users/{{ u.id }}/reset-password" class="admin-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn-save">{{ t('admin_reset_password_btn') }}</button>
@@ -100,6 +101,7 @@
                 <button type="submit" class="btn-save">{{ t('admin_reactivate_btn') }}</button>
               </form>
               {% endif %}
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -150,6 +152,7 @@
             <td>{{ i.created_at.strftime('%Y-%m-%d') if i.created_at else '—' }}</td>
             <td>{{ i.expires_at.strftime('%Y-%m-%d') if i.expires_at else '—' }}</td>
             <td>
+              <div class="admin-row-actions">
               {% if i.status in ('expired', 'revoked') %}
               <form method="post" action="/admin/invites/{{ i.id }}/resend" class="admin-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -161,6 +164,7 @@
                 <button type="submit" class="btn-save btn-warning">{{ t('admin_invite_revoke_btn') }}</button>
               </form>
               {% endif %}
+              </div>
             </td>
           </tr>
           {% else %}
