@@ -43,21 +43,22 @@ Exit 0 = success, Exit 1 = fatal error.
 """
 
 import base64
-import json
 import os
 import sys
 import uuid
 from datetime import datetime
 
 import httpx
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    enqueue_outbox_update, find_anilist_id, load_user_list_from_db, load_walk_complete,
-    resolve_or_create_user_list_entry, seed_search_cache, season_suffix_candidates,
-    set_walk_complete,
+    compute_fetch_watermark as _compute_fetch_watermark,
+    db_connect, determine_full_pull_watermark, emit_sync_result,
+    enqueue_outbox_update, find_anilist_id, load_title_search_cache, load_user_list_from_db,
+    make_logger, mark_walk_complete_if_reached_end,
+    process_max_aggregated_progress, resolve_or_create_user_list_entry,
+    save_provider_state, save_provider_watermark, save_title_search_cache_entry,
+    season_suffix_candidates, seed_search_cache,
 )
 
 load_dotenv()
@@ -88,21 +89,13 @@ MAX_PAGES = 200  # safety cap — the fetch loop should always stop at the water
                   # response shape doesn't match what this script expects.
 
 
-def log(msg):
-    print(f"[crunchysync] user={USER_ID} {msg}", flush=True)
+log = make_logger("crunchysync", USER_ID)
 
 
 def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
-    """Issue #46 — the only channel run_full_sync.py has for learning this step's real
-    entries-touched count back from the subprocess; it parses this exact prefix out of
-    captured stdout. Not emitted in DRY_RUN — that mode is a local investigation tool,
-    never invoked through run_full_sync.py."""
-    if DRY_RUN:
-        return
-    print(
-        f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
-        flush=True,
-    )
+    """emit_sync_result(), routed through this script's own DRY_RUN — see
+    anilist_sync_common.emit_sync_result()'s docstring (issue #46/#414)."""
+    emit_sync_result(entries_updated, entries_fetched, full_pull, DRY_RUN)
 
 
 # ── Crunchyroll API client ───────────────────────────────────────────────────
@@ -259,12 +252,6 @@ def parse_items(items: list[dict]) -> dict[tuple[str, int], dict]:
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
 
-def db_connect():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
-    conn.autocommit = False
-    return conn
-
-
 def ensure_table(conn):
     """Defensive fallback if run against a DB that somehow skipped schema.sql/migrations
     — matches the current multi-user schema (composite PK) so it can never create a
@@ -300,77 +287,24 @@ def load_cr_state(conn) -> dict[int, dict]:
 
 
 def save_cr_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO cr_sync_state (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, now())
-            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
-                series_title        = EXCLUDED.series_title,
-                last_seen_episode   = EXCLUDED.last_seen_episode,
-                rewatch_in_progress = EXCLUDED.rewatch_in_progress,
-                last_synced_at      = now()
-        """, (USER_ID, anilist_id, title, last_ep, rewatch))
-    conn.commit()
+    """save_provider_state() bound to cr_sync_state (issue #414) — kept as its own
+    function (rather than a bare re-export) so tests can still monkeypatch
+    sync_crunchyroll.save_cr_state directly, same as before this consolidation."""
+    save_provider_state(conn, "cr_sync_state", USER_ID, anilist_id, title, last_ep, rewatch)
 
 
 def save_watermark(conn, anilist_id: int, title: str, watched_at: datetime):
-    """Fetch-side watermark bookkeeping only (issue #45) — updates just
-    last_seen_watched_at, kept fully separate from save_cr_state()'s columns
-    (last_seen_episode/rewatch_in_progress) so this never touches process()'s own
-    state writes: the two functions' UPDATE SET clauses are column-disjoint, so
-    call order between them within a single sync run doesn't matter. Takes the max
-    with whatever's already stored so this can't regress the watermark."""
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO cr_sync_state (user_id, anilist_id, series_title, last_seen_watched_at, last_synced_at)
-            VALUES (%s, %s, %s, %s, now())
-            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
-                last_seen_watched_at = GREATEST(
-                    COALESCE(cr_sync_state.last_seen_watched_at, EXCLUDED.last_seen_watched_at),
-                    EXCLUDED.last_seen_watched_at
-                )
-        """, (USER_ID, anilist_id, title, watched_at))
-    conn.commit()
+    """save_provider_watermark() bound to cr_sync_state (issue #414) — see its
+    docstring for why this stays column-disjoint from save_cr_state()."""
+    save_provider_watermark(conn, "cr_sync_state", USER_ID, anilist_id, title, watched_at)
 
 
 def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
-    """The single cursor fetch_since() paginates against — the newest
-    last_seen_watched_at across all series from the previous sync. Mirrors
-    sync_netflix.py's compute_fetch_watermark exactly: CR's watch-history feed is
-    one chronological stream across all titles, so one watermark is enough to know
-    when pagination has caught up, even though state is still tracked per-series."""
-    values = [s["last_seen_watched_at"] for s in state_map.values() if s.get("last_seen_watched_at")]
-    return max(values) if values else None
-
-
-def load_title_search_cache(conn) -> dict[str, int | None]:
-    """Global (not per-user) AniList title-search cache (issue #115) — a search
-    result for a given title string is the same regardless of which user or
-    provider is asking, so this is shared across the whole instance. `conn` may
-    be None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
-    if conn is None:
-        return {}
-    with conn.cursor() as cur:
-        cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
-        return {row["title"]: row["media_id"] for row in cur.fetchall()}
-
-
-def save_title_search_cache_entry(conn, title: str, media_id: int | None):
-    """Persist one newly-resolved (or confirmed-no-match) title immediately, not
-    batched at the end of the run — issue #115's whole point is durability across
-    an interrupted sync, same principle as #104's walk_complete fix."""
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
-            ON CONFLICT (title) DO UPDATE SET media_id = EXCLUDED.media_id, cached_at = now()
-        """, (title, media_id))
-    conn.commit()
+    """Re-exported under this script's own name (issue #414) — main() now gets
+    this via determine_full_pull_watermark() instead of calling it directly, but
+    the shared implementation is kept available here under its historical name
+    too, since it's cheap and other tooling may still expect it on this module."""
+    return _compute_fetch_watermark(state_map)
 
 
 def load_title_overrides(conn) -> dict[tuple[str, int], int]:
@@ -474,120 +408,24 @@ def process(title: str, cr_ep: int, entry: dict, cr_state: dict | None,
     """
     Apply update logic for one series. Returns a short description of action taken.
     cr_state may be None on first sync for this series.
+
+    The actual branching logic (state machine) is shared with sync_plex.py/
+    sync_primevideo.py via anilist_sync_common.process_max_aggregated_progress()
+    (issue #414) — this wrapper just binds it to CR's own _update()/_save_state()
+    (so DRY_RUN and test monkeypatching of those still work exactly as before) and
+    label ("CR").
     """
-    status = entry["status"]
-    al_ep = entry["progress"]
-    repeat = entry["repeat"]
-    total = entry["total_episodes"]
-    al_id = None  # resolved by caller; passed via entry for convenience
     anilist_id = entry["anilist_id"]
 
-    last_ep = cr_state["last_seen_episode"] if cr_state else al_ep
-    rewatch_active = cr_state["rewatch_in_progress"] if cr_state else False
+    def update_fn(**kwargs):
+        _update(conn, anilist_id, **kwargs)
 
-    # ── Issue #252: brand-new AniList entry, not yet on the user's list ──────
-    # main() only ever builds a synthetic entry (for an incremental sync's
-    # unmatched-title case) with status=None — a real AniList entry's status is
-    # never None, so this is an unambiguous "create" sentinel. Must be checked
-    # before every other branch below: status=None satisfies none of their
-    # equality checks, so without this it would silently fall through to the
-    # generic progress-advance branch at the bottom, which only sets progress —
-    # missing the resolved decision that a newly-created entry defaults to
-    # WATCHING, not whatever AniList defaults an id-less SaveMediaListEntry to.
-    if status is None:
-        _update(conn, anilist_id, progress=cr_ep, status="WATCHING")
-        _save_state(conn, anilist_id, title, cr_ep, False)
-        return f"new AniList entry created → WATCHING ep {cr_ep}"
+    def save_state_fn(last_ep, rewatch):
+        _save_state(conn, anilist_id, title, last_ep, rewatch)
 
-    # ── First-time seeing a COMPLETED series in CR history ────────────────────
-    # Without prior state we can't safely distinguish "rewatch" from "first sync".
-    # Record state and do nothing — next sync will have a baseline.
-    if cr_state is None and status == "COMPLETED":
-        _save_state(conn, anilist_id, title, cr_ep, False)
-        return "first-sync (COMPLETED) — state recorded, no change"
-
-    # ── AniList status already REPEATING but rewatch not recorded in state ────
-    # Handles: user changes status to REPEATING in the app/AniList before sync
-    # runs. Set rewatch_active so subsequent syncs advance progress correctly.
-    # Issue #100 — _update() now enqueues to the outbox rather than pushing to
-    # AniList directly, and doesn't commit; call order with _save_state() (which
-    # does commit) no longer matters for correctness the way it used to when the
-    # update was a network call that could fail mid-flight — both now land in one
-    # atomic transaction, so either the outbox row + advanced watermark both
-    # persist or neither does. Kept in this order for consistency/minimal diff.
-    if status == "REPEATING" and not rewatch_active:
-        if cr_ep > al_ep:
-            _update(conn, anilist_id, progress=cr_ep)
-            _save_state(conn, anilist_id, title, cr_ep, True)
-            return f"rewatch detected (already REPEATING) → progress {al_ep} → {cr_ep}"
-        _save_state(conn, anilist_id, title, cr_ep, True)
-        return "rewatch detected (already REPEATING) — state recorded"
-
-    # ── Rewatch: COMPLETED but CR episode dropped below last-seen ────────────
-    # Must come BEFORE the no-change guard: cr_ep < last_ep satisfies that guard
-    # and would short-circuit before we ever detect the rewatch.
-    if status == "COMPLETED" and cr_ep < (last_ep or total or 999) and not rewatch_active:
-        _update(conn, anilist_id, progress=cr_ep, status="REPEATING")
-        _save_state(conn, anilist_id, title, cr_ep, True)
-        return f"rewatch started → REPEATING ep {cr_ep}"
-
-    # ── Rewatch: a new pass restarted while already mid-rewatch ─────────────
-    # Same signal as the branch immediately above, just for a series that's
-    # already REPEATING rather than freshly transitioning from COMPLETED: cr_ep
-    # only ever reflects genuinely NEW watch activity (fetch_since() already
-    # filtered out anything at/before the fetch watermark), so a fresh episode
-    # number LOWER than the stored peak (last_ep) can only mean the user
-    # rewatched an earlier episode — in practice, almost always "started this
-    # rewatch over again from episode 1" while several passes deep already
-    # (repeat_count > 0). Without this branch, cr_ep never numerically exceeds
-    # last_ep again until the user watches all the way back past the OLD peak,
-    # and the final fallback below (`max(cr_ep, last_ep)`) would otherwise
-    # silently re-lock last_seen_episode at that stale peak on every single
-    # future sync — the exact bug reported in issue #328 (confirmed live: a
-    # user rewatching Alderamin on the Sky from episode 1, 6 fresh episodes in
-    # one sitting, produced zero AniList updates because last_ep was already
-    # sitting at a higher point from an earlier pass).
-    if rewatch_active and cr_ep < last_ep:
-        _update(conn, anilist_id, progress=cr_ep)
-        _save_state(conn, anilist_id, title, cr_ep, True)
-        return f"new rewatch pass detected (was at {last_ep}) → progress reset to {cr_ep}"
-
-    # ── No progress since last sync ───────────────────────────────────────────
-    if cr_ep <= last_ep and not rewatch_active:
-        if cr_ep > al_ep:
-            # AniList is behind but we already processed this — shouldn't happen often
-            pass
-        else:
-            _save_state(conn, anilist_id, title, last_ep, rewatch_active)
-            return f"no change (CR={cr_ep}, last_seen={last_ep})"
-
-    # ── Rewatch completion: REPEATING and reached total episodes ─────────────
-    if rewatch_active and total and cr_ep >= total:
-        _update(conn, anilist_id, progress=cr_ep, status="COMPLETED", repeat=repeat + 1)
-        _save_state(conn, anilist_id, title, cr_ep, False)
-        return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
-
-    # ── Progress advance for active rewatch ───────────────────────────────────
-    if rewatch_active and cr_ep > al_ep:
-        _update(conn, anilist_id, progress=cr_ep)
-        _save_state(conn, anilist_id, title, cr_ep, True)
-        return f"rewatch progress {al_ep} → {cr_ep}"
-
-    # ── DROPPED: user picked it back up ──────────────────────────────────────
-    if status == "DROPPED" and cr_ep > last_ep:
-        _update(conn, anilist_id, progress=cr_ep, status="CURRENT")
-        _save_state(conn, anilist_id, title, cr_ep, False)
-        return f"resumed after DROP → CURRENT ep {cr_ep}"
-
-    # ── Normal progress advance (CURRENT, PAUSED) ─────────────────────────────
-    if cr_ep > al_ep:
-        _update(conn, anilist_id, progress=cr_ep)
-        _save_state(conn, anilist_id, title, cr_ep, False)
-        return f"progress {al_ep} → {cr_ep}"
-
-    # Nothing to do
-    _save_state(conn, anilist_id, title, max(cr_ep, last_ep), rewatch_active)
-    return f"AniList ({al_ep}) already at or ahead of CR ({cr_ep})"
+    return process_max_aggregated_progress(
+        title, cr_ep, entry, cr_state, "CR", update_fn, save_state_fn,
+    )
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -614,22 +452,13 @@ def main():
         cr_state_map = load_cr_state(conn)
         log(f"Loaded CR sync state for {len(cr_state_map)} series")
 
-    walk_complete = load_walk_complete(conn, "crunchyroll", USER_ID)
-    if walk_complete and FORCE_FULL_RESYNC:
-        log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        set_walk_complete(conn, "crunchyroll", USER_ID, False)  # persisted before the (possibly slow) fetch/process below,
-        walk_complete = False            # so an interruption leaves an honest "not complete" state
-        watermark = None
-    elif walk_complete:
-        watermark = compute_fetch_watermark(cr_state_map)
-    else:
-        log("Full walk not yet complete — re-walking full history this run")
-        watermark = None
     # Issue #252 — a full-pull run (initial connect OR a user-triggered Force Full
     # Resync, #20 — both land here via watermark being None) keeps the conservative
     # skip-if-untracked behavior below; only a genuine day-to-day incremental sync
     # (watermark is not None) is allowed to auto-create a new AniList entry.
-    full_pull = watermark is None
+    watermark, full_pull = determine_full_pull_watermark(
+        conn, "crunchyroll", USER_ID, cr_state_map, FORCE_FULL_RESYNC, log,
+    )
     log(f"Fetching Crunchyroll watch history since {watermark or '(no watermark — full walk)'}")
 
     client = CrunchyrollHistory(CRUNCHYROLL_ETP_RT)
@@ -648,9 +477,7 @@ def main():
     if not history:
         # Issue #104 — safe to mark complete here even though the processing loop
         # below never ran: there's nothing to process, so nothing can be stranded.
-        if reached_true_end:
-            set_walk_complete(conn, "crunchyroll", USER_ID, True)
-            log("Reached true end of Crunchyroll history — full walk marked complete")
+        mark_walk_complete_if_reached_end(conn, "crunchyroll", USER_ID, reached_true_end, "Crunchyroll", log)
         log("No new activity — nothing to do")
         if conn:
             conn.close()
@@ -758,9 +585,7 @@ def main():
     # permanently stranding matches if this loop got interrupted partway through: a
     # later sync would trust walk_complete and never re-walk to pick up what was
     # fetched but never reached.
-    if reached_true_end:
-        set_walk_complete(conn, "crunchyroll", USER_ID, True)
-        log("Reached true end of Crunchyroll history — full walk marked complete")
+    mark_walk_complete_if_reached_end(conn, "crunchyroll", USER_ID, reached_true_end, "Crunchyroll", log)
 
     if conn:
         conn.close()
