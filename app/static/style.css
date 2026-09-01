@@ -493,6 +493,44 @@ nav {
 .logout-fab:hover { background: var(--pill-danger-bg-hover); color: var(--pill-danger-text); transform: scale(1.08); }
 .logout-fab svg { width: 1.05rem; height: 1.05rem; }
 
+/* ── Back-to-top (issue #420) ────────────────────────────────────────────── */
+.back-to-top-fab {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 100;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--icon-fab-bg);
+  color: var(--icon-fab-text);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s, color 0.15s;
+}
+/* An author-stylesheet `display` on .back-to-top-fab always wins over the
+   browser's built-in `[hidden] { display: none }` UA rule regardless of
+   selector specificity (author origin beats UA origin in the cascade), so
+   the display:flex above would otherwise defeat the hidden attribute
+   entirely — this restores it explicitly. The opacity/transform pair only
+   animates the moment .back-to-top-fab--visible is added/removed on top of
+   that, so JS toggles both the hidden property and this class together
+   (see script.js) rather than relying on either alone. */
+.back-to-top-fab[hidden] { display: none; }
+.back-to-top-fab.back-to-top-fab--visible { opacity: 1; transform: translateY(0); }
+.back-to-top-fab:hover { background: var(--icon-fab-hover-bg); color: var(--icon-fab-hover-text); transform: translateY(-2px); }
+.back-to-top-fab svg { width: 1.15rem; height: 1.15rem; }
+
+@media (max-width: 768px) {
+  .back-to-top-fab { bottom: 1rem; right: 1rem; width: 2.25rem; height: 2.25rem; }
+}
+
 main {
   max-width: 1400px;
   margin: 0 auto;

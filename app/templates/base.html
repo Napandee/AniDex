@@ -24,24 +24,24 @@
        the same per-session token every <form method="post">'s own hidden
        csrf_token field carries — see app/csrf.py and _nav_context. -->
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <!-- v=71 — bumped for #418's .site-brand/.site-tagline header styles. See the
-       superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/
-       v=66/v=67/v=68/v=69/v=70 comments for why this needs bumping on every
+  <!-- v=72 — bumped for #420's .back-to-top-fab styles. See the superseded
+       v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/v=66/v=67/
+       v=68/v=69/v=70/v=71 comments for why this needs bumping on every
        style.css change in this repo: several parallel branches land CSS
        independently and a stale cache-bust value silently serves an old
        stylesheet to a browser that already cached the previous version — v=57
        itself only exists because #275 skipped this exact step. Re-check this
        against origin/main right before merging — another parallel PR may have
-       already claimed v=71. -->
-  <link rel="stylesheet" href="/static/style.css?v=71">
+       already claimed v=72. -->
+  <link rel="stylesheet" href="/static/style.css?v=72">
   <script>window.I18N = {{ i18n_json|safe }};</script>
-  <!-- v=29 — bumped for #312's global fetch() CSRF-header patch. See the
-       superseded v=28 comment for why this needs bumping on every script.js
+  <!-- v=31 — bumped for #420's back-to-top scroll listener. See the superseded
+       v=28/v=29/v=30 comments for why this needs bumping on every script.js
        change in this repo: several parallel branches land JS independently and a
        stale cache-bust value silently serves an old script.js to a browser that
        already cached the previous version. Re-check this against origin/main
-       right before merging — another parallel PR may have already claimed v=29. -->
-  <script src="/static/script.js?v=30" defer></script>
+       right before merging — another parallel PR may have already claimed v=31. -->
+  <script src="/static/script.js?v=31" defer></script>
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% if nav_impersonation %}
@@ -145,5 +145,11 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  {# Issue #420 — appears once the page has scrolled past a threshold (see
+     script.js), scrolls back to top on click. Bottom-right, deliberately away
+     from .account-fabs (top-right) so the two never overlap. #}
+  <button type="button" id="back-to-top" class="back-to-top-fab" hidden title="{{ t('back_to_top') }}" aria-label="{{ t('back_to_top') }}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+  </button>
 </body>
 </html>

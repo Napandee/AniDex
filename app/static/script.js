@@ -1644,3 +1644,31 @@ document.querySelectorAll('.tags-delete-form').forEach(form => {
     if (!ok) e.preventDefault();
   });
 });
+
+// ── Back to top (issue #420) ─────────────────────────────────────────────────
+// Rendered hidden in base.html for every page. Shown past a fixed scroll
+// threshold rather than tied to any one page's content height, so it works
+// the same on Library, Queue, Stats, etc. without per-page wiring.
+(function () {
+  const btn = document.getElementById('back-to-top');
+  if (!btn) return;
+
+  const SHOW_AFTER_PX = 400;
+  let visible = false;
+
+  function updateVisibility() {
+    const shouldShow = window.scrollY > SHOW_AFTER_PX;
+    if (shouldShow === visible) return;
+    visible = shouldShow;
+    btn.hidden = !shouldShow;
+    btn.classList.toggle('back-to-top-fab--visible', shouldShow);
+  }
+
+  window.addEventListener('scroll', updateVisibility, { passive: true });
+  updateVisibility();
+
+  btn.addEventListener('click', () => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+})();
