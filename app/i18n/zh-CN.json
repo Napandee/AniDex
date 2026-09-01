@@ -6,10 +6,12 @@
   "nav_streaming": "流媒体",
   "nav_stats": "统计",
   "nav_search_placeholder": "搜索…",
+  "nav_search_label": "搜索",
   "nav_settings_title": "设置",
   "nav_admin_title": "管理",
   "nav_logout_title": "退出登录",
   "back_to_top": "返回顶部",
+  "table_col_actions": "操作",
 
   "title_login": "登录 — AniDex",
   "title_register": "创建账户 — AniDex",
@@ -52,6 +54,7 @@
   "tags_col_tag": "标签",
   "tags_col_count": "条目数",
   "tags_col_rename": "重命名或合并到",
+  "tags_rename_label": "将“{tag}”重命名或合并到",
   "tags_rename_placeholder": "新名称",
   "tags_rename_btn": "重命名",
   "tags_delete_btn": "删除",
@@ -310,6 +313,7 @@
 
   "title_search": "搜索 — AniDex",
   "search_placeholder": "搜索标题和笔记…",
+  "search_page_title": "搜索",
   "search_submit_btn": "搜索",
   "search_result_singular": "找到 {count} 个结果，关于",
   "search_result_plural": "找到 {count} 个结果，关于",
@@ -586,6 +590,7 @@
 
   "title_library": "库 — AniDex",
   "lib_search_placeholder": "按标题、类型或标签筛选…",
+  "lib_search_label": "筛选库",
   "lib_sort_label": "排序",
   "lib_sort_score": "评分",
   "lib_sort_title": "标题",

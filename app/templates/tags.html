@@ -22,7 +22,7 @@
       <th>{{ t('tags_col_tag') }}</th>
       <th>{{ t('tags_col_count') }}</th>
       <th>{{ t('tags_col_rename') }}</th>
-      <th></th>
+      <th><span class="sr-only">{{ t('table_col_actions') }}</span></th>
     </tr>
   </thead>
   <tbody>
@@ -35,6 +35,7 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="old_tag" value="{{ row.tag }}">
           <input class="form-input form-input--narrow" type="text" name="new_tag"
+                 aria-label="{{ t('tags_rename_label', tag=row.tag) }}"
                  list="existing-tags-list" placeholder="{{ t('tags_rename_placeholder') }}" required>
           <button type="submit" class="btn-save">{{ t('tags_rename_btn') }}</button>
         </form>

@@ -2,6 +2,7 @@
 {% block title %}{{ t('title_library') }}{% endblock %}
 
 {% block content %}
+<h1 class="sr-only">{{ t('nav_library') }}</h1>
 <div class="status-tabs">
   {% for s in statuses %}
   {# Issue #330 — a saved collection (issue #200) can still target
@@ -15,6 +16,7 @@
 </div>
 
 <div class="library-toolbar">
+  <label for="library-search" class="sr-only">{{ t('lib_search_label') }}</label>
   <input id="library-search" class="library-search" type="search" placeholder="{{ t('lib_search_placeholder') }}" autocomplete="off">
 
   <div class="toolbar-right">
