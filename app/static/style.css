@@ -1925,6 +1925,16 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 .admin-table .status-warn { color: var(--pill-warning-text); }
 .admin-table .status-empty { color: var(--t7); font-style: italic; }
 .admin-table .btn-save { padding: 0.3rem 0.7rem; font-size: 0.78rem; }
+/* .admin-inline-form's own `display: inline` below is silently defeated by
+   `.settings-section form { display: flex; flex-direction: column; ...}`
+   (higher specificity — every admin table sits inside a .settings-section
+   wrapper) — each action button ended up a full-width block stacked with
+   big gaps instead of a compact inline row. Wrapping the forms in this flex
+   row fixes it at the container level instead of fighting that specificity:
+   the row's own `display: flex` controls how each form is laid out as a
+   flex item regardless of the form's own (irrelevant here, single-button)
+   internal display. */
+.admin-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .admin-inline-form { display: inline; }
 
 /* ── Auth pages (login / register / reset-password) ─────────────────────── */
@@ -2608,7 +2618,12 @@ a.upcoming-month-cell:focus-visible { outline: 2px solid var(--accent); outline-
   padding: 0.6rem 0;
   margin-bottom: 1rem;
   background: var(--bg-page);
+  /* Still scrolls (drag/swipe/trackpad), just without the always-visible
+     native scrollbar track sitting under a row of small pill buttons. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.stats-nav::-webkit-scrollbar { display: none; }
 
 .stats-nav-link {
   flex-shrink: 0;
