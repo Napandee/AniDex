@@ -821,7 +821,15 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1.25rem;
-  align-items: stretch;
+  /* Issue #430 — was `stretch`: every card in a row got force-stretched to
+     match its tallest row-mate, and .card-footer's margin-top:auto then
+     absorbed all that leftover height as a gap between the card's content
+     and its status/action row. `start` lets each card size to its own
+     content instead — margin-top:auto on an unstretched flex column has no
+     leftover space to consume, so the footer just follows the content
+     directly, no gap. Rows now have uneven card bottoms when content length
+     varies, which reads as normal card-grid variety rather than a bug. */
+  align-items: start;
 }
 
 .card {
@@ -851,6 +859,21 @@ main {
   overflow: hidden;
   background: var(--bg-surface-alt);
 }
+
+/* Issue #429 — a title with no cover_image_url at all (not a failed load,
+   genuinely no URL — a newly-synced title, or an old entry AniList never
+   had art for) used to render no image element whatsoever, so its card
+   started flush at the title while every grid row-mate with real art kept
+   its full-height image block, breaking row alignment. Reuses .cover's own
+   box/background so the placeholder occupies exactly the space a real
+   cover would. */
+.cover-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t7);
+}
+.cover-placeholder svg { width: 28%; height: 28%; }
 
 .progress-bar-wrap {
   height: 3px;
@@ -3100,7 +3123,9 @@ a.drop-tag-chip-link:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1.25rem;
-  align-items: stretch;
+  /* Issue #430 — same fix as .grid above: stretch + .rec-footer's
+     margin-top:auto produced a dead-space gap in shorter cards. */
+  align-items: start;
 }
 
 .rec-card {
