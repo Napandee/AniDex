@@ -19,7 +19,7 @@
 
   <div class="toolbar-right">
     <div class="collections-group">
-      <select id="collections-select" class="collections-select">
+      <select id="collections-select" class="collections-select" aria-label="{{ t('lib_collections_select_label') }}">
         <option value="">{{ t('lib_collections_placeholder') }}</option>
       </select>
       <button id="collections-save-btn" type="button" class="filter-btn" title="{{ t('lib_collections_save_btn') }}">{{ t('lib_collections_save_btn') }}</button>
@@ -282,7 +282,7 @@
       {% endif %}
 
       <div class="card-footer">
-        <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}">
+        <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}" aria-label="{{ t('lib_status_select_label', title=e.title_english or e.title_romaji) }}">
           {% for s in ['WATCHING', 'COMPLETED', 'DROPPED', 'PLANNING', 'PAUSED', 'REPEATING'] %}
           <option value="{{ s }}"{% if s == e.status %} selected{% endif %}>{{ t('status_' + s.lower()) }}</option>
           {% endfor %}

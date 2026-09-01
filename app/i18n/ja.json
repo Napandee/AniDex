@@ -352,7 +352,9 @@
   "queue_page_title": "視聴キュー",
   "queue_page_sub": "まず手動の優先度、次におすすめスコアの順で並んでいます。作品のノートページから優先度を設定すると一番上に固定されます。",
   "queue_tag_filter_all": "すべてのタグ",
+  "queue_tag_filter_label": "タグで絞り込む",
   "queue_episode_filter_all": "すべてのエピソード数",
+  "queue_episode_filter_label": "話数で絞り込む",
   "queue_ep_short": "13話以下",
   "queue_ep_standard": "14〜26話",
   "queue_ep_long": "27話以上",
@@ -922,6 +924,8 @@
   "pat_created_continue_btn": "このトークンを保存しました — 続ける",
 
   "lib_collections_placeholder": "コレクション…",
+  "lib_collections_select_label": "保存したコレクションを適用",
+  "lib_status_select_label": "{title}のステータス",
   "lib_collections_save_btn": "フィルターを保存",
   "lib_collections_manage_btn": "管理",
   "lib_collections_save_modal_title": "コレクションとして保存",

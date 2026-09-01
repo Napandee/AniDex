@@ -352,7 +352,9 @@
   "queue_page_title": "Watch Queue",
   "queue_page_sub": "Ordered by manual priority, then recommender score. Set a priority from any title's notes page to pin it to the top.",
   "queue_tag_filter_all": "All tags",
+  "queue_tag_filter_label": "Filter by tag",
   "queue_episode_filter_all": "All episode counts",
+  "queue_episode_filter_label": "Filter by episode count",
   "queue_ep_short": "≤13 eps",
   "queue_ep_standard": "14–26 eps",
   "queue_ep_long": "27+ eps",
@@ -922,6 +924,8 @@
   "pat_created_continue_btn": "I've saved this token — continue",
 
   "lib_collections_placeholder": "Collections…",
+  "lib_collections_select_label": "Apply a saved collection",
+  "lib_status_select_label": "Status for {title}",
   "lib_collections_save_btn": "Save filters",
   "lib_collections_manage_btn": "Manage",
   "lib_collections_save_modal_title": "Save as collection",

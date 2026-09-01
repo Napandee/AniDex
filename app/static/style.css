@@ -9,14 +9,22 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* neutral text/decoration scale, t1 = most prominent .. t9 = near-invisible */
+  /* neutral text/decoration scale, t1 = most prominent .. t9 = near-invisible.
+     t3-t7 are used as real (non-decorative) text throughout the app — nav
+     links, form labels, counters, status text — so all five are held to
+     WCAG AA's 4.5:1 minimum against both --bg-surface and
+     --bg-surface-hover, the two backgrounds they actually render on. t5-t7
+     used to be lighter than that floor allowed (verified failing via
+     axe-core's color-contrast rule against real rendered pages, issue #423);
+     t8/t9 stay outside that floor deliberately since nothing here uses them
+     for text a user needs to read, only borders/decoration. */
   --t1: #18181b;
   --t2: #3f3f46;
   --t3: #52525b;
   --t4: #6b6b76;
-  --t5: #86868f;
-  --t6: #9c9ca6;
-  --t7: #b3b3bc;
+  --t5: #5b5b64;
+  --t6: #62626b;
+  --t7: #696972;
   --t8: #c7c7cf;
   --t9: #d8d8de;
 
@@ -72,7 +80,10 @@
   --pill-violet-bg-hover: #ede9fe;
 
   --pill-success-text: #15803d;
-  --pill-success-text-strong: #16a34a;
+  /* issue #434 — was #16a34a (3.15:1 on --pill-success-bg, fails WCAG AA);
+     darkened to clear 4.5:1 while staying visually distinct from
+     --pill-success-text. */
+  --pill-success-text-strong: #0f7a38;
   --pill-success-border: #bbf7d0;
   --pill-success-bg: #f0fdf4;
 
@@ -118,9 +129,9 @@
     --t2: #e0e0e0;
     --t3: #cccccc;
     --t4: #aaaaaa;
-    --t5: #888888;
-    --t6: #666666;
-    --t7: #555555;
+    --t5: #9b9b9b;
+    --t6: #949494;
+    --t7: #8d8d8d;
     --t8: #444444;
     --t9: #333333;
 
@@ -212,9 +223,9 @@
   --t2: #e0e0e0;
   --t3: #cccccc;
   --t4: #aaaaaa;
-  --t5: #888888;
-  --t6: #666666;
-  --t7: #555555;
+  --t5: #9b9b9b;
+  --t6: #949494;
+  --t7: #8d8d8d;
   --t8: #444444;
   --t9: #333333;
 

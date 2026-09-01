@@ -352,7 +352,9 @@
   "queue_page_title": "Cola de visualización",
   "queue_page_sub": "Ordenada por prioridad manual y, después, por puntuación del recomendador. Define una prioridad desde la página de notas de cualquier título para fijarlo arriba del todo.",
   "queue_tag_filter_all": "Todas las etiquetas",
+  "queue_tag_filter_label": "Filtrar por etiqueta",
   "queue_episode_filter_all": "Todos los recuentos de episodios",
+  "queue_episode_filter_label": "Filtrar por número de episodios",
   "queue_ep_short": "≤13 eps",
   "queue_ep_standard": "14–26 eps",
   "queue_ep_long": "27+ eps",
@@ -922,6 +924,8 @@
   "pat_created_continue_btn": "He guardado este token — continuar",
 
   "lib_collections_placeholder": "Colecciones…",
+  "lib_collections_select_label": "Aplicar una colección guardada",
+  "lib_status_select_label": "Estado de {title}",
   "lib_collections_save_btn": "Guardar filtros",
   "lib_collections_manage_btn": "Gestionar",
   "lib_collections_save_modal_title": "Guardar como colección",

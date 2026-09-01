@@ -21,12 +21,12 @@
 <div class="library-toolbar">
   <div class="toolbar-right">
     <div class="tag-filter-group">
-      <select id="queue-tag-filter" class="tag-filter-select">
+      <select id="queue-tag-filter" class="tag-filter-select" aria-label="{{ t('queue_tag_filter_label') }}">
         <option value="">{{ t('queue_tag_filter_all') }}</option>
       </select>
     </div>
     <div class="episode-filter-group">
-      <select id="queue-episode-filter" class="episode-filter-select">
+      <select id="queue-episode-filter" class="episode-filter-select" aria-label="{{ t('queue_episode_filter_label') }}">
         <option value="">{{ t('queue_episode_filter_all') }}</option>
         <option value="short">{{ t('queue_ep_short') }}</option>
         <option value="standard">{{ t('queue_ep_standard') }}</option>
