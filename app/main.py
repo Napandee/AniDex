@@ -4519,6 +4519,8 @@ def queue(request: Request, status: str = None):
             lnk for lnk in (row["external_links"] or [])
             if lnk.get("site") in STREAMING_SITES
         ]
+        # Issue #433 — see the matching comment in library() above.
+        entry["mood_tags"] = _filter_mood_tags(entry.get("mood_tags"))
         reason = row["rec_reason"] or {}
         matched = (reason.get("matched_genres") or [])[:4]
         if reason.get("matched_studio"):
@@ -4572,6 +4574,8 @@ def queue(request: Request, status: str = None):
             lnk for lnk in (row["external_links"] or [])
             if lnk.get("site") in STREAMING_SITES
         ]
+        # Issue #433 — see the matching comment in library() above.
+        entry["mood_tags"] = _filter_mood_tags(entry.get("mood_tags"))
         rewatch_entries.append(entry)
 
     # Most overdue (oldest finish_date) first.
@@ -8558,6 +8562,11 @@ def library(request: Request, response: Response, status: str = None):
             lnk for lnk in (row["external_links"] or [])
             if lnk.get("site") in STREAMING_SITES
         ]
+        # Issue #433 — mirrors the write-side allowlist filter (_filter_mood_tags
+        # already guards every save) so a row still carrying a value from a
+        # since-retired MOOD_TAGS entry can't render a raw mood_xxx string
+        # instead of failing quietly the way the write path already does.
+        entry["mood_tags"] = _filter_mood_tags(entry.get("mood_tags"))
         updated_at = entry.get("anilist_updated_at")
         entry["is_stale"] = (
             entry["status"] == "WATCHING"
