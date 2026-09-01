@@ -308,3 +308,132 @@ def test_update_and_save_state_call_through_when_not_dry_run(monkeypatch):
     monkeypatch.setattr(plex, "save_plex_state", lambda *a, **kw: save_called.append((a, kw)))
     plex._save_state(object(), 154587, "Attack on Titan", 5, False)
     assert len(save_called) == 1
+
+
+# ── Guid-based fast path (issue #447) ────────────────────────────────────────
+# Prefix formats confirmed by reading HAMA/MyAnimeList.bundle source — see
+# sync_plex.py's module docstring for exactly how.
+
+def test_parse_agent_guid_ids_finds_hama_anidb_id():
+    guids = ["com.plexapp.agents.hama://anidb-4776", "imdb://tt0121220"]
+    assert plex.parse_agent_guid_ids(guids) == (4776, None)
+
+
+def test_parse_agent_guid_ids_finds_myanimelist_bundle_mal_id():
+    guids = ["net.fribbtastic.coding.plex.myanimelist://16498", "tmdb://1429"]
+    assert plex.parse_agent_guid_ids(guids) == (None, 16498)
+
+
+def test_parse_agent_guid_ids_finds_both_when_present():
+    guids = [
+        "com.plexapp.agents.hama://anidb-4776",
+        "net.fribbtastic.coding.plex.myanimelist://16498",
+    ]
+    assert plex.parse_agent_guid_ids(guids) == (4776, 16498)
+
+
+def test_parse_agent_guid_ids_none_when_only_default_agent_guids_present():
+    guids = ["imdb://tt2560140", "tmdb://tv/32281", "tvdb://267440"]
+    assert plex.parse_agent_guid_ids(guids) == (None, None)
+
+
+def test_parse_agent_guid_ids_ignores_malformed_guid_strings():
+    assert plex.parse_agent_guid_ids(["not-a-guid-at-all"]) == (None, None)
+
+
+def test_resolve_anilist_id_from_guids_prefers_mal_when_both_present():
+    mapping = {"anidb": {4776: 999}, "mal": {16498: 16498}}
+    guids = [
+        "com.plexapp.agents.hama://anidb-4776",
+        "net.fribbtastic.coding.plex.myanimelist://16498",
+    ]
+    assert plex.resolve_anilist_id_from_guids(guids, mapping) == 16498
+
+
+def test_resolve_anilist_id_from_guids_falls_back_to_anidb():
+    mapping = {"anidb": {4776: 999}, "mal": {}}
+    guids = ["com.plexapp.agents.hama://anidb-4776"]
+    assert plex.resolve_anilist_id_from_guids(guids, mapping) == 999
+
+
+def test_resolve_anilist_id_from_guids_none_when_id_not_in_mapping():
+    mapping = {"anidb": {}, "mal": {}}
+    guids = ["com.plexapp.agents.hama://anidb-4776"]
+    assert plex.resolve_anilist_id_from_guids(guids, mapping) is None
+
+
+def test_resolve_anilist_id_from_guids_none_for_default_agent_guids():
+    mapping = {"anidb": {4776: 999}, "mal": {16498: 16498}}
+    guids = ["imdb://tt2560140", "tmdb://tv/32281"]
+    assert plex.resolve_anilist_id_from_guids(guids, mapping) is None
+
+
+def test_fetch_item_guids_parses_metadata_response(monkeypatch):
+    client = plex.PlexHistory("https://plex.example", "token")
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "MediaContainer": {
+                    "Metadata": [
+                        {
+                            "Guid": [
+                                {"id": "com.plexapp.agents.hama://anidb-4776"},
+                                {"id": "imdb://tt0121220"},
+                            ]
+                        }
+                    ]
+                }
+            }
+
+    monkeypatch.setattr(client.client, "get", lambda *a, **kw: _Resp())
+    guids = client.fetch_item_guids("12345")
+    assert guids == ["com.plexapp.agents.hama://anidb-4776", "imdb://tt0121220"]
+
+
+def test_fetch_item_guids_empty_on_request_failure(monkeypatch):
+    client = plex.PlexHistory("https://plex.example", "token")
+
+    def _raise(*a, **kw):
+        raise ConnectionError("boom")
+
+    monkeypatch.setattr(client.client, "get", _raise)
+    assert client.fetch_item_guids("12345") == []
+
+
+def test_fetch_item_guids_empty_when_no_metadata_returned(monkeypatch):
+    client = plex.PlexHistory("https://plex.example", "token")
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"MediaContainer": {}}
+
+    monkeypatch.setattr(client.client, "get", lambda *a, **kw: _Resp())
+    assert client.fetch_item_guids("12345") == []
+
+
+def test_parse_items_captures_grandparent_rating_key_for_episodes():
+    item = _episode_item(grandparentRatingKey="789")
+    result = plex.parse_items([item])
+    assert result[("Attack on Titan", 1)]["rating_key"] == "789"
+
+
+def test_parse_items_captures_rating_key_for_movies():
+    item = {
+        "type": "movie",
+        "title": "A Silent Voice",
+        "ratingKey": "555",
+        "viewedAt": _ts("2026-08-14T20:00:00Z"),
+    }
+    result = plex.parse_items([item])
+    assert result[("A Silent Voice", 1)]["rating_key"] == "555"
+
+
+def test_load_id_mapping_cache_empty_when_conn_is_none():
+    assert plex.load_id_mapping_cache(None) == {"anidb": {}, "mal": {}}

@@ -420,6 +420,24 @@ CREATE TABLE manga_adaptation_sync_state (
     last_checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- AniDB/MAL -> AniList id mapping cache (issue #447), sourced from
+-- Fribb/anime-lists. Global, not scoped to the local `anime` table (useful for
+-- titles Plex has matched that aren't in the catalog yet) — no per-row
+-- sync-state table, since a weekly run just replaces the whole thing in one
+-- pass from a single upstream JSON file. See
+-- migrations/043_id_mapping_cache.sql and scripts/sync_id_mappings.py.
+CREATE TABLE anidb_mal_mapping_cache (
+    anilist_id   INTEGER NOT NULL PRIMARY KEY,
+    anidb_id     INTEGER,
+    mal_id       INTEGER,
+    synced_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_anidb_mal_mapping_cache_anidb_id
+    ON anidb_mal_mapping_cache (anidb_id) WHERE anidb_id IS NOT NULL;
+CREATE INDEX idx_anidb_mal_mapping_cache_mal_id
+    ON anidb_mal_mapping_cache (mal_id) WHERE mal_id IS NOT NULL;
+
 -- =========================================================================
 -- PERSONAL LAYER (never touched by sync — this is the reason the site exists)
 -- =========================================================================
