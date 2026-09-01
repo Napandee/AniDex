@@ -6,10 +6,12 @@
   "nav_streaming": "配信",
   "nav_stats": "統計",
   "nav_search_placeholder": "検索…",
+  "nav_search_label": "検索",
   "nav_settings_title": "設定",
   "nav_admin_title": "管理",
   "nav_logout_title": "ログアウト",
   "back_to_top": "トップに戻る",
+  "table_col_actions": "操作",
 
   "title_login": "ログイン — AniDex",
   "title_register": "アカウント作成 — AniDex",
@@ -52,6 +54,7 @@
   "tags_col_tag": "タグ",
   "tags_col_count": "エントリー数",
   "tags_col_rename": "名前変更・統合先",
+  "tags_rename_label": "「{tag}」の名前変更・統合先",
   "tags_rename_placeholder": "新しい名前",
   "tags_rename_btn": "名前変更",
   "tags_delete_btn": "削除",
@@ -310,6 +313,7 @@
 
   "title_search": "検索 — AniDex",
   "search_placeholder": "タイトルとメモを検索…",
+  "search_page_title": "検索",
   "search_submit_btn": "検索",
   "search_result_singular": "{count}件の結果",
   "search_result_plural": "{count}件の結果",
@@ -586,6 +590,7 @@
 
   "title_library": "ライブラリ — AniDex",
   "lib_search_placeholder": "タイトル・ジャンル・タグで絞り込み…",
+  "lib_search_label": "ライブラリを絞り込む",
   "lib_sort_label": "並び替え",
   "lib_sort_score": "評価",
   "lib_sort_title": "タイトル",

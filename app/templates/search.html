@@ -3,6 +3,7 @@
 
 {% block content %}
 <div class="search-page">
+  <h1 class="sr-only">{{ t('search_page_title') }}</h1>
 
   <form class="search-form" action="/search" method="get">
     <input class="search-input" type="search" name="q" value="{{ q }}" placeholder="{{ t('search_placeholder') }}" autofocus autocomplete="off">

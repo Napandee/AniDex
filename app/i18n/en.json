@@ -6,10 +6,12 @@
   "nav_streaming": "Streaming",
   "nav_stats": "Stats",
   "nav_search_placeholder": "Search…",
+  "nav_search_label": "Search",
   "nav_settings_title": "Settings",
   "nav_admin_title": "Admin",
   "nav_logout_title": "Log out",
   "back_to_top": "Back to top",
+  "table_col_actions": "Actions",
 
   "title_login": "Log in — AniDex",
   "title_register": "Create account — AniDex",
@@ -52,6 +54,7 @@
   "tags_col_tag": "Tag",
   "tags_col_count": "Entries",
   "tags_col_rename": "Rename or merge into",
+  "tags_rename_label": "Rename or merge \"{tag}\" into",
   "tags_rename_placeholder": "new name",
   "tags_rename_btn": "Rename",
   "tags_delete_btn": "Delete",
@@ -309,6 +312,7 @@
   "link_go_to_library": "Go to library tab",
 
   "title_search": "Search — AniDex",
+  "search_page_title": "Search",
   "search_placeholder": "Search titles and notes…",
   "search_submit_btn": "Search",
   "search_result_singular": "{count} result for",
@@ -586,6 +590,7 @@
 
   "title_library": "Library — AniDex",
   "lib_search_placeholder": "Filter by title, genre or tag…",
+  "lib_search_label": "Filter library",
   "lib_sort_label": "Sort",
   "lib_sort_score": "Score",
   "lib_sort_title": "Title",

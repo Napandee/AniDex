@@ -38,7 +38,8 @@
       {% if password_error %}<p class="settings-error">{{ password_error }}</p>{% endif %}
       <form method="post" action="/settings/password" class="password-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input class="form-input" type="password" name="password" minlength="8" required
+        <label for="account-password-input" class="sr-only">{{ t('account_password_label') }}</label>
+        <input id="account-password-input" class="form-input" type="password" name="password" minlength="8" required
                placeholder="{% if account.has_password %}{{ t('account_password_placeholder_change') }}{% else %}{{ t('account_password_placeholder_set') }}{% endif %}">
         <button type="submit" class="btn-save">{% if account.has_password %}{{ t('account_password_btn_change') }}{% else %}{{ t('account_password_btn_set') }}{% endif %}</button>
       </form>
@@ -93,7 +94,8 @@
       {% if account.totp_enabled %}
       <form method="post" action="/settings/2fa/disable" class="password-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input class="form-input" type="password" name="password" required autocomplete="current-password"
+        <label for="twofa-disable-password-input" class="sr-only">{{ t('account_password_label') }}</label>
+        <input id="twofa-disable-password-input" class="form-input" type="password" name="password" required autocomplete="current-password"
                placeholder="{{ t('twofa_disable_password_placeholder') }}">
         <button type="submit" class="btn-unlink">{{ t('twofa_disable_btn') }}</button>
       </form>
@@ -119,7 +121,7 @@
             <th>{{ t('account_sessions_col_ip') }}</th>
             <th>{{ t('account_sessions_col_last_active') }}</th>
             <th>{{ t('account_sessions_col_started') }}</th>
-            <th></th>
+            <th><span class="sr-only">{{ t('table_col_actions') }}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -588,7 +590,7 @@
                   <th>{{ t('sync_cr_overrides_col_title') }}</th>
                   <th>{{ t('sync_cr_overrides_col_season') }}</th>
                   <th>{{ t('sync_cr_overrides_col_anilist_id') }}</th>
-                  <th></th>
+                  <th><span class="sr-only">{{ t('table_col_actions') }}</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -978,7 +980,7 @@
             <th>{{ t('pat_scope_label') }}</th>
             <th>{{ t('pat_col_created') }}</th>
             <th>{{ t('pat_col_last_used') }}</th>
-            <th></th>
+            <th><span class="sr-only">{{ t('table_col_actions') }}</span></th>
           </tr>
         </thead>
         <tbody>

@@ -6,10 +6,12 @@
   "nav_streaming": "Streaming",
   "nav_stats": "Estadísticas",
   "nav_search_placeholder": "Buscar…",
+  "nav_search_label": "Buscar",
   "nav_settings_title": "Ajustes",
   "nav_admin_title": "Administración",
   "nav_logout_title": "Cerrar sesión",
   "back_to_top": "Volver arriba",
+  "table_col_actions": "Acciones",
 
   "title_login": "Iniciar sesión — AniDex",
   "title_register": "Crear cuenta — AniDex",
@@ -52,6 +54,7 @@
   "tags_col_tag": "Etiqueta",
   "tags_col_count": "Entradas",
   "tags_col_rename": "Renombrar o combinar en",
+  "tags_rename_label": "Renombrar o combinar \"{tag}\" en",
   "tags_rename_placeholder": "nuevo nombre",
   "tags_rename_btn": "Renombrar",
   "tags_delete_btn": "Eliminar",
@@ -310,6 +313,7 @@
 
   "title_search": "Buscar — AniDex",
   "search_placeholder": "Buscar en títulos y notas…",
+  "search_page_title": "Buscar",
   "search_submit_btn": "Buscar",
   "search_result_singular": "{count} resultado para",
   "search_result_plural": "{count} resultados para",
@@ -586,6 +590,7 @@
 
   "title_library": "Biblioteca — AniDex",
   "lib_search_placeholder": "Filtrar por título, género o etiqueta…",
+  "lib_search_label": "Filtrar biblioteca",
   "lib_sort_label": "Ordenar",
   "lib_sort_score": "Puntuación",
   "lib_sort_title": "Título",

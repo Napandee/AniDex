@@ -6,10 +6,12 @@
   "nav_streaming": "स्ट्रीमिंग",
   "nav_stats": "आँकड़े",
   "nav_search_placeholder": "खोजें…",
+  "nav_search_label": "खोजें",
   "nav_settings_title": "सेटिंग्स",
   "nav_admin_title": "एडमिन",
   "nav_logout_title": "लॉग आउट",
   "back_to_top": "ऊपर वापस जाएं",
+  "table_col_actions": "कार्रवाइयां",
 
   "title_login": "लॉग इन करें — AniDex",
   "title_register": "खाता बनाएँ — AniDex",
@@ -52,6 +54,7 @@
   "tags_col_tag": "टैग",
   "tags_col_count": "एंट्री",
   "tags_col_rename": "नाम बदलें या इसमें मर्ज करें",
+  "tags_rename_label": "\"{tag}\" का नाम बदलें या इसमें मर्ज करें",
   "tags_rename_placeholder": "नया नाम",
   "tags_rename_btn": "नाम बदलें",
   "tags_delete_btn": "हटाएं",
@@ -310,6 +313,7 @@
 
   "title_search": "खोजें — AniDex",
   "search_placeholder": "शीर्षकों और नोट्स में खोजें…",
+  "search_page_title": "खोजें",
   "search_submit_btn": "खोजें",
   "search_result_singular": "{count} परिणाम मिला",
   "search_result_plural": "{count} परिणाम मिले",
@@ -586,6 +590,7 @@
 
   "title_library": "लाइब्रेरी — AniDex",
   "lib_search_placeholder": "शीर्षक, जॉनर या टैग से फ़िल्टर करें…",
+  "lib_search_label": "लाइब्रेरी फ़िल्टर करें",
   "lib_sort_label": "क्रमबद्ध करें",
   "lib_sort_score": "स्कोर",
   "lib_sort_title": "शीर्षक",

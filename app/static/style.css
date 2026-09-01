@@ -88,13 +88,17 @@
   --pill-success-bg: #f0fdf4;
 
   --pill-danger-text: #b91c1c;
-  --pill-danger-text-strong: #dc2626;
+  /* was #dc2626 (4.41:1 on --pill-danger-bg, fails WCAG AA) — same audit
+     pass as issue #434's --pill-success-text-strong fix. */
+  --pill-danger-text-strong: #c01a1a;
   --pill-danger-border: #fecaca;
   --pill-danger-bg: #fef2f2;
   --pill-danger-bg-hover: #fee2e2;
 
   --pill-warning-text: #b45309;
-  --pill-warning-text-strong: #d97706;
+  /* was #d97706 (3.07:1 on --pill-warning-bg, fails WCAG AA) — same audit
+     pass as issue #434's --pill-success-text-strong fix. */
+  --pill-warning-text-strong: #a35908;
   --pill-warning-border: #fde68a;
   --pill-warning-bg: #fffbeb;
 
@@ -103,7 +107,9 @@
   --pill-orange-bg: #fff7ed;
 
   --pill-teal-text: #0f766e;
-  --pill-teal-text-strong: #14b8a6;
+  /* was #14b8a6 (2.39:1 on --pill-teal-bg, fails WCAG AA badly) — same audit
+     pass as issue #434's --pill-success-text-strong fix. */
+  --pill-teal-text-strong: #0b7a70;
   --pill-teal-border: #99f6e4;
   --pill-teal-bg: #f0fdfa;
 
@@ -413,6 +419,22 @@ body {
 
 .whats-new-dismiss:hover {
   color: var(--pill-info-text-strong);
+}
+
+/* Visually hidden but still reachable by assistive tech (issue #424) — for
+   pages where a literal on-page <h1> would duplicate context the layout
+   already gives sighted users (e.g. Library's own status tabs), but a
+   screen reader still needs a real page-topic heading to land on. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 header {
@@ -1198,7 +1220,7 @@ main {
   margin-top: auto;
   padding-top: 0.5rem;
   font-size: 0.7rem;
-  color: var(--t8);
+  color: var(--t7);
   text-decoration: none;
   transition: color 0.15s;
 }
@@ -1229,7 +1251,7 @@ main {
 .notes-score-empty { color: var(--t7); font-size: 0.8rem; }
 
 .extra-section { margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1.5rem; }
-.extra-empty { font-size: 0.8rem; color: var(--t8); margin: 0; }
+.extra-empty { font-size: 0.8rem; color: var(--t7); margin: 0; }
 .extra-heading { font-size: 0.9rem; font-weight: 600; color: var(--t5); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
 
 .also-watching-list { display: flex; flex-direction: column; }
@@ -1338,7 +1360,7 @@ main {
 a.filler-episode-range { cursor: pointer; }
 a.filler-episode-range:hover { filter: brightness(1.08); }
 
-.filler-attribution { font-size: 0.72rem; color: var(--t8); margin: 0.85rem 0 0; }
+.filler-attribution { font-size: 0.72rem; color: var(--t7); margin: 0.85rem 0 0; }
 .filler-attribution a { color: var(--t7); margin-left: 0.3rem; }
 
 .notes-form { display: flex; flex-direction: column; gap: 1.25rem; }
@@ -1346,7 +1368,7 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 .form-field { display: flex; flex-direction: column; gap: 0.35rem; }
 
 .form-label { font-size: 0.8rem; color: var(--t5); font-weight: 500; }
-.form-label-hint { font-size: 0.75rem; color: var(--t8); font-weight: 400; }
+.form-label-hint { font-size: 0.75rem; color: var(--t7); font-weight: 400; }
 
 .form-input, .form-textarea {
   background: var(--bg-surface);
@@ -1366,7 +1388,7 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
    uses elsewhere. These two are used on every Settings field and notes field
    in the app, making this the broadest instance of the gap. */
 .form-input:focus-visible, .form-textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.form-input::placeholder, .form-textarea::placeholder { color: var(--t8); }
+.form-input::placeholder, .form-textarea::placeholder { color: var(--t7); }
 
 .form-actions { display: flex; gap: 0.75rem; padding-top: 0.25rem; }
 
@@ -1420,7 +1442,7 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 }
 .btn-cancel:hover { color: var(--t5); border-color: var(--border-strong); }
 
-.settings-section-label { font-size: 0.8rem; color: var(--t8); padding-top: 0.5rem; }
+.settings-section-label { font-size: 0.8rem; color: var(--t7); padding-top: 0.5rem; }
 
 /* Used by admin.html's multi-field forms (invites, privacy defaults, OAuth settings) */
 .settings-form { display: flex; flex-direction: column; gap: 0; }
@@ -1803,7 +1825,7 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 .sync-log-table .log-error { color: var(--pill-danger-text); }
 .sync-log-table .log-running { color: var(--pill-info-text-strong); }
 .sync-log-table .log-partial { color: var(--pill-warning-text-strong); }
-.sync-log-empty { color: var(--t8); font-style: italic; }
+.sync-log-empty { color: var(--t7); font-style: italic; }
 
 .step-chips { display: inline-flex; gap: 0.3rem; margin-left: 0.5rem; vertical-align: middle; }
 .step-chip { width: 0.55rem; height: 0.55rem; border-radius: 50%; display: inline-block; }
@@ -1847,7 +1869,7 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 .admin-table .status-ok { color: var(--pill-success-text); }
 .admin-table .status-error { color: var(--pill-danger-text); }
 .admin-table .status-warn { color: var(--pill-warning-text); }
-.admin-table .status-empty { color: var(--t8); font-style: italic; }
+.admin-table .status-empty { color: var(--t7); font-style: italic; }
 .admin-table .btn-save { padding: 0.3rem 0.7rem; font-size: 0.78rem; }
 .admin-inline-form { display: inline; }
 
@@ -1885,7 +1907,7 @@ body.auth-page main {
 .auth-links { margin-top: 1.25rem; font-size: 0.82rem; color: var(--t6); text-align: center; }
 .auth-links a { color: var(--pill-info-text); text-decoration: none; }
 
-.auth-note { margin-top: 0.9rem; font-size: 0.78rem; color: var(--t8); text-align: center; line-height: 1.4; }
+.auth-note { margin-top: 0.9rem; font-size: 0.78rem; color: var(--t7); text-align: center; line-height: 1.4; }
 
 /* ── Two-factor authentication (issue #83) ──────────────────────────────── */
 .twofa-qr-wrap { display: flex; justify-content: center; margin: 1.25rem 0; }
@@ -1938,7 +1960,7 @@ body.auth-page main {
   gap: 0.75rem;
   margin: 1.25rem 0;
   font-size: 0.75rem;
-  color: var(--t8);
+  color: var(--t7);
 }
 .auth-divider::before, .auth-divider::after {
   content: "";
@@ -2137,7 +2159,7 @@ body.auth-page main {
 .queue-rank {
   font-size: 1.1rem;
   font-weight: 700;
-  color: var(--t9);
+  color: var(--t7);
   min-width: 1.75rem;
   text-align: right;
   padding-top: 0.1rem;
@@ -2375,7 +2397,7 @@ body.auth-page main {
 
 .upcoming-grid-empty {
   font-size: 0.75rem;
-  color: var(--t8);
+  color: var(--t7);
   margin: 0;
 }
 
@@ -2486,7 +2508,7 @@ a.upcoming-month-cell:focus-visible { outline: 2px solid var(--accent); outline-
 .upcoming-month-overflow {
   display: inline-block;
   font-size: 0.65rem;
-  color: var(--t8);
+  color: var(--t7);
   padding-left: 0.15rem;
 }
 
@@ -3199,7 +3221,7 @@ a.drop-tag-chip-link:focus-visible {
   flex-shrink: 0;
 }
 
-.match-empty { font-size: 0.78rem; color: var(--t9); }
+.match-empty { font-size: 0.78rem; color: var(--t7); }
 .genre.match { background: var(--pill-info-border); color: var(--pill-info-text-strong); }
 .similar-to-title { font-size: 0.78rem; color: var(--t3); font-style: italic; }
 .community-score { color: var(--pill-warning-text); }
@@ -3248,7 +3270,7 @@ a.drop-tag-chip-link:focus-visible {
   align-items: center;
   gap: 0.3rem;
 }
-.dismiss-label { font-size: 0.68rem; color: var(--t8); flex-shrink: 0; }
+.dismiss-label { font-size: 0.68rem; color: var(--t7); flex-shrink: 0; }
 .dismiss-chip {
   background: none;
   border: 1px solid var(--border);
