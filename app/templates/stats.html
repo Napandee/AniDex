@@ -8,6 +8,28 @@
     <h1 class="page-title">{{ t('stats_page_title') }}</h1>
   </div>
 
+  {# Issue #432 — jump-to-section nav. Several targets below are sections the
+     JS hides entirely when the user has no usable data for them (new
+     account, too few dropped/rated entries, etc.) — script.js's own
+     .stats-nav-link[data-nav-target] wiring near the bottom of this file's
+     script mirrors each target's `hidden` state onto its nav link via a
+     MutationObserver, so a nav item never dead-links to a section that
+     isn't actually there. #}
+  <nav class="stats-nav" aria-label="{{ t('stats_nav_overview') }}">
+    <a href="#stats-headlines" class="stats-nav-link">{{ t('stats_nav_overview') }}</a>
+    <a href="#wrapup-card" class="stats-nav-link">{{ t('stats_nav_year') }}</a>
+    <a href="#streaming-coverage-card" class="stats-nav-link">{{ t('stats_nav_streaming') }}</a>
+    <a href="#library-charts-section" class="stats-nav-link">{{ t('stats_nav_charts') }}</a>
+    <a href="#watch-activity-section" class="stats-nav-link" data-nav-target="watch-activity-section" hidden>{{ t('stats_nav_activity') }}</a>
+    <a href="#taste-drift-section" class="stats-nav-link" data-nav-target="taste-drift-section" hidden>{{ t('stats_nav_taste_drift') }}</a>
+    <a href="#studio-loyalty-section" class="stats-nav-link" data-nav-target="studio-loyalty-section" hidden>{{ t('stats_nav_studios') }}</a>
+    <a href="#format-split-section" class="stats-nav-link">{{ t('stats_nav_format') }}</a>
+    <a href="#seasonal-follow-through-section" class="stats-nav-link" data-nav-target="seasonal-follow-through-section" hidden>{{ t('stats_nav_seasonal') }}</a>
+    <a href="#rewatch-section" class="stats-nav-link">{{ t('stats_nav_rewatches') }}</a>
+    <a href="#drop-patterns-section" class="stats-nav-link" data-nav-target="drop-patterns-section" hidden>{{ t('stats_nav_drop_patterns') }}</a>
+    <a href="#rec-outcomes-section" class="stats-nav-link" data-nav-target="rec-outcomes-section" hidden>{{ t('stats_nav_recommendations') }}</a>
+  </nav>
+
   <p class="stats-drilldown-hint">{{ t('stats_drilldown_hint') }}</p>
 
   {# Click-through drill-down (issue #225) — Trakt-style: a stat card links to the
@@ -130,7 +152,7 @@
     <a href="/streaming" class="streaming-card-cta">{{ t('stats_streaming_cta') }}</a>
   </div>
 
-  <div class="stats-grid">
+  <div class="stats-grid" id="library-charts-section">
     <div class="chart-card">
       <h2 class="chart-title">{{ t('stats_chart_status') }}</h2>
       <canvas id="chart-status"></canvas>
@@ -241,7 +263,7 @@
        "started while airing" definition and why it can't be built from
        airing_schedule_cache (that table only ever holds not-yet-aired
        episodes). -->
-  <div class="stats-grid">
+  <div class="stats-grid" id="format-split-section">
     <div class="chart-card chart-card--wide">
       <h2 class="chart-title">{{ t('stats_format_split_title') }}</h2>
       <p class="drop-patterns-sub">{{ t('stats_format_split_sub') }}</p>
@@ -272,7 +294,7 @@
        just falls back to an empty-state message per column when there's nothing to
        show yet, since there's no privacy/small-sample concern with a user's own
        rewatch counts. -->
-  <div class="stats-grid rewatch-grid">
+  <div class="stats-grid rewatch-grid" id="rewatch-section">
     <div class="chart-card">
       <h2 class="chart-title">{{ t('stats_chart_most_rewatched') }}</h2>
       <div id="rewatch-list" class="drop-rate-list"></div>
@@ -1124,5 +1146,32 @@
     }
   })(data.recommendation_outcomes);
 }());
+</script>
+
+<script>
+// Issue #432 — keeps each conditionally-rendered section's nav link in sync
+// with its target's own `hidden` state, set independently and at different
+// times by the fetch-driven IIFE above (new-account/low-sample sections
+// stay hidden entirely rather than showing an empty chart). A
+// MutationObserver rather than editing each of those five reveal sites
+// directly — it doesn't matter which one flips a section's `hidden` off,
+// this catches all of them the same way, including any added later.
+document.querySelectorAll('.stats-nav-link[data-nav-target]').forEach(link => {
+  const target = document.getElementById(link.dataset.navTarget);
+  if (!target) return;
+  const sync = () => { link.hidden = target.hidden; };
+  sync();
+  new MutationObserver(sync).observe(target, { attributes: true, attributeFilter: ['hidden'] });
+});
+
+document.querySelectorAll('.stats-nav-link').forEach(link => {
+  link.addEventListener('click', e => {
+    const target = document.querySelector(link.getAttribute('href'));
+    if (!target) return;
+    e.preventDefault();
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  });
+});
 </script>
 {% endblock %}
