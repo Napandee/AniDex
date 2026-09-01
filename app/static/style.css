@@ -3835,24 +3835,30 @@ a.drop-tag-chip-link:focus-visible {
    shared script.js click handler), different shape. Declared after
    .help-disclosure-btn in source order so these win on the shared properties
    (equal specificity, later wins) despite that base rule's `all: unset`. */
+/* Icon-only, matching .btn-anilist-sm/.btn-delete-sm's exact footprint
+   (direct user feedback: the original inline pill-with-text badge in the
+   genre-tag row read as too large) — same footer icon row, same size. */
 .manga-status-badge {
   all: unset;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.7rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
+  box-sizing: border-box;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  line-height: 1.3;
   background: var(--pill-teal-bg);
   border: 1px solid var(--pill-teal-border);
+  border-radius: 4px;
   color: var(--pill-teal-text);
-  transition: border-color 0.15s, background-color 0.15s;
+  flex-shrink: 0;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
 }
-.manga-status-badge:hover { border-color: var(--pill-teal-text); }
+.manga-status-badge:hover { background: var(--pill-teal-border); }
 .manga-status-badge:focus-visible { outline: 2px solid var(--pill-teal-text); outline-offset: 2px; }
-.manga-status-badge[aria-expanded="true"] { background: var(--pill-teal-border); }
+.manga-status-badge[aria-expanded="true"] { background: var(--pill-teal-border); color: var(--pill-teal-text-strong, var(--pill-teal-text)); }
 
+/* Panel now sits directly under .card-footer (its trigger moved into
+   .card-footer-actions) rather than inline with the genre tags. */
+.manga-status-panel { margin-top: 0.4rem; }
 .manga-status-panel-body { font-size: 0.75rem; color: var(--t5); line-height: 1.5; padding: 0.5rem 0 0.2rem; display: grid; gap: 0.5rem; }
 .manga-source-row { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; align-items: start; }
 .manga-source-type { font-weight: 700; color: var(--t2); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
