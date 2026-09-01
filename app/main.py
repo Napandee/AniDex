@@ -4777,7 +4777,6 @@ def _compute_streaming_calendar(user_id: int) -> dict:
 
     today = datetime.now(timezone.utc).date()
     month_starts = [_add_months(date(today.year, today.month, 1), i) for i in range(_CALENDAR_HORIZON_MONTHS)]
-    horizon_end = _add_months(month_starts[0], _CALENDAR_HORIZON_MONTHS)
 
     entries = db.fetchall(
         """
@@ -8553,7 +8552,6 @@ def library(request: Request, response: Response, status: str = None):
     )
 
     stale_threshold = datetime.now(timezone.utc) - timedelta(days=60)
-    tz = ZoneInfo(config.get(user["id"], "timezone") or "Europe/London")
 
     entries = []
     for row in rows:
@@ -8575,7 +8573,6 @@ def library(request: Request, response: Response, status: str = None):
         )
         airing_at = entry.get("next_airing_at")
         if airing_at:
-            local = airing_at.astimezone(tz)
             now = datetime.now(timezone.utc)
             delta = airing_at - now
             days = delta.days
