@@ -64,14 +64,14 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    enqueue_outbox_update, find_anilist_id, is_plausible_match,
-    load_user_list_from_db, load_walk_complete, resolve_or_create_user_list_entry,
-    seed_search_cache, set_walk_complete,
+    db_connect, determine_full_pull_watermark, emit_sync_result, enqueue_outbox_update,
+    find_anilist_id, is_plausible_match, load_title_search_cache, load_user_list_from_db,
+    make_logger, mark_walk_complete_if_reached_end, resolve_or_create_user_list_entry,
+    save_title_search_cache_entry, seed_search_cache,
+    set_walk_complete,  # noqa: F401 — re-exported for import_netflix_csv.py's nf.set_walk_complete() call
 )
 
 load_dotenv()
@@ -140,21 +140,13 @@ API_HEADERS = {
 }
 
 
-def log(msg):
-    print(f"[netflixsync] user={USER_ID} {msg}", flush=True)
+log = make_logger("netflixsync", USER_ID)
 
 
 def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
-    """Issue #46 — the only channel run_full_sync.py has for learning this step's real
-    entries-touched count back from the subprocess; it parses this exact prefix out of
-    captured stdout. Not emitted at all in DRY_RUN — that mode is a local investigation
-    tool, never invoked through run_full_sync.py."""
-    if DRY_RUN:
-        return
-    print(
-        f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
-        flush=True,
-    )
+    """emit_sync_result(), routed through this script's own DRY_RUN — see
+    anilist_sync_common.emit_sync_result()'s docstring (issue #46/#414)."""
+    emit_sync_result(entries_updated, entries_fetched, full_pull, DRY_RUN)
 
 
 def _parse_cookie_header(cookie_header: str) -> dict[str, str]:
@@ -335,12 +327,6 @@ def _new_episode_count(
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
 
-def db_connect():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
-    conn.autocommit = False
-    return conn
-
-
 def ensure_table(conn):
     """Defensive fallback if run against a DB that somehow skipped schema.sql/migrations
     — see sync_crunchyroll.py's ensure_table() for the same rationale."""
@@ -383,40 +369,6 @@ def save_nf_state(conn, anilist_id: int, title: str, watched_at: datetime, rewat
     conn.commit()
 
 
-def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
-    """The single cursor fetch_since() paginates against — the newest
-    last_seen_watched_at across all series from the previous sync. Netflix's
-    viewingactivity feed is one chronological stream across all titles, so one
-    watermark is enough to know when pagination has caught up, even though state
-    is still tracked per-series (to drive per-series rewatch detection)."""
-    values = [s["last_seen_watched_at"] for s in state_map.values() if s.get("last_seen_watched_at")]
-    return max(values) if values else None
-
-
-def load_title_search_cache(conn) -> dict[str, int | None]:
-    """Global (not per-user) AniList title-search cache (issue #115) — a search
-    result for a given title string is the same regardless of which user or
-    provider is asking, so this is shared across the whole instance. `conn` may be
-    None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
-    if conn is None:
-        return {}
-    with conn.cursor() as cur:
-        cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
-        return {row["title"]: row["media_id"] for row in cur.fetchall()}
-
-
-def save_title_search_cache_entry(conn, title: str, media_id: int | None):
-    """Persist one newly-resolved (or confirmed-no-match) title immediately, not
-    batched at the end of the run — issue #115's whole point is durability across
-    an interrupted sync, same principle as #104's walk_complete fix."""
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
-            ON CONFLICT (title) DO UPDATE SET media_id = EXCLUDED.media_id, cached_at = now()
-        """, (title, media_id))
-    conn.commit()
 
 
 # ── Sync logic ────────────────────────────────────────────────────────────────
@@ -579,22 +531,13 @@ def main():
         nf_state_map = load_nf_state(conn)
         log(f"Loaded Netflix sync state for {len(nf_state_map)} series")
 
-    walk_complete = load_walk_complete(conn, "netflix", USER_ID)
-    if walk_complete and FORCE_FULL_RESYNC:
-        log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        set_walk_complete(conn, "netflix", USER_ID, False)  # persisted before the (possibly slow) fetch/process below,
-        walk_complete = False            # so an interruption leaves an honest "not complete" state
-        watermark = None
-    elif walk_complete:
-        watermark = compute_fetch_watermark(nf_state_map)
-    else:
-        log("Full walk not yet complete — re-walking full history this run")
-        watermark = None
     # Issue #252 — a full-pull run (initial connect OR a user-triggered Force Full
     # Resync, #21 — both land here via watermark being None) keeps the conservative
     # skip-if-untracked behavior below; only a genuine day-to-day incremental sync
     # (watermark is not None) is allowed to auto-create a new AniList entry.
-    full_pull = watermark is None
+    watermark, full_pull = determine_full_pull_watermark(
+        conn, "netflix", USER_ID, nf_state_map, FORCE_FULL_RESYNC, log,
+    )
     log(f"Fetching Netflix viewing activity since {watermark or '(no watermark — full walk)'}")
 
     client = NetflixHistory(NETFLIX_COOKIE_HEADER, NETFLIX_PROFILE_GUID)
@@ -610,9 +553,7 @@ def main():
     if not raw_items:
         # Issue #104 — safe to mark complete here even though the processing loop
         # below never ran: there's nothing to process, so nothing can be stranded.
-        if reached_true_end:
-            set_walk_complete(conn, "netflix", USER_ID, True)
-            log("Reached true end of Netflix history — full walk marked complete")
+        mark_walk_complete_if_reached_end(conn, "netflix", USER_ID, reached_true_end, "Netflix", log)
         log("No new activity — nothing to do")
         if conn:
             conn.close()
@@ -743,9 +684,7 @@ def main():
     # permanently stranding matches if this loop got interrupted partway through: a
     # later sync would trust walk_complete and never re-walk to pick up what was
     # fetched but never reached.
-    if reached_true_end:
-        set_walk_complete(conn, "netflix", USER_ID, True)
-        log("Reached true end of Netflix history — full walk marked complete")
+    mark_walk_complete_if_reached_end(conn, "netflix", USER_ID, reached_true_end, "Netflix", log)
 
     if conn:
         conn.close()

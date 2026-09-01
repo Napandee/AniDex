@@ -8,9 +8,11 @@ on the importing script having done it first.
 """
 
 import difflib
+import json
 import os
 import re
 import time
+from datetime import datetime
 
 import httpx
 import psycopg2
@@ -221,8 +223,15 @@ def load_user_list_from_db() -> tuple[dict[int, dict], dict[str, int]]:
 # sync_*.py script) seed this from anilist_title_search_cache via seed_search_cache()
 # before matching, and persist new entries back via search_cache_snapshot() after, so
 # repeat searches for the same permanently-non-matching titles don't cost anything on a
-# later sync/retry. Kept as a plain in-process dict here (not DB-backed directly) so
-# this module stays a pure AniList-API helper with no psycopg2 dependency of its own.
+# later sync/retry. Kept as a plain in-process dict here, not DB-backed directly.
+#
+# This module is NOT a pure AniList-API helper despite that framing having lived here
+# historically (issue #414 corrected it) — load_walk_complete()/set_walk_complete(),
+# resolve_or_create_user_list_entry()/ensure_anime_stub(), and the shared provider-sync
+# scaffolding below (db_connect(), load_title_search_cache(), save_provider_state(),
+# etc.) all carry a real psycopg2 dependency. The module docstring's actual boundary is
+# "shared by every sync_*.py script", not "no DB access" — this dict just happens to be
+# one piece that's genuinely in-process-only, not a module-wide rule.
 _search_cache: dict[str, int | None] = {}
 
 
@@ -722,3 +731,283 @@ def is_plausible_match(entry: dict, watched_format: str | None,
         return False
 
     return True
+
+
+# ── Shared provider-sync scaffolding (issue #414) ────────────────────────────
+# Every scripts/sync_*.py script (Crunchyroll/Netflix/Plex/Prime Video) used to
+# define its own byte-identical (or near-identical, differing only by a per-provider
+# table/label/prefix string) copy of everything below — db_connect(), the
+# SYNC_RESULT-emitting helper, the log() prefix wrapper, compute_fetch_watermark(),
+# the title-search-cache read/write pair, the per-series state/watermark upsert, and
+# the walk_complete/FORCE_FULL_RESYNC orchestration in main(). Consolidated here so a
+# future provider script (Jellyfin, #150-152) only has to implement its own HTTP
+# client, not copy-paste this scaffolding a fifth time. process()'s actual diff/
+# state-machine logic for the three "max-aggregated absolute episode number"
+# providers (Crunchyroll/Plex/Prime Video) is also consolidated, as
+# process_max_aggregated_progress() below — Netflix's own process() stays entirely
+# separate in sync_netflix.py; its delta-count progress model (no absolute episode
+# ordinal in Netflix's feed) is a real, documented design difference, not drift.
+
+def db_connect():
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.autocommit = False
+    return conn
+
+
+def make_logger(prefix: str, user_id: int):
+    """Returns a log(msg) function bound to a `[prefix] user={user_id} ` line —
+    every provider script's own log() used to hardcode this format with just its
+    own prefix string swapped in."""
+    def log(msg):
+        print(f"[{prefix}] user={user_id} {msg}", flush=True)
+    return log
+
+
+def emit_sync_result(entries_updated: int, entries_fetched: int, full_pull: bool, dry_run: bool) -> None:
+    """Issue #46 — the only channel run_full_sync.py has for learning a sync step's
+    real entries-touched count back from the subprocess; it parses this exact
+    SYNC_RESULT: prefix out of captured stdout. Not emitted when dry_run is True —
+    that mode is a local investigation tool, never invoked through run_full_sync.py."""
+    if dry_run:
+        return
+    print(
+        f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
+        flush=True,
+    )
+
+
+def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
+    """The single cursor a provider's fetch_since() paginates against — the newest
+    last_seen_watched_at across all series from the previous sync. Every provider's
+    watch-history/viewing-activity feed is one chronological stream across all
+    titles, so one watermark is enough to know when pagination has caught up, even
+    though state is still tracked per-series."""
+    values = [s["last_seen_watched_at"] for s in state_map.values() if s.get("last_seen_watched_at")]
+    return max(values) if values else None
+
+
+def load_title_search_cache(conn) -> dict[str, int | None]:
+    """Global (not per-user) AniList title-search cache (issue #115) — a search
+    result for a given title string is the same regardless of which user or
+    provider is asking, so this is shared across the whole instance. `conn` may
+    be None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
+    if conn is None:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
+        return {row["title"]: row["media_id"] for row in cur.fetchall()}
+
+
+def save_title_search_cache_entry(conn, title: str, media_id: int | None) -> None:
+    """Persist one newly-resolved (or confirmed-no-match) title immediately, not
+    batched at the end of the run — issue #115's whole point is durability across
+    an interrupted sync, same principle as #104's walk_complete fix."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
+            ON CONFLICT (title) DO UPDATE SET media_id = EXCLUDED.media_id, cached_at = now()
+        """, (title, media_id))
+    conn.commit()
+
+
+def save_provider_state(conn, table: str, user_id: int, anilist_id: int, title: str,
+                         last_ep: int, rewatch: bool) -> None:
+    """Per-series sync-state upsert shared by Crunchyroll/Plex/Prime Video (issue
+    #414) — the three providers whose feeds carry a real absolute episode number
+    and so track state in a `*_sync_state` table with this exact column shape
+    (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress,
+    last_synced_at). `table` is always one of the small set of literal table names
+    each provider script passes at its own call sites, never external input.
+    Netflix's netflix_sync_state has a different shape (no last_seen_episode column
+    — see sync_netflix.py's module docstring for why) and keeps its own
+    save_nf_state(), not this function."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            INSERT INTO {table} (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
+            VALUES (%s, %s, %s, %s, %s, now())
+            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
+                series_title        = EXCLUDED.series_title,
+                last_seen_episode   = EXCLUDED.last_seen_episode,
+                rewatch_in_progress = EXCLUDED.rewatch_in_progress,
+                last_synced_at      = now()
+        """, (user_id, anilist_id, title, last_ep, rewatch))
+    conn.commit()
+
+
+def save_provider_watermark(conn, table: str, user_id: int, anilist_id: int, title: str,
+                             watched_at) -> None:
+    """Fetch-side watermark bookkeeping only, shared by Crunchyroll/Plex/Prime Video
+    (issue #414) — updates just last_seen_watched_at, kept fully separate from
+    save_provider_state()'s columns (last_seen_episode/rewatch_in_progress) so this
+    never touches process()'s own state writes: the two functions' UPDATE SET
+    clauses are column-disjoint, so call order between them within a single sync run
+    doesn't matter. Takes the max with whatever's already stored so this can't
+    regress the watermark. `table` — see save_provider_state()'s docstring."""
+    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
+        return
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            INSERT INTO {table} (user_id, anilist_id, series_title, last_seen_watched_at, last_synced_at)
+            VALUES (%s, %s, %s, %s, now())
+            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
+                last_seen_watched_at = GREATEST(
+                    COALESCE({table}.last_seen_watched_at, EXCLUDED.last_seen_watched_at),
+                    EXCLUDED.last_seen_watched_at
+                )
+        """, (user_id, anilist_id, title, watched_at))
+    conn.commit()
+
+
+def determine_full_pull_watermark(conn, provider: str, user_id: int, state_map: dict,
+                                   force_full_resync: bool, log_fn) -> tuple:
+    """Shared walk_complete/FORCE_FULL_RESYNC orchestration (issue #414) — every
+    provider script's main() had this exact same shape (only the log wording was
+    identical too; nothing here varies per provider except what's passed in).
+    Returns (watermark, full_pull) — full_pull is True on the initial full-history
+    walk or a user-triggered Force Full Resync (#20/#21), in which case callers must
+    keep the conservative skip-if-untracked behavior (see
+    resolve_or_create_user_list_entry()'s docstring); False on a genuine incremental
+    sync, where auto-creating a new AniList entry for a newly-matched title is safe."""
+    walk_complete = load_walk_complete(conn, provider, user_id)
+    if walk_complete and force_full_resync:
+        log_fn("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
+        set_walk_complete(conn, provider, user_id, False)  # persisted before the (possibly slow) fetch/process below,
+        watermark = None                                   # so an interruption leaves an honest "not complete" state
+    elif walk_complete:
+        watermark = compute_fetch_watermark(state_map)
+    else:
+        log_fn("Full walk not yet complete — re-walking full history this run")
+        watermark = None
+    return watermark, watermark is None
+
+
+def mark_walk_complete_if_reached_end(conn, provider: str, user_id: int, reached_true_end: bool,
+                                       provider_label: str, log_fn) -> None:
+    """Issue #104 — only mark the walk complete once every fetched title has actually
+    been processed (or there was nothing to process at all); marking it right after
+    fetch risks permanently stranding matches if the processing loop gets
+    interrupted partway through. Every provider script calls this in the same two
+    places: the early "nothing fetched" exit, and after the main processing loop."""
+    if reached_true_end:
+        set_walk_complete(conn, provider, user_id, True)
+        log_fn(f"Reached true end of {provider_label} history — full walk marked complete")
+
+
+def process_max_aggregated_progress(title: str, watched_ep: int, entry: dict, state: dict | None,
+                                     provider_label: str, update_fn, save_state_fn) -> str:
+    """Shared process() decision logic for the three providers whose watch-history
+    feed carries a real, max-aggregated absolute episode number — Crunchyroll,
+    Plex, and Prime Video (issue #414). Netflix's own process() (in
+    sync_netflix.py) is NOT covered here: its Falcor feed has no absolute episode
+    ordinal at all, so it counts distinct new episodes and adds that to AniList's
+    current progress instead — a real, documented design difference (see that
+    module's docstring), not the drift this consolidation targets.
+
+    Each of the three callers used to carry this exact branching logic
+    near-verbatim, differing only in variable names and the label used in two log
+    messages ("CR"/"Plex"/"Prime Video") — their own comments admitted the copy was
+    deliberate ("not re-derived here to avoid the two/three drifting"). Includes
+    the #328 rewatch-clamp fix (the "new rewatch pass detected" branch below),
+    which previously had to be manually ported into each copy by hand.
+
+    update_fn(**kwargs) and save_state_fn(last_ep, rewatch) are the caller's own
+    DRY_RUN-routing wrappers (each provider script's _update()/_save_state()) —
+    passed in as closures rather than called by name here so each provider's own
+    module-level functions (and any test monkeypatching them) stay exactly as much
+    in control of the actual enqueue/persist calls as before this consolidation.
+    """
+    status = entry["status"]
+    al_ep = entry["progress"]
+    repeat = entry["repeat"]
+    total = entry["total_episodes"]
+
+    last_ep = state["last_seen_episode"] if state else al_ep
+    rewatch_active = state["rewatch_in_progress"] if state else False
+
+    # ── Issue #252: brand-new AniList entry, not yet on the user's list ──────
+    # Callers only ever build a synthetic entry (for an incremental sync's
+    # unmatched-title case) with status=None — a real AniList entry's status is
+    # never None, so this is an unambiguous "create" sentinel. Must be checked
+    # before every other branch below.
+    if status is None:
+        update_fn(progress=watched_ep, status="WATCHING")
+        save_state_fn(watched_ep, False)
+        return f"new AniList entry created → WATCHING ep {watched_ep}"
+
+    # ── First-time seeing a COMPLETED series in this provider's history ───────
+    # Without prior state we can't safely distinguish "rewatch" from "first sync".
+    # Record state and do nothing — next sync will have a baseline.
+    if state is None and status == "COMPLETED":
+        save_state_fn(watched_ep, False)
+        return "first-sync (COMPLETED) — state recorded, no change"
+
+    # ── AniList status already REPEATING but rewatch not recorded in state ────
+    if status == "REPEATING" and not rewatch_active:
+        if watched_ep > al_ep:
+            update_fn(progress=watched_ep)
+            save_state_fn(watched_ep, True)
+            return f"rewatch detected (already REPEATING) → progress {al_ep} → {watched_ep}"
+        save_state_fn(watched_ep, True)
+        return "rewatch detected (already REPEATING) — state recorded"
+
+    # ── Rewatch: COMPLETED but this provider's episode dropped below last-seen ─
+    # Must come BEFORE the no-change guard: watched_ep < last_ep satisfies that
+    # guard and would short-circuit before we ever detect the rewatch.
+    if status == "COMPLETED" and watched_ep < (last_ep or total or 999) and not rewatch_active:
+        update_fn(progress=watched_ep, status="REPEATING")
+        save_state_fn(watched_ep, True)
+        return f"rewatch started → REPEATING ep {watched_ep}"
+
+    # ── Rewatch: a new pass restarted while already mid-rewatch (issue #328) ──
+    # watched_ep only ever reflects genuinely NEW watch activity (the fetch layer
+    # already filtered out anything at/before the fetch watermark), so a fresh
+    # episode number LOWER than the stored peak (last_ep) can only mean the user
+    # rewatched an earlier episode. Without this branch, watched_ep never
+    # numerically exceeds last_ep again until the user watches all the way back
+    # past the OLD peak, and the final fallback below would otherwise silently
+    # re-lock last_seen_episode at that stale peak on every future sync.
+    if rewatch_active and watched_ep < last_ep:
+        update_fn(progress=watched_ep)
+        save_state_fn(watched_ep, True)
+        return f"new rewatch pass detected (was at {last_ep}) → progress reset to {watched_ep}"
+
+    # ── No progress since last sync ───────────────────────────────────────────
+    if watched_ep <= last_ep and not rewatch_active:
+        if watched_ep <= al_ep:
+            save_state_fn(last_ep, rewatch_active)
+            return f"no change ({provider_label}={watched_ep}, last_seen={last_ep})"
+        # else: this provider is ahead of last_seen but AniList is still ahead of
+        # (or equal to) this provider's own current episode — falls through to the
+        # normal progress-advance branch below, which is the correct outcome.
+
+    # ── Rewatch completion: REPEATING and reached total episodes ─────────────
+    if rewatch_active and total and watched_ep >= total:
+        update_fn(progress=watched_ep, status="COMPLETED", repeat=repeat + 1)
+        save_state_fn(watched_ep, False)
+        return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
+
+    # ── Progress advance for active rewatch ───────────────────────────────────
+    if rewatch_active and watched_ep > al_ep:
+        update_fn(progress=watched_ep)
+        save_state_fn(watched_ep, True)
+        return f"rewatch progress {al_ep} → {watched_ep}"
+
+    # ── DROPPED: user picked it back up ──────────────────────────────────────
+    if status == "DROPPED" and watched_ep > last_ep:
+        update_fn(progress=watched_ep, status="CURRENT")
+        save_state_fn(watched_ep, False)
+        return f"resumed after DROP → CURRENT ep {watched_ep}"
+
+    # ── Normal progress advance (CURRENT, PAUSED) ─────────────────────────────
+    if watched_ep > al_ep:
+        update_fn(progress=watched_ep)
+        save_state_fn(watched_ep, False)
+        return f"progress {al_ep} → {watched_ep}"
+
+    # Nothing to do
+    save_state_fn(max(watched_ep, last_ep), rewatch_active)
+    return f"AniList ({al_ep}) already at or ahead of {provider_label} ({watched_ep})"

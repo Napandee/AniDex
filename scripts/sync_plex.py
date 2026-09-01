@@ -47,20 +47,21 @@ Exit 0 = success, Exit 1 = fatal error. Matches the other scripts/sync_*.py
 scripts' contract.
 """
 
-import json
 import os
 import sys
 from datetime import datetime, timezone
 
 import httpx
-import psycopg2
-import psycopg2.extras
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
+    compute_fetch_watermark as _compute_fetch_watermark,
+    db_connect, determine_full_pull_watermark, emit_sync_result,
     enqueue_outbox_update, find_anilist_id, is_plausible_match,
-    load_user_list_from_db, load_walk_complete, resolve_or_create_user_list_entry,
-    season_suffix_candidates, seed_search_cache, set_walk_complete,
+    load_title_search_cache, load_user_list_from_db, make_logger,
+    mark_walk_complete_if_reached_end, process_max_aggregated_progress,
+    resolve_or_create_user_list_entry, save_provider_state, save_provider_watermark,
+    save_title_search_cache_entry, season_suffix_candidates, seed_search_cache,
 )
 
 load_dotenv()
@@ -94,21 +95,13 @@ MAX_PAGES = 200  # safety cap — matches sync_crunchyroll.py/sync_netflix.py
 # add the agent-id fast path on top of it, not the other way round.
 
 
-def log(msg):
-    print(f"[plexsync] user={USER_ID} {msg}", flush=True)
+log = make_logger("plexsync", USER_ID)
 
 
 def _emit_result(entries_updated: int, entries_fetched: int, full_pull: bool) -> None:
-    """Same SYNC_RESULT contract every scripts/sync_*.py uses — see
-    sync_netflix.py's identical helper for why (issue #46). Not emitted in
-    DRY_RUN — that mode is a local investigation tool, never invoked through
-    run_full_sync.py."""
-    if DRY_RUN:
-        return
-    print(
-        f"SYNC_RESULT: {json.dumps({'entries_updated': entries_updated, 'entries_fetched': entries_fetched, 'full_pull': full_pull})}",
-        flush=True,
-    )
+    """emit_sync_result(), routed through this script's own DRY_RUN — see
+    anilist_sync_common.emit_sync_result()'s docstring (issue #46/#414)."""
+    emit_sync_result(entries_updated, entries_fetched, full_pull, DRY_RUN)
 
 
 # ── Plex history client ─────────────────────────────────────────────────────────
@@ -218,12 +211,6 @@ def parse_items(items: list[dict]) -> dict[tuple[str, int], dict]:
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
 
-def db_connect():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
-    conn.autocommit = False
-    return conn
-
-
 def ensure_table(conn):
     """Defensive fallback if run against a DB that somehow skipped schema.sql/
     migrations — see sync_crunchyroll.py's ensure_table() for the same rationale."""
@@ -254,64 +241,22 @@ def load_plex_state(conn) -> dict[int, dict]:
 
 
 def save_plex_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO plex_sync_state (user_id, anilist_id, series_title, last_seen_episode, rewatch_in_progress, last_synced_at)
-            VALUES (%s, %s, %s, %s, %s, now())
-            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
-                series_title        = EXCLUDED.series_title,
-                last_seen_episode   = EXCLUDED.last_seen_episode,
-                rewatch_in_progress = EXCLUDED.rewatch_in_progress,
-                last_synced_at      = now()
-        """, (USER_ID, anilist_id, title, last_ep, rewatch))
-    conn.commit()
+    """save_provider_state() bound to plex_sync_state (issue #414) — kept as its
+    own function (rather than a bare re-export) so tests can still monkeypatch
+    sync_plex.save_plex_state directly, same as before this consolidation."""
+    save_provider_state(conn, "plex_sync_state", USER_ID, anilist_id, title, last_ep, rewatch)
 
 
 def save_watermark(conn, anilist_id: int, title: str, watched_at: datetime):
-    """Fetch-side watermark bookkeeping only — mirrors sync_crunchyroll.py's
-    save_watermark() exactly, see its docstring for why this stays column-disjoint
-    from save_plex_state()."""
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO plex_sync_state (user_id, anilist_id, series_title, last_seen_watched_at, last_synced_at)
-            VALUES (%s, %s, %s, %s, now())
-            ON CONFLICT (user_id, anilist_id) DO UPDATE SET
-                last_seen_watched_at = GREATEST(
-                    COALESCE(plex_sync_state.last_seen_watched_at, EXCLUDED.last_seen_watched_at),
-                    EXCLUDED.last_seen_watched_at
-                )
-        """, (USER_ID, anilist_id, title, watched_at))
-    conn.commit()
+    """save_provider_watermark() bound to plex_sync_state (issue #414) — see its
+    docstring for why this stays column-disjoint from save_plex_state()."""
+    save_provider_watermark(conn, "plex_sync_state", USER_ID, anilist_id, title, watched_at)
 
 
 def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
-    values = [s["last_seen_watched_at"] for s in state_map.values() if s.get("last_seen_watched_at")]
-    return max(values) if values else None
-
-
-def load_title_search_cache(conn) -> dict[str, int | None]:
-    """Global (not per-user) AniList title-search cache (issue #115). `conn` may
-    be None in DRY_RUN, matching that mode's "no DB reads at all" framing."""
-    if conn is None:
-        return {}
-    with conn.cursor() as cur:
-        cur.execute("SELECT title, media_id FROM anilist_title_search_cache")
-        return {row["title"]: row["media_id"] for row in cur.fetchall()}
-
-
-def save_title_search_cache_entry(conn, title: str, media_id: int | None):
-    if conn is None:  # DRY_RUN — no DB writes at all, matching the rest of that mode
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO anilist_title_search_cache (title, media_id) VALUES (%s, %s)
-            ON CONFLICT (title) DO UPDATE SET media_id = EXCLUDED.media_id, cached_at = now()
-        """, (title, media_id))
-    conn.commit()
+    """Re-exported under this script's own name (issue #414) — see
+    sync_crunchyroll.py's identical wrapper for why."""
+    return _compute_fetch_watermark(state_map)
 
 
 # ── Sync logic ────────────────────────────────────────────────────────────────
@@ -345,69 +290,22 @@ def _save_state(conn, anilist_id: int, title: str, last_ep: int, rewatch: bool):
 
 
 def process(title: str, plex_ep: int, entry: dict, plex_state: dict | None, conn) -> str:
-    status = entry["status"]
-    al_ep = entry["progress"]
-    repeat = entry["repeat"]
-    total = entry["total_episodes"]
+    """The actual branching logic (state machine) is shared with
+    sync_crunchyroll.py/sync_primevideo.py via
+    anilist_sync_common.process_max_aggregated_progress() (issue #414) — this
+    wrapper just binds it to Plex's own _update()/_save_state() (so DRY_RUN and
+    test monkeypatching of those still work exactly as before) and label ("Plex")."""
     anilist_id = entry["anilist_id"]
 
-    last_ep = plex_state["last_seen_episode"] if plex_state else al_ep
-    rewatch_active = plex_state["rewatch_in_progress"] if plex_state else False
+    def update_fn(**kwargs):
+        _update(conn, anilist_id, **kwargs)
 
-    if status is None:
-        _update(conn, anilist_id, progress=plex_ep, status="WATCHING")
-        _save_state(conn, anilist_id, title, plex_ep, False)
-        return f"new AniList entry created → WATCHING ep {plex_ep}"
+    def save_state_fn(last_ep, rewatch):
+        _save_state(conn, anilist_id, title, last_ep, rewatch)
 
-    if plex_state is None and status == "COMPLETED":
-        _save_state(conn, anilist_id, title, plex_ep, False)
-        return "first-sync (COMPLETED) — state recorded, no change"
-
-    if status == "REPEATING" and not rewatch_active:
-        if plex_ep > al_ep:
-            _update(conn, anilist_id, progress=plex_ep)
-            _save_state(conn, anilist_id, title, plex_ep, True)
-            return f"rewatch detected (already REPEATING) → progress {al_ep} → {plex_ep}"
-        _save_state(conn, anilist_id, title, plex_ep, True)
-        return "rewatch detected (already REPEATING) — state recorded"
-
-    if status == "COMPLETED" and plex_ep < (last_ep or total or 999) and not rewatch_active:
-        _update(conn, anilist_id, progress=plex_ep, status="REPEATING")
-        _save_state(conn, anilist_id, title, plex_ep, True)
-        return f"rewatch started → REPEATING ep {plex_ep}"
-
-    if rewatch_active and plex_ep < last_ep:
-        _update(conn, anilist_id, progress=plex_ep)
-        _save_state(conn, anilist_id, title, plex_ep, True)
-        return f"new rewatch pass detected (was at {last_ep}) → progress reset to {plex_ep}"
-
-    if plex_ep <= last_ep and not rewatch_active:
-        if plex_ep <= al_ep:
-            _save_state(conn, anilist_id, title, last_ep, rewatch_active)
-            return f"no change (Plex={plex_ep}, last_seen={last_ep})"
-
-    if rewatch_active and total and plex_ep >= total:
-        _update(conn, anilist_id, progress=plex_ep, status="COMPLETED", repeat=repeat + 1)
-        _save_state(conn, anilist_id, title, plex_ep, False)
-        return f"rewatch complete → COMPLETED (repeat #{repeat + 1})"
-
-    if rewatch_active and plex_ep > al_ep:
-        _update(conn, anilist_id, progress=plex_ep)
-        _save_state(conn, anilist_id, title, plex_ep, True)
-        return f"rewatch progress {al_ep} → {plex_ep}"
-
-    if status == "DROPPED" and plex_ep > last_ep:
-        _update(conn, anilist_id, progress=plex_ep, status="CURRENT")
-        _save_state(conn, anilist_id, title, plex_ep, False)
-        return f"resumed after DROP → CURRENT ep {plex_ep}"
-
-    if plex_ep > al_ep:
-        _update(conn, anilist_id, progress=plex_ep)
-        _save_state(conn, anilist_id, title, plex_ep, False)
-        return f"progress {al_ep} → {plex_ep}"
-
-    _save_state(conn, anilist_id, title, max(plex_ep, last_ep), rewatch_active)
-    return f"AniList ({al_ep}) already at or ahead of Plex ({plex_ep})"
+    return process_max_aggregated_progress(
+        title, plex_ep, entry, plex_state, "Plex", update_fn, save_state_fn,
+    )
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -434,18 +332,9 @@ def main():
         state_map = load_plex_state(conn)
         log(f"Loaded Plex sync state for {len(state_map)} series")
 
-    walk_complete = load_walk_complete(conn, "plex", USER_ID)
-    if walk_complete and FORCE_FULL_RESYNC:
-        log("FORCE_FULL_RESYNC set — starting a fresh full walk (a previous walk had already completed)")
-        set_walk_complete(conn, "plex", USER_ID, False)
-        walk_complete = False
-        watermark = None
-    elif walk_complete:
-        watermark = compute_fetch_watermark(state_map)
-    else:
-        log("Full walk not yet complete — re-walking full history this run")
-        watermark = None
-    full_pull = watermark is None
+    watermark, full_pull = determine_full_pull_watermark(
+        conn, "plex", USER_ID, state_map, FORCE_FULL_RESYNC, log,
+    )
     log(f"Fetching Plex watch history since {watermark or '(no watermark — full walk)'}")
 
     client = PlexHistory(PLEX_SERVER_BASE_URL, PLEX_SERVER_TOKEN)
@@ -459,9 +348,7 @@ def main():
     log(f"Fetched {len(raw_items)} new history rows")
 
     if not raw_items:
-        if reached_true_end:
-            set_walk_complete(conn, "plex", USER_ID, True)
-            log("Reached true end of Plex history — full walk marked complete")
+        mark_walk_complete_if_reached_end(conn, "plex", USER_ID, reached_true_end, "Plex", log)
         log("No new activity — nothing to do")
         if conn:
             conn.close()
@@ -538,9 +425,7 @@ def main():
             log(f"  ERROR processing '{title}': {e}")
             skipped += 1
 
-    if reached_true_end:
-        set_walk_complete(conn, "plex", USER_ID, True)
-        log("Reached true end of Plex history — full walk marked complete")
+    mark_walk_complete_if_reached_end(conn, "plex", USER_ID, reached_true_end, "Plex", log)
 
     if conn:
         conn.close()

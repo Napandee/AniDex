@@ -776,3 +776,245 @@ def test_enqueue_outbox_update_rejects_unknown_source(pg_conn, monkeypatch):
     finally:
         conn.rollback()
         conn.close()
+
+
+# ── Shared provider-sync scaffolding (issue #414) ────────────────────────────
+# Every scripts/sync_*.py script used to define its own byte-identical (or
+# near-identical) copy of everything below. Consolidated here; each provider
+# script now just binds these to its own table name / DRY_RUN wrapper / label.
+
+def test_make_logger_prints_prefix_and_user_id(capsys):
+    log = common.make_logger("crunchysync", 42)
+    log("hello world")
+    out = capsys.readouterr().out
+    assert out == "[crunchysync] user=42 hello world\n"
+
+
+def test_emit_sync_result_prints_sync_result_line(capsys):
+    common.emit_sync_result(3, 10, False, dry_run=False)
+    out = capsys.readouterr().out
+    assert out.startswith("SYNC_RESULT: ")
+    assert '"entries_updated": 3' in out
+    assert '"entries_fetched": 10' in out
+    assert '"full_pull": false' in out
+
+
+def test_emit_sync_result_silent_in_dry_run(capsys):
+    common.emit_sync_result(3, 10, False, dry_run=True)
+    assert capsys.readouterr().out == ""
+
+
+def test_compute_fetch_watermark_returns_max_across_series():
+    from datetime import datetime, timezone
+    state_map = {
+        1: {"last_seen_watched_at": datetime(2026, 8, 10, tzinfo=timezone.utc)},
+        2: {"last_seen_watched_at": datetime(2026, 8, 14, tzinfo=timezone.utc)},
+    }
+    assert common.compute_fetch_watermark(state_map) == datetime(2026, 8, 14, tzinfo=timezone.utc)
+
+
+def test_compute_fetch_watermark_none_when_no_state_recorded():
+    assert common.compute_fetch_watermark({}) is None
+    assert common.compute_fetch_watermark({1: {"last_seen_watched_at": None}}) is None
+
+
+class _FakeProviderStateConn:
+    """Minimal stand-in for a psycopg2 connection, shaped for save_provider_state()/
+    save_provider_watermark()'s single upsert each — same pattern as
+    test_sync_crunchyroll.py's per-script fakes these replace."""
+
+    def __init__(self):
+        self.committed = False
+        self.last_query = None
+        self.last_params = None
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, query, params=None):
+        self.last_query = query.strip()
+        self.last_params = params
+
+    def commit(self):
+        self.committed = True
+
+
+def test_save_provider_state_writes_to_the_given_table_and_commits():
+    conn = _FakeProviderStateConn()
+    common.save_provider_state(conn, "cr_sync_state", 1, 154587, "Attack on Titan", 5, False)
+    assert "cr_sync_state" in conn.last_query
+    assert conn.last_params == (1, 154587, "Attack on Titan", 5, False)
+    assert conn.committed is True
+
+
+def test_save_provider_state_noop_when_conn_is_none():
+    common.save_provider_state(None, "plex_sync_state", 1, 154587, "Attack on Titan", 5, False)  # must not raise
+
+
+def test_save_provider_watermark_writes_to_the_given_table_and_commits():
+    from datetime import datetime, timezone
+    conn = _FakeProviderStateConn()
+    watched_at = datetime(2026, 8, 14, tzinfo=timezone.utc)
+    common.save_provider_watermark(conn, "primevideo_sync_state", 1, 154587, "Attack on Titan", watched_at)
+    assert "primevideo_sync_state" in conn.last_query
+    assert conn.last_params == (1, 154587, "Attack on Titan", watched_at)
+    assert conn.committed is True
+
+
+def test_save_provider_watermark_noop_when_conn_is_none():
+    common.save_provider_watermark(None, "cr_sync_state", 1, 154587, "Attack on Titan", None)  # must not raise
+
+
+# ── determine_full_pull_watermark / mark_walk_complete_if_reached_end ───────
+# Reuses _FakeWalkConn (defined above) — determine_full_pull_watermark() calls
+# load_walk_complete()/set_walk_complete() as bare names inside this same
+# module, so a real (non-monkeypatched) _FakeWalkConn exercises the genuine
+# call chain, not a mocked one.
+
+def test_determine_full_pull_watermark_force_resync_resets_and_returns_full_pull(monkeypatch):
+    conn = _FakeWalkConn(initial_value="true")  # walk already complete
+    logs = []
+    watermark, full_pull = common.determine_full_pull_watermark(
+        conn, "crunchyroll", 1, {}, force_full_resync=True, log_fn=logs.append,
+    )
+    assert watermark is None
+    assert full_pull is True
+    assert conn.value == "false"  # persisted back to "not complete" before the fetch
+    assert any("FORCE_FULL_RESYNC" in line for line in logs)
+
+
+def test_determine_full_pull_watermark_walk_complete_uses_computed_watermark():
+    from datetime import datetime, timezone
+    conn = _FakeWalkConn(initial_value="true")
+    state_map = {1: {"last_seen_watched_at": datetime(2026, 8, 14, tzinfo=timezone.utc)}}
+    watermark, full_pull = common.determine_full_pull_watermark(
+        conn, "plex", 1, state_map, force_full_resync=False, log_fn=lambda msg: None,
+    )
+    assert watermark == datetime(2026, 8, 14, tzinfo=timezone.utc)
+    assert full_pull is False
+
+
+def test_determine_full_pull_watermark_walk_not_complete_forces_full_pull():
+    conn = _FakeWalkConn(initial_value=None)
+    logs = []
+    watermark, full_pull = common.determine_full_pull_watermark(
+        conn, "primevideo", 1, {}, force_full_resync=False, log_fn=logs.append,
+    )
+    assert watermark is None
+    assert full_pull is True
+    assert any("not yet complete" in line for line in logs)
+
+
+def test_mark_walk_complete_if_reached_end_sets_flag_and_logs():
+    conn = _FakeWalkConn()
+    logs = []
+    common.mark_walk_complete_if_reached_end(conn, "netflix", 1, True, "Netflix", logs.append)
+    assert conn.value == "true"
+    assert any("Netflix" in line and "complete" in line for line in logs)
+
+
+def test_mark_walk_complete_if_reached_end_noop_when_not_reached():
+    conn = _FakeWalkConn()
+    logs = []
+    common.mark_walk_complete_if_reached_end(conn, "netflix", 1, False, "Netflix", logs.append)
+    assert conn.value is None
+    assert logs == []
+
+
+# ── process_max_aggregated_progress — shared CR/Plex/Prime Video state machine ──
+# Full branch coverage already lives in test_sync_crunchyroll.py/test_sync_plex.py/
+# test_sync_primevideo.py (each provider's process() delegates straight into this
+# function) — these tests cover the function directly, once, rather than
+# duplicating that whole matrix a fourth time.
+
+def _entry(status, progress=0, repeat=0, total=None, anilist_id=1):
+    return {"status": status, "progress": progress, "repeat": repeat, "total_episodes": total, "anilist_id": anilist_id}
+
+
+class _Spy:
+    def __init__(self):
+        self.updates = []
+        self.saves = []
+
+    def update_fn(self, **kwargs):
+        self.updates.append(kwargs)
+
+    def save_state_fn(self, last_ep, rewatch):
+        self.saves.append((last_ep, rewatch))
+
+
+def test_process_max_aggregated_new_entry_creates_watching():
+    spy = _Spy()
+    entry = _entry(status=None)
+    result = common.process_max_aggregated_progress(
+        "Attack on Titan", 5, entry, None, "CR", spy.update_fn, spy.save_state_fn,
+    )
+    assert "new AniList entry created" in result
+    assert spy.updates == [{"progress": 5, "status": "WATCHING"}]
+    assert spy.saves == [(5, False)]
+
+
+def test_process_max_aggregated_first_sync_completed_records_state_only():
+    spy = _Spy()
+    entry = _entry(status="COMPLETED", progress=24, total=24)
+    result = common.process_max_aggregated_progress(
+        "Attack on Titan", 24, entry, None, "CR", spy.update_fn, spy.save_state_fn,
+    )
+    assert "first-sync" in result
+    assert spy.updates == []
+    assert spy.saves == [(24, False)]
+
+
+def test_process_max_aggregated_rewatch_clamp_fix_issue_328():
+    # A new rewatch pass starting from episode 1 while several passes deep
+    # already (last_ep sitting at a high point from an earlier pass) must
+    # reset progress to the new low episode, not get silently swallowed.
+    spy = _Spy()
+    entry = _entry(status="REPEATING", progress=6, total=24)
+    state = {"last_seen_episode": 24, "rewatch_in_progress": True}
+    result = common.process_max_aggregated_progress(
+        "Alderamin on the Sky", 6, entry, state, "CR", spy.update_fn, spy.save_state_fn,
+    )
+    assert "new rewatch pass detected" in result
+    assert spy.updates == [{"progress": 6}]
+    assert spy.saves == [(6, True)]
+
+
+def test_process_max_aggregated_no_change_when_al_ep_already_ahead():
+    spy = _Spy()
+    entry = _entry(status="CURRENT", progress=10)
+    state = {"last_seen_episode": 5, "rewatch_in_progress": False}
+    result = common.process_max_aggregated_progress(
+        "Some Show", 5, entry, state, "Plex", spy.update_fn, spy.save_state_fn,
+    )
+    assert "no change" in result
+    assert spy.updates == []
+
+
+def test_process_max_aggregated_dropped_resumes_to_current():
+    spy = _Spy()
+    entry = _entry(status="DROPPED", progress=3)
+    state = {"last_seen_episode": 3, "rewatch_in_progress": False}
+    result = common.process_max_aggregated_progress(
+        "Some Show", 6, entry, state, "Prime Video", spy.update_fn, spy.save_state_fn,
+    )
+    assert "resumed after DROP" in result
+    assert spy.updates == [{"progress": 6, "status": "CURRENT"}]
+
+
+def test_process_max_aggregated_normal_progress_advance():
+    spy = _Spy()
+    entry = _entry(status="CURRENT", progress=3)
+    state = {"last_seen_episode": 3, "rewatch_in_progress": False}
+    result = common.process_max_aggregated_progress(
+        "Some Show", 5, entry, state, "CR", spy.update_fn, spy.save_state_fn,
+    )
+    assert "progress 3 → 5" in result
+    assert spy.updates == [{"progress": 5}]
+    assert spy.saves == [(5, False)]
