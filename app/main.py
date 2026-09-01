@@ -55,6 +55,7 @@ _RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
 _AIRING_SCHEDULE_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_airing_schedule.py")
 _FILLER_DATA_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_filler_data.py")
 _MANGA_DATA_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_manga_data.py")
+_ID_MAPPING_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_id_mappings.py")
 _NETFLIX_CSV_IMPORT_SCRIPT = os.path.join(_SCRIPTS_DIR, "import_netflix_csv.py")
 _NETFLIX_CSV_IMPORT_TIMEOUT = 480  # seconds — same order as PROVIDER_STEP_TIMEOUT in
                                     # run_full_sync.py; a full-history CSV runs the same
@@ -480,6 +481,25 @@ def _refresh_manga_data() -> None:
         log.error("Manga data refresh exception: %s", e)
 
 
+def _refresh_id_mappings() -> None:
+    """Weekly job: refreshes anidb_mal_mapping_cache (issue #447) from
+    Fribb/anime-lists — a global table like filler_episode_cache/
+    manga_adaptation_cache, but a full-replace on every run rather than a
+    per-title incremental check: it's one static JSON fetch, not per-item
+    external API calls, so there's no per-row due/not-due state to track.
+    Feeds sync_plex.py's Guid-based (AniDB/MAL) fast path.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, _ID_MAPPING_SCRIPT],
+            capture_output=True, text=True, timeout=120, env=os.environ.copy(),
+        )
+        if result.returncode != 0:
+            log.error("Id mapping refresh failed: %s", result.stderr[-800:])
+    except Exception as e:
+        log.error("Id mapping refresh exception: %s", e)
+
+
 def _check_airing_episodes() -> None:
     """Hourly job: notify each user about their own unwatched episodes that started airing.
 
@@ -843,6 +863,14 @@ def _apply_schedule() -> None:
         _refresh_manga_data,
         CronTrigger(day_of_week="sun", hour=4, minute=15, timezone="UTC"),
         id="manga_data_refresh", replace_existing=True,
+    )
+    # Issue #447 — weekly, matching Fribb/anime-lists' own real update cadence
+    # (confirmed live: roughly weekly commits). Offset an hour after
+    # manga_data_refresh so the two weekly Sunday jobs don't overlap.
+    _scheduler.add_job(
+        _refresh_id_mappings,
+        CronTrigger(day_of_week="sun", hour=5, minute=15, timezone="UTC"),
+        id="id_mapping_refresh", replace_existing=True,
     )
     _scheduler.add_job(
         _weekly_airing_digest,
@@ -2732,7 +2760,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 42
+LATEST_MIGRATION = 43
 
 
 def _build_version() -> str | None:

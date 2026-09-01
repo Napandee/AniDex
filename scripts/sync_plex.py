@@ -22,12 +22,31 @@ is_plausible_match() — the same title-index-then-search-fallback pair
 Crunchyroll/Netflix already share — keyed on grandparentTitle (episodes) or
 title (movies), with season_number passed through for AniList's "2nd Season"
 naming convention (issue #159's fix, general enough to reuse here). Title
-matching is the whole matching path for now — a Plex library item's `Guid`
-list can carry an AniDB/MAL id (only present if the user has an anime-
-specific metadata agent like HAMA or MyAnimeList.bundle installed) that
-would be a strictly better match signal, but that's deliberately not wired
-in for v1 pending an AniDB/MAL → AniList id mapping table; see
-notes/2026-08-19-plex-sync-research.md, section 3.
+matching is the fallback path; see the Guid-based fast path below.
+
+Guid-based fast path (issue #447): a Plex library item's `Guid` list — NOT
+present on /status/sessions/history/all's own response, only on the fuller
+`/library/metadata/{ratingKey}` item detail, hence PlexHistory.fetch_item_guids()
+below — can carry an AniDB or MAL id when the user has an anime-specific
+metadata agent installed:
+  - HAMA (github.com/ZeroQI/Hama.bundle): `com.plexapp.agents.hama://anidb-<id>`
+  - MyAnimeList.bundle (github.com/Fribb/MyAnimeList.bundle): confirmed by
+    reading its Info.plist (CFBundleIdentifier =
+    `net.fribbtastic.coding.plex.myanimelist`, which is NOT the
+    `com.plexapp.agents.*` form HAMA uses — a legacy Plex Framework2 agent's
+    guid is always `<its own CFBundleIdentifier>://<id>`, not a fixed
+    `com.plexapp.agents.` prefix) and its update() method (uses `metadata.id`,
+    which search()/JIKAN_UTILS.search() sets to the raw MyAnimeList id) —
+    guids look like `net.fribbtastic.coding.plex.myanimelist://<mal_id>`.
+Resolved against anidb_mal_mapping_cache (scripts/sync_id_mappings.py, sourced
+from Fribb/anime-lists — confirmed live 2026-09-01: real, actively-maintained,
+42,870-row dataset, no license file). This is checked once per (title, season)
+group ahead of title matching — a strictly better signal where present, since
+it's an exact id match rather than a heuristic — and title matching remains
+the guaranteed fallback for every user without one of these agents installed,
+or when the id isn't in the mapping cache. See
+notes/2026-08-19-plex-sync-research.md, section 3, for the original research
+this was deferred from (issue #153).
 
 Auth: X-Plex-Token (server-scoped, from the OAuth PIN connect flow in
 app/plex_auth.py — see that module's docstring for why this isn't a
@@ -48,6 +67,7 @@ scripts' contract.
 """
 
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -85,14 +105,11 @@ FORCE_FULL_RESYNC = os.environ.get("FORCE_FULL_RESYNC", "").strip().lower() in (
 PAGE_SIZE = 100
 MAX_PAGES = 200  # safety cap — matches sync_crunchyroll.py/sync_netflix.py
 
-# Issue #153's research (notes/2026-08-19-plex-sync-research.md §3) found that an
-# anime-specific Plex agent (HAMA / MyAnimeList.bundle) can put an AniDB/MAL id on
-# an item's Guid list — a strictly better match signal than title-matching where
-# present. Deliberately not wired in for v1: mapping AniDB/MAL ids to AniList ids
-# needs its own mapping table, which the research explicitly declined to add as a
-# dependency for this pass (same call the Netflix/Prime research made). Title
-# matching below is the whole matching path for now; a real follow-up issue should
-# add the agent-id fast path on top of it, not the other way round.
+# Issue #447 — the AniDB/MAL Guid prefixes this app resolves via
+# anidb_mal_mapping_cache. See the module docstring above for how each was
+# confirmed.
+_HAMA_ANIDB_RE = re.compile(r"^com\.plexapp\.agents\.hama://anidb-(\d+)")
+_MYANIMELIST_BUNDLE_MAL_RE = re.compile(r"^net\.fribbtastic\.coding\.plex\.myanimelist://(\d+)")
 
 
 log = make_logger("plexsync", USER_ID)
@@ -152,6 +169,24 @@ class PlexHistory:
 
         return items, reached_true_end
 
+    def fetch_item_guids(self, rating_key: str) -> list[str]:
+        """GET /library/metadata/{ratingKey} — the fuller item-detail endpoint
+        that carries the `Guid` list (issue #447), unlike the lightweight
+        history rows fetch_since() above returns. Best-effort: any failure
+        (network error, unexpected shape) returns an empty list rather than
+        raising, since the Guid fast path is opportunistic — a failure here
+        must never block the title-matching fallback that already works."""
+        try:
+            resp = self.client.get(f"{self.base_url}/library/metadata/{rating_key}")
+            resp.raise_for_status()
+            metadata_list = (resp.json().get("MediaContainer") or {}).get("Metadata") or []
+            if not metadata_list:
+                return []
+            guids = metadata_list[0].get("Guid") or []
+            return [g["id"] for g in guids if isinstance(g, dict) and g.get("id")]
+        except Exception:
+            return []
+
 
 def _item_watched_at(item: dict) -> datetime | None:
     ts = item.get("viewedAt")
@@ -166,15 +201,21 @@ def _is_episode(item: dict) -> bool:
 
 def parse_items(items: list[dict]) -> dict[tuple[str, int], dict]:
     """Returns {(series_title, season_number): {"episode": most_recently_watched_episode,
-    "watched_at": datetime}} — same "most recently watched wins, not highest
-    episode number" rule as sync_crunchyroll.py's parse_items() (so a rewatch
-    started from episode 1 surfaces as episode 1 for process() to detect), keyed
-    by (title, season) for the same reason issue #159 keyed CR's parser that way:
-    two seasons of the same franchise watched in one sync window must not
-    collapse into a single entry.
+    "watched_at": datetime, "rating_key": ...}} — same "most recently watched
+    wins, not highest episode number" rule as sync_crunchyroll.py's
+    parse_items() (so a rewatch started from episode 1 surfaces as episode 1
+    for process() to detect), keyed by (title, season) for the same reason
+    issue #159 keyed CR's parser that way: two seasons of the same franchise
+    watched in one sync window must not collapse into a single entry.
 
     season_number defaults to 1 when parentIndex is absent/non-numeric (movies
-    have no parentIndex at all)."""
+    have no parentIndex at all).
+
+    rating_key (issue #447) is the series' own ratingKey for an episode
+    (`grandparentRatingKey` — a standard Plex field alongside `grandparentTitle`,
+    which this parser already relies on) or the item's own `ratingKey` for a
+    movie — used by the Guid fast path to fetch that item's full detail
+    (history rows themselves don't carry a Guid list)."""
     best: dict[tuple[str, int], dict] = {}
     for item in items:
         is_ep = _is_episode(item)
@@ -198,15 +239,72 @@ def parse_items(items: list[dict]) -> dict[tuple[str, int], dict]:
         watched_at = _item_watched_at(item)
         if not watched_at:
             continue
+        rating_key = (item.get("grandparentRatingKey") if is_ep else item.get("ratingKey"))
         existing = best.get(key)
         if not existing or watched_at > existing["watched_at"]:
             best[key] = {
                 "episode": ep,
                 "watched_at": watched_at,
                 "watched_format": "MOVIE" if not is_ep else "TV",
+                "rating_key": rating_key,
             }
 
     return best
+
+
+# ── Guid-based fast path (issue #447) ───────────────────────────────────────
+
+def parse_agent_guid_ids(guids: list[str]) -> tuple[int | None, int | None]:
+    """Returns (anidb_id, mal_id) parsed out of a Plex item's Guid list — either
+    may be None if that agent's id isn't present. Pure/no I/O so it's directly
+    testable without a live Plex server or database."""
+    anidb_id = mal_id = None
+    for guid in guids:
+        if anidb_id is None:
+            m = _HAMA_ANIDB_RE.match(guid)
+            if m:
+                anidb_id = int(m.group(1))
+        if mal_id is None:
+            m = _MYANIMELIST_BUNDLE_MAL_RE.match(guid)
+            if m:
+                mal_id = int(m.group(1))
+    return anidb_id, mal_id
+
+
+def resolve_anilist_id_from_guids(guids: list[str], mapping: dict[str, dict[int, int]]) -> int | None:
+    """Resolves a Plex item's Guid list straight to an AniList id via the
+    cached mapping table, or None if neither agent id is present or neither
+    resolves. `mapping` is {"anidb": {anidb_id: anilist_id}, "mal": {mal_id:
+    anilist_id}} — see load_id_mapping_cache(). MAL checked first: issue
+    #447's own research found MAL id coverage in the upstream dataset (91% of
+    AniList-tagged rows) meaningfully higher than AniDB's (63%), so it's the
+    more likely of the two to actually resolve when both happen to be
+    present, though either is an equally trustworthy exact-id match once
+    found."""
+    anidb_id, mal_id = parse_agent_guid_ids(guids)
+    if mal_id is not None and mal_id in mapping["mal"]:
+        return mapping["mal"][mal_id]
+    if anidb_id is not None and anidb_id in mapping["anidb"]:
+        return mapping["anidb"][anidb_id]
+    return None
+
+
+def load_id_mapping_cache(conn) -> dict[str, dict[int, int]]:
+    """Loads anidb_mal_mapping_cache (scripts/sync_id_mappings.py) into two
+    plain dicts for O(1) lookup during the matching loop — same "load once up
+    front, dict lookups per item" shape as load_user_list_from_db()/
+    load_title_search_cache() already use in this script."""
+    mapping: dict[str, dict[int, int]] = {"anidb": {}, "mal": {}}
+    if conn is None:
+        return mapping
+    with conn.cursor() as cur:
+        cur.execute("SELECT anilist_id, anidb_id, mal_id FROM anidb_mal_mapping_cache")
+        for row in cur.fetchall():
+            if row["anidb_id"] is not None:
+                mapping["anidb"][row["anidb_id"]] = row["anilist_id"]
+            if row["mal_id"] is not None:
+                mapping["mal"][row["mal_id"]] = row["anilist_id"]
+    return mapping
 
 
 # ── Postgres ──────────────────────────────────────────────────────────────────
@@ -365,21 +463,39 @@ def main():
     seed_search_cache(title_search_cache)
     log(f"Loaded {len(title_search_cache)} cached AniList title-search results")
 
-    updated = skipped = no_change = index_hits = search_hits = 0
+    id_mapping = load_id_mapping_cache(conn)
+    log(f"Loaded {len(id_mapping['anidb'])} AniDB / {len(id_mapping['mal'])} MAL id mappings")
+
+    updated = skipped = no_change = index_hits = search_hits = guid_hits = 0
 
     for (title, season), watched in sorted(watched_by_key.items()):
+        # Issue #447 — Guid-based fast path, checked ahead of title matching.
+        # Best-effort: fetch_item_guids() never raises (see its own docstring),
+        # so a missing rating_key or a failed/empty fetch just falls through to
+        # title matching below exactly as if this block didn't exist.
+        media_id = None
+        rating_key = watched.get("rating_key")
+        if rating_key:
+            guids = client.fetch_item_guids(str(rating_key))
+            if guids:
+                media_id = resolve_anilist_id_from_guids(guids, id_mapping)
+                if media_id:
+                    guid_hits += 1
+                    log(f"  ✓ Guid fast-path match: '{title}' -> AniList #{media_id}")
+
         normalized = title.lower()
         candidates = season_suffix_candidates(title, season) if season > 1 else []
         in_index_before = normalized in title_index or any(c.lower() in title_index for c in candidates)
 
-        media_id = find_anilist_id(title, title_index, season_number=season)
-        if not in_index_before and title not in title_search_cache:
-            save_title_search_cache_entry(conn, title, media_id)
-            title_search_cache[title] = media_id
-        if in_index_before and media_id:
-            index_hits += 1
-        elif media_id:
-            search_hits += 1
+        if not media_id:
+            media_id = find_anilist_id(title, title_index, season_number=season)
+            if not in_index_before and title not in title_search_cache:
+                save_title_search_cache_entry(conn, title, media_id)
+                title_search_cache[title] = media_id
+            if in_index_before and media_id:
+                index_hits += 1
+            elif media_id:
+                search_hits += 1
         if not media_id:
             log(f"  ✗ No AniList match: '{title}'" + (f" (season {season})" if season > 1 else ""))
             skipped += 1
@@ -430,7 +546,7 @@ def main():
     if conn:
         conn.close()
     log(f"Done — {updated} updated, {no_change} unchanged, {skipped} skipped/unmatched "
-        f"({index_hits} index hits, {search_hits} API searches)"
+        f"({guid_hits} guid fast-path hits, {index_hits} index hits, {search_hits} API searches)"
         + (" [DRY RUN — nothing was written]" if DRY_RUN else ""))
     _emit_result(updated, len(raw_items), full_pull)
 
