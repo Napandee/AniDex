@@ -1558,16 +1558,20 @@ document.querySelectorAll('.btn-add-planning').forEach(btn => {
 // scope decision — cheap end, not a fuller slide-through experience) layered
 // over the wrap-up's own already-rendered stat tiles/details (`.wrapup-reveal-
 // step` elements). No new backend data: this only staggers CSS classes on DOM
-// nodes that already exist, either server-rendered directly (wrapped.html) or
-// already populated into the DOM by stats.html's #wrapup-card fetch.
+// nodes that already exist, populated into the DOM by stats.html's #wrapup-card
+// fetch.
 //
-// Auto-plays the first time a user views a given year's wrap-up, tracked
-// client-side only via localStorage (`wrapupRevealSeen:<scope>:<year>` — scope
-// keeps /stats's #wrapup-card and /stats/wrapped's own reveal independent, per
-// the issue's own reasoning: #196's page is always the current calendar year,
-// while #wrapup-card's year picker can revisit any past year), then settles
-// into the plain static grid. A "Show reveal" button replays it on demand
-// afterward — see init() below for the shared wire-up both call sites use.
+// Issue #444/#452 — /stats/wrapped's own reveal (this module's other original
+// call site) was replaced by AniDexWrappedFlow's full-screen animated slide
+// flow below; this module is now scoped to stats.html's #wrapup-card
+// (`scope: 'card'`) only, called programmatically from stats.html's own JS,
+// never via a data-attribute auto-init (nothing marks up `data-wrapup-reveal-
+// year` in a template anymore).
+//
+// Auto-plays the first time a user views a given year's card, tracked
+// client-side only via localStorage (`wrapupRevealSeen:<scope>:<year>`), then
+// settles into the plain static grid. A "Show reveal" button replays it on
+// demand afterward — see init() below.
 window.AniDexWrapupReveal = (function () {
   function seenKey(scope, year) {
     return `wrapupRevealSeen:${scope}:${year}`;
@@ -1617,19 +1621,408 @@ window.AniDexWrapupReveal = (function () {
   return { hasSeen, markSeen, play, init };
 })();
 
-// Auto-init any server-rendered reveal container already in the DOM at load
-// time (wrapped.html's #wrapped-reveal, marked up via data-wrapup-reveal-*
-// attributes) — stats.html's #wrapup-card is populated by its own async fetch
-// instead and calls AniDexWrapupReveal.init() itself once data loads.
-document.querySelectorAll('[data-wrapup-reveal-year]').forEach(el => {
-  const scope = el.dataset.wrapupRevealScope || 'default';
-  const year = el.dataset.wrapupRevealYear;
-  const steps = Array.from(el.querySelectorAll('.wrapup-reveal-step'));
-  const replayBtn = el.dataset.wrapupRevealReplayBtn
-    ? document.getElementById(el.dataset.wrapupRevealReplayBtn)
-    : null;
-  window.AniDexWrapupReveal.init(el, steps, { scope, year, replayBtn });
-});
+// ── "Your year so far" full-screen animated slide flow (issue #444/#452) ───
+// Spotify-Wrapped/Instagram-Stories-style: one highlight per full-screen
+// slide, tap/click/arrow-keys/swipe to advance, auto-advancing progress bar
+// with press-and-hold-to-pause. Reuses AniDexWrapupReveal's exact
+// hasSeen/markSeen/localStorage scheme (scope 'wrapped') for "auto-launch the
+// first time this year's page is viewed, replay button afterward" — this
+// flow replaces that module's old in-place stagger on THIS page only; see
+// AniDexWrapupReveal's own comment above for the split.
+//
+// Built entirely from window.WRAPPED_DATA (wrapped.html inlines it, same
+// window.I18N-style embed pattern) — no second data fetch. `_compute_wrapped_
+// page()` (app/main.py) is the single source of truth for every value read
+// here; this module only decides how to lay ten of its fields out as slides.
+window.AniDexWrappedFlow = (function () {
+  const DURATION = 4200; // ms per auto-advancing slide
+
+  function fmtTitle(entry) {
+    return entry ? entry.title : '';
+  }
+
+  // Slide 0 (cold open) and the recap card both want a handful of this
+  // year's cover art at once; every other art-bearing slide wants just one.
+  // Falls back to [] / null when highlight_covers is empty (a real, if rare,
+  // shape — e.g. every completed title this year is missing cover art) so
+  // slide rendering never has to null-check the pool itself.
+  function pickCovers(data, n) {
+    const pool = data.highlight_covers || [];
+    if (!pool.length) return [];
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(pool[i % pool.length]);
+    return out;
+  }
+
+  function buildSlides(data) {
+    const slides = [];
+    const collage = pickCovers(data, 3);
+    const y = data.year;
+
+    slides.push({
+      grad: 'radial-gradient(circle at 30% 15%, #1e3a8a, #020617)',
+      covers: collage,
+      html: `
+        ${collage.length ? `<div class="wrapped-collage">${collage.map(u => `<img src="${u}" alt="">`).join('')}</div>` : ''}
+        <div class="wrapped-slide-title">${t('stats_wrapped_slide_cold_open_title', { year: y })}</div>`,
+    });
+
+    slides.push({
+      grad: 'radial-gradient(circle at 70% 20%, #312e81, #020617)',
+      cover: pickCovers(data, 1)[0],
+      html: `
+        <div class="wrapped-slide-eyebrow">${t('stats_hl_episodes')}</div>
+        <div class="wrapped-slide-big">${data.total_episodes}</div>`,
+    });
+
+    slides.push({
+      grad: 'radial-gradient(circle at 25% 75%, #164e63, #020617)',
+      cover: pickCovers(data, 2)[1],
+      html: `
+        <div class="wrapped-slide-eyebrow">${t('stats_hl_watchtime')}</div>
+        <div class="wrapped-slide-big">${data.total_watch_display}</div>`,
+    });
+
+    const paceKey = data.pace.status === 'no_prior_data' ? 'stats_wrapped_pace_no_data'
+      : data.pace.status === 'ahead' ? 'stats_wrapped_pace_ahead'
+      : data.pace.status === 'behind' ? 'stats_wrapped_pace_behind'
+      : 'stats_wrapped_pace_on_pace';
+    slides.push({
+      grad: 'radial-gradient(circle at 65% 70%, #7c2d12, #020617)',
+      cover: pickCovers(data, 3)[2],
+      html: `
+        <div class="wrapped-slide-sub">${t(paceKey, {
+          pct: Math.abs(data.pace.diff_pct || 0),
+          episodes: data.pace.this_year_episodes,
+          prior_episodes: data.pace.prior_year_episodes,
+          prior_year: data.prior_year,
+        })}</div>`,
+    });
+
+    slides.push({
+      grad: 'radial-gradient(circle at 50% 30%, #581c87, #020617)',
+      cover: pickCovers(data, 1)[0],
+      html: `
+        <div class="wrapped-slide-eyebrow">${t('stats_wrapped_hl_top_genre')}</div>
+        <div class="wrapped-slide-big">${data.top_genre || '—'}</div>`,
+    });
+
+    slides.push({
+      grad: 'radial-gradient(circle at 30% 80%, #065f46, #020617)',
+      cover: pickCovers(data, 2)[1],
+      html: data.binge_week ? `
+        <div class="wrapped-slide-eyebrow">${t('stats_wrapped_binge')}</div>
+        <div class="wrapped-slide-sub">${t('stats_wrapped_binge_fmt', {
+          episodes: data.binge_week.episodes, start: data.binge_week.start, end: data.binge_week.end,
+        })}</div>` : `<div class="wrapped-slide-eyebrow">${t('stats_wrapped_binge')}</div><div class="wrapped-slide-sub">—</div>`,
+    });
+
+    slides.push({
+      grad: 'radial-gradient(circle at 70% 25%, #9d174d, #020617)',
+      cover: data.most_rewatched ? data.most_rewatched.cover_image_url : null,
+      poster: !!data.most_rewatched,
+      html: data.most_rewatched ? `
+        ${data.most_rewatched.cover_image_url ? `<div class="wrapped-poster"><img src="${data.most_rewatched.cover_image_url}" alt="${fmtTitle(data.most_rewatched)}"></div>` : ''}
+        <div class="wrapped-slide-eyebrow">${t('stats_wrapped_hl_most_rewatched')}</div>
+        <div class="wrapped-slide-title">${data.most_rewatched.title}</div>
+        <div class="wrapped-slide-sub">${data.most_rewatched.count === 1 ? t('queue_rewatch_singular', { count: 1 }) : t('queue_rewatch_plural', { count: data.most_rewatched.count })}</div>`
+        : `<div class="wrapped-slide-eyebrow">${t('stats_wrapped_hl_most_rewatched')}</div><div class="wrapped-slide-sub">—</div>`,
+    });
+
+    slides.push({
+      grad: 'radial-gradient(circle at 40% 20%, #92400e, #020617)',
+      cover: data.highest_rated ? data.highest_rated.cover_image_url : null,
+      poster: !!data.highest_rated,
+      posterLg: true,
+      html: data.highest_rated ? `
+        ${data.highest_rated.cover_image_url ? `<div class="wrapped-poster wrapped-poster--lg"><img src="${data.highest_rated.cover_image_url}" alt="${fmtTitle(data.highest_rated)}"></div>` : ''}
+        <div class="wrapped-slide-eyebrow">${t('stats_wrapped_hl_highest_rated')}</div>
+        <div class="wrapped-slide-title">${data.highest_rated.title}</div>
+        <div class="wrapped-slide-sub">${'★'.repeat(data.highest_rated.score)}</div>`
+        : `<div class="wrapped-slide-eyebrow">${t('stats_wrapped_hl_highest_rated')}</div><div class="wrapped-slide-sub">${t('stats_wrapped_highest_rated_empty')}</div>`,
+    });
+
+    let scoreSlideHtml;
+    if (data.score_shift.has_prior_year_data && data.score_shift.this_year.length) {
+      const rows = data.score_shift.this_year;
+      const max = Math.max(...rows.map(r => r.count));
+      const total = rows.reduce((a, r) => a + r.count, 0);
+      const bars = rows.map(r => `
+        <div class="wrapped-mini-bar-col">
+          <div class="wrapped-mini-bar" style="height:${Math.max(8, (r.count / max) * 80)}px"></div>
+          <span class="wrapped-mini-bar-label">${r.score}★</span>
+        </div>`).join('');
+      scoreSlideHtml = `
+        <div class="wrapped-slide-eyebrow">${t('stats_wrapped_score_shift')}</div>
+        <div class="wrapped-slide-sub">${t('stats_wrapped_titles_rated', { count: total })}</div>
+        <div class="wrapped-mini-bars">${bars}</div>`;
+    } else {
+      scoreSlideHtml = `
+        <div class="wrapped-slide-eyebrow">${t('stats_wrapped_score_shift')}</div>
+        <div class="wrapped-slide-sub">${t('stats_wrapped_no_prior_year')}</div>`;
+    }
+    slides.push({ grad: 'radial-gradient(circle at 60% 60%, #1e3a8a, #020617)', cover: pickCovers(data, 4)[3], html: scoreSlideHtml });
+
+    const recapCovers = pickCovers(data, 4);
+    slides.push({
+      grad: 'radial-gradient(circle at 50% 50%, #111827, #020617)',
+      html: `
+        <div class="wrapped-slide-eyebrow" style="margin-bottom:1.1rem">${t('stats_wrapped_recap_title', { year: y })}</div>
+        <div class="wrapped-recap-card">
+          ${recapCovers.length ? `<div class="wrapped-recap-thumbs">${recapCovers.map(u => `<div class="wrapped-recap-thumb"><img src="${u}" alt=""></div>`).join('')}</div>` : ''}
+          <h3>${t('stats_wrapped_recap_title', { year: y })}</h3>
+          <div class="wrapped-recap-row"><span>${t('stats_hl_episodes')}</span><b>${data.total_episodes}</b></div>
+          <div class="wrapped-recap-row"><span>${t('stats_hl_watchtime')}</span><b>${data.total_watch_display}</b></div>
+          <div class="wrapped-recap-row"><span>${t('stats_wrapped_hl_top_genre')}</span><b>${data.top_genre || '—'}</b></div>
+          ${data.highest_rated ? `<div class="wrapped-recap-row"><span>${t('stats_wrapped_hl_highest_rated')}</span><b>${data.highest_rated.title}</b></div>` : ''}
+        </div>
+        <div class="wrapped-recap-actions">
+          <button type="button" class="wrapped-recap-btn primary" id="wrapped-recap-download">${t('stats_wrapped_save_image')}</button>
+          <button type="button" class="wrapped-recap-btn ghost" id="wrapped-recap-replay">${t('stats_wrapped_flow_replay')}</button>
+        </div>
+        <p class="wrapped-recap-note">${t('stats_wrapped_download_note')}</p>`,
+      isRecap: true,
+    });
+
+    return slides;
+  }
+
+  // Renders the final recap card to an off-screen canvas and triggers a real
+  // browser download — the actual "share" mechanism per #444's decision
+  // (download-only, no public link). Drawn from the same `data` this flow
+  // already has in memory, not a DOM screenshot, so it renders correctly even
+  // if a viewer never actually opened the recap slide's DOM at full size.
+  function downloadRecapImage(data) {
+    const W = 720, H = 900;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, '#1e293b');
+    grad.addColorStop(1, '#0f172a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 40px system-ui, sans-serif';
+    ctx.fillText(t('stats_wrapped_recap_title', { year: data.year }), 48, 90);
+
+    const rows = [
+      [t('stats_hl_episodes'), String(data.total_episodes)],
+      [t('stats_hl_watchtime'), data.total_watch_display],
+      [t('stats_wrapped_hl_top_genre'), data.top_genre || '—'],
+    ];
+    if (data.highest_rated) rows.push([t('stats_wrapped_hl_highest_rated'), data.highest_rated.title]);
+    if (data.most_rewatched) rows.push([t('stats_wrapped_hl_most_rewatched'), data.most_rewatched.title]);
+
+    ctx.font = '400 26px system-ui, sans-serif';
+    let y = 170;
+    rows.forEach(([label, value]) => {
+      ctx.fillStyle = 'rgba(255,255,255,0.68)';
+      ctx.fillText(label, 48, y);
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 26px system-ui, sans-serif';
+      ctx.fillText(value.length > 26 ? value.slice(0, 25) + '…' : value, 48, y + 34);
+      ctx.font = '400 26px system-ui, sans-serif';
+      y += 100;
+    });
+
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '400 18px system-ui, sans-serif';
+    ctx.fillText('AniDex', 48, H - 40);
+
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `anidex-${data.year}-recap.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, 'image/png');
+  }
+
+  function init(root, data) {
+    if (!root || !data || !data.has_data) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const slides = buildSlides(data);
+    const N = slides.length;
+
+    const bgLayers = root.querySelector('#wrapped-stage-bg');
+    const barsEl = root.querySelector('#wrapped-stage-bars');
+    const slidesEl = root.querySelector('#wrapped-stage-slides');
+    const zoneLeft = root.querySelector('#wrapped-zone-left');
+    const zoneRight = root.querySelector('#wrapped-zone-right');
+    const closeBtn = root.querySelector('#wrapped-stage-close');
+
+    let idx = 0, timer = null, startedAt = 0, remaining = DURATION, paused = false, opened = false;
+
+    slides.forEach((slide, i) => {
+      const bg = document.createElement('div');
+      bg.className = 'wrapped-slide-bg';
+      bg.style.setProperty('--wrapped-slide-grad', slide.grad);
+      bg.dataset.i = i;
+      if (slide.cover) {
+        const art = document.createElement('div');
+        art.className = 'wrapped-cover-art';
+        art.style.backgroundImage = `url(${slide.cover})`;
+        bg.appendChild(art);
+        const scrim = document.createElement('div');
+        scrim.className = 'wrapped-cover-scrim';
+        bg.appendChild(scrim);
+      }
+      bgLayers.appendChild(bg);
+
+      const s = document.createElement('div');
+      s.className = 'wrapped-slide-content';
+      s.dataset.i = i;
+      s.innerHTML = slide.html;
+      slidesEl.appendChild(s);
+
+      const bar = document.createElement('div');
+      bar.className = 'wrapped-bar';
+      bar.innerHTML = '<div class="wrapped-bar-fill"></div>';
+      barsEl.appendChild(bar);
+    });
+
+    function wireRecapButtons() {
+      const dl = document.getElementById('wrapped-recap-download');
+      const rp = document.getElementById('wrapped-recap-replay');
+      if (dl && !dl.dataset.bound) {
+        dl.dataset.bound = '1';
+        dl.addEventListener('click', (e) => { e.stopPropagation(); downloadRecapImage(data); });
+      }
+      if (rp && !rp.dataset.bound) {
+        rp.dataset.bound = '1';
+        rp.addEventListener('click', (e) => { e.stopPropagation(); goTo(0); });
+      }
+    }
+
+    function render() {
+      root.querySelectorAll('.wrapped-slide-bg').forEach(el => el.classList.toggle('active', +el.dataset.i === idx));
+      root.querySelectorAll('.wrapped-slide-content').forEach(el => el.classList.toggle('active', +el.dataset.i === idx));
+      root.querySelectorAll('.wrapped-bar-fill').forEach((el, i) => {
+        el.classList.remove('anim', 'done');
+        el.style.transition = 'none';
+        if (i < idx) { el.style.width = '100%'; el.classList.add('done'); }
+        else { el.style.width = '0%'; }
+      });
+      wireRecapButtons();
+    }
+
+    function startBar() {
+      if (reduceMotion) return;
+      const fill = root.querySelectorAll('.wrapped-bar-fill')[idx];
+      if (!fill) return;
+      void fill.offsetWidth;
+      fill.style.transition = `width ${remaining}ms linear`;
+      fill.classList.add('anim');
+      fill.style.width = '100%';
+      startedAt = Date.now();
+      clearTimeout(timer);
+      if (idx < N - 1) timer = setTimeout(next, remaining);
+    }
+
+    function goTo(i) {
+      idx = Math.max(0, Math.min(N - 1, i));
+      remaining = DURATION;
+      render();
+      if (!paused) startBar();
+    }
+    function next() { idx < N - 1 ? goTo(idx + 1) : close(); }
+    function prev() { goTo(Math.max(0, idx - 1)); }
+
+    function pause() {
+      if (paused || reduceMotion) return;
+      paused = true;
+      clearTimeout(timer);
+      const fill = root.querySelectorAll('.wrapped-bar-fill')[idx];
+      if (fill) {
+        const elapsed = Date.now() - startedAt;
+        remaining = Math.max(200, remaining - elapsed);
+        const cs = getComputedStyle(fill).width;
+        fill.style.transition = 'none';
+        fill.style.width = cs;
+      }
+    }
+    function resume() {
+      if (!paused) return;
+      paused = false;
+      startBar();
+    }
+
+    function open() {
+      if (opened) { idx = 0; remaining = DURATION; }
+      opened = true;
+      root.hidden = false;
+      document.body.style.overflow = 'hidden';
+      render();
+      startBar();
+    }
+    function close() {
+      root.hidden = true;
+      document.body.style.overflow = '';
+      clearTimeout(timer);
+    }
+
+    zoneLeft.addEventListener('click', prev);
+    zoneRight.addEventListener('click', next);
+    closeBtn.addEventListener('click', close);
+
+    let holdTimer = null;
+    root.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.wrapped-recap-btn') || e.target === closeBtn) return;
+      holdTimer = setTimeout(pause, 180);
+    });
+    root.addEventListener('pointerup', () => { clearTimeout(holdTimer); resume(); });
+    root.addEventListener('pointerleave', () => { clearTimeout(holdTimer); });
+
+    let touchX = null;
+    root.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+    root.addEventListener('touchend', (e) => {
+      if (touchX == null) return;
+      const dx = e.changedTouches[0].clientX - touchX;
+      if (Math.abs(dx) > 40) dx < 0 ? next() : prev();
+      touchX = null;
+    }, { passive: true });
+
+    document.addEventListener('keydown', (e) => {
+      if (root.hidden) return;
+      if (e.key === 'ArrowRight') next();
+      else if (e.key === 'ArrowLeft') prev();
+      else if (e.key === 'Escape') close();
+    });
+
+    return { open, close };
+  }
+
+  return { init };
+})();
+
+// Auto-init #wrapped-stage from window.WRAPPED_DATA if present (wrapped.html
+// only) — opens the "Play recap" button, and auto-launches once per year the
+// same way AniDexWrapupReveal's old stagger used to (localStorage-tracked,
+// scope 'wrapped', shared key format — see that module's own comment).
+(function () {
+  const stage = document.getElementById('wrapped-stage');
+  if (!stage || !window.WRAPPED_DATA) return;
+  const flow = window.AniDexWrappedFlow.init(stage, window.WRAPPED_DATA);
+  if (!flow) return;
+  const playBtn = document.getElementById('wrapped-play-btn');
+  if (playBtn) playBtn.addEventListener('click', flow.open);
+  const year = stage.dataset.wrappedYear;
+  if (year != null && !window.AniDexWrapupReveal.hasSeen('wrapped', year)) {
+    // Marked seen at the moment we decide to auto-launch, not on close —
+    // matches AniDexWrapupReveal.init()'s own timing exactly, so navigating
+    // away mid-flow (never reaching close()) still counts as "seen" and
+    // doesn't re-launch on the next visit.
+    window.AniDexWrapupReveal.markSeen('wrapped', year);
+    flow.open();
+  }
+})();
 
 // ── Tag management delete confirmation (issue #376) ─────────────────────────
 // Reads tag/count off the form's own dataset rather than interpolating them
