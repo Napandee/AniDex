@@ -147,9 +147,10 @@ def test_english_publisher_from_mangaupdates_none_when_no_english_publisher():
 # ── Mocked pipeline coverage ──────────────────────────────────────────────────
 
 class _FakeResponse:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload, status_code=200, headers=None):
         self._payload = payload
         self.status_code = status_code
+        self.headers = headers or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -161,6 +162,35 @@ class _FakeResponse:
     @property
     def is_success(self):
         return 200 <= self.status_code < 300
+
+
+def test_anilist_gql_retries_on_429_then_succeeds(monkeypatch):
+    """Issue #454's own first production run found this the hard way: without
+    real retry-with-backoff, AniList's rate limit (shared across the whole
+    app, not just this one job) 429'd the large majority of a ~1500-title
+    catalog. Confirms the fix respects Retry-After and eventually succeeds."""
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(smd.time, "sleep", lambda s: sleeps.append(s))
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(1)
+        if len(calls) < 3:
+            return _FakeResponse({}, status_code=429, headers={"retry-after": "2"})
+        return _FakeResponse({"data": {"Media": {"id": 1}}})
+
+    monkeypatch.setattr(smd.httpx, "post", fake_post)
+    result = smd._anilist_gql("query {}", {})
+    assert result == {"Media": {"id": 1}}
+    assert len(calls) == 3
+    assert sleeps == [2.0, 2.0]
+
+
+def test_anilist_gql_gives_up_after_max_retries(monkeypatch):
+    monkeypatch.setattr(smd.time, "sleep", lambda s: None)
+    monkeypatch.setattr(smd.httpx, "post", lambda *a, **kw: _FakeResponse({}, status_code=429, headers={}))
+    with pytest.raises(RuntimeError):
+        smd._anilist_gql("query {}", {})
 
 
 def test_fetch_source_candidates_filters_to_source_manga_edges(monkeypatch):

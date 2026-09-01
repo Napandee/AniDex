@@ -456,14 +456,23 @@ def _refresh_manga_data() -> None:
     filler_data_refresh) — chapter/status data doesn't need same-day freshness,
     and the underlying AniList/MangaDex/MangaUpdates calls are per-title work
     scripts/sync_manga_data.py's own per-title last-checked tracking already
-    keeps to a minimum after the first run. Longer timeout than the filler job's
-    (1200s) since this makes up to three external API calls per due title
-    instead of one.
+    keeps to a minimum after the first run.
+
+    5400s (90 min), not the filler job's 1200s — confirmed live against the
+    real production catalog (~1500 titles, all due on the very first run
+    before any sync_state rows exist): each due title costs up to three
+    external API calls, and even a hard timeout here isn't a correctness
+    problem (any title not reached this run just stays "due" and gets picked
+    up on a later weekly run — same graceful partial-coverage precedent
+    sync_filler_data.py's own "coverage will be sparse for a long time"
+    already accepts), but a first run that gets cut off after only a few
+    dozen titles takes many weeks to backfill the whole catalog at that rate,
+    which this generous timeout avoids in the common case.
     """
     try:
         result = subprocess.run(
             [sys.executable, _MANGA_DATA_SCRIPT],
-            capture_output=True, text=True, timeout=2400, env=os.environ.copy(),
+            capture_output=True, text=True, timeout=5400, env=os.environ.copy(),
         )
         if result.returncode != 0:
             log.error("Manga data refresh failed: %s", result.stderr[-800:])
