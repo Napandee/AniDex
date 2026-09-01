@@ -78,9 +78,29 @@ MANGAUPDATES_API = "https://api.mangaupdates.com/v1"
 # uses against AniFillerPedia's similarly-unspecified limit. Both services have
 # IP-banned aggressive scrapers before (confirmed via #450's own research), so
 # this errs conservative rather than trying to find the real ceiling.
-ANILIST_SLEEP = 0.5
+#
+# ANILIST_SLEEP — issue #454's own first production run found this wrong: 0.5s
+# is 2 req/s = 120 req/min, which is ABOVE AniList's real 90 req/min limit
+# (anilist_sync_common.py's own gql() comment), not under it. That run
+# 429'd on the large majority of a real ~1500-title catalog. 0.8s (75 req/min)
+# leaves real margin, and AniList's limit is shared across the whole app (any
+# concurrent user-facing quick-add-by-title call competes for the same
+# budget), so real retry-with-backoff below matters at least as much as the
+# sleep interval itself — a "polite enough" fixed delay alone isn't sufficient
+# in a multi-consumer environment the way it might be for a service this app
+# is the only real user of.
+ANILIST_SLEEP = 0.8
 MANGADEX_SLEEP = 0.25
 MANGAUPDATES_SLEEP = 0.6
+
+# Same retry-with-backoff shape as anilist_sync_common.py's gql() — not reused
+# directly (that module requires ANILIST_TOKEN/ANILIST_USERNAME at import time,
+# a per-user-script contract this catalog-wide script, like
+# sync_filler_data.py/sync_airing_schedule.py, deliberately doesn't have) but
+# the same real-world reason applies: AniList's rate limit is genuinely hit in
+# practice, confirmed live during both #48's original testing and #454's own
+# first production run.
+MAX_ANILIST_RATE_LIMIT_RETRIES = 5
 
 # Same asymmetric-cooldown shape as sync_filler_data.py's RECHECK_INTERVAL_*:
 # a title with a matched adaptation is worth rechecking on every weekly run —
@@ -120,12 +140,25 @@ SOURCE_FORMATS = {"MANGA", "NOVEL", "ONE_SHOT"}
 
 
 def _anilist_gql(query: str, variables: dict) -> dict:
-    resp = httpx.post(
-        ANILIST_API,
-        json={"query": query, "variables": variables},
-        headers={"Content-Type": "application/json"},
-        timeout=30,
-    )
+    """Same retry-with-backoff shape as anilist_sync_common.py's gql() — see
+    MAX_ANILIST_RATE_LIMIT_RETRIES' comment for why this isn't just imported
+    from there directly. Respects AniList's own Retry-After header rather than
+    a fixed guess."""
+    resp = None
+    for attempt in range(MAX_ANILIST_RATE_LIMIT_RETRIES):
+        resp = httpx.post(
+            ANILIST_API,
+            json={"query": query, "variables": variables},
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
+        if resp.status_code == 429 and attempt < MAX_ANILIST_RATE_LIMIT_RETRIES - 1:
+            wait = float(resp.headers.get("retry-after", 5))
+            print(f"    AniList rate-limited — waiting {wait}s before retry...", flush=True)
+            time.sleep(wait)
+            continue
+        break
+
     resp.raise_for_status()
     data = resp.json()
     if "errors" in data:
