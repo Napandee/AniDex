@@ -51,7 +51,7 @@
     <span class="queue-rank">{{ loop.index }}</span>
 
     {% if e.cover_image_url %}
-    <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover">
+    <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover" onerror="this.onerror=null;this.style.opacity='0';">
     {% endif %}
 
     <div class="queue-body">
@@ -165,7 +165,7 @@
     <li class="queue-item" data-anime-id="{{ e.id }}" data-notes-back="COMPLETED"
         title="{{ t('queue_notes_edit_title') }}">
       {% if e.cover_image_url %}
-      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover">
+      <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="queue-cover" onerror="this.onerror=null;this.style.opacity='0';">
       {% endif %}
 
       <div class="queue-body">

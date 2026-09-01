@@ -6,7 +6,7 @@
 
   <div class="notes-context">
     {% if anime.cover_image_url %}
-    <img src="{{ anime.cover_image_url }}" alt="{{ anime.title_romaji }}" class="notes-cover">
+    <img src="{{ anime.cover_image_url }}" alt="{{ anime.title_romaji }}" class="notes-cover" onerror="this.onerror=null;this.style.opacity='0';">
     {% endif %}
     <div>
       <h1 class="notes-context-title">{{ anime.title_english or anime.title_romaji }}</h1>
