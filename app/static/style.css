@@ -4206,6 +4206,15 @@ a.drop-tag-chip-link:focus-visible {
   .filter-btn, .sort-btn {
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
+    /* Issue #427 — measured 24px tall before this, exactly WCAG 2.2 SC
+       2.5.8's AA floor and well under the 44/48px most platform guidelines
+       recommend. min-height rather than more padding alone, since padding
+       scales with the button's own text length and these are short single
+       words ("Title", "Score") that wouldn't reliably push height up on
+       their own. */
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
   }
   .sort-label { display: none; }
 
