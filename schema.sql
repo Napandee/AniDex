@@ -384,6 +384,42 @@ CREATE TABLE filler_data_license (
     fetched_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Manga/light-novel "living integration" data cache (issue #454, spike #450) —
+-- same external-derived-cache shape as filler_episode_cache/filler_sync_state just
+-- above: global/catalog-scoped, not per-user, populated only by
+-- scripts/sync_manga_data.py, never hand-edited. See that script's own module
+-- docstring for the AniList -> MangaDex -> MangaUpdates matching pipeline and
+-- migrations/042_manga_adaptation_cache.sql for the full design rationale.
+CREATE TABLE manga_adaptation_cache (
+    id                  SERIAL PRIMARY KEY,
+    anime_id            INTEGER NOT NULL REFERENCES anime(id) ON DELETE CASCADE,
+    source_type         TEXT NOT NULL CHECK (source_type IN ('MANGA', 'NOVEL')),
+    anilist_source_id   INTEGER,
+    title               TEXT,
+    status              TEXT,
+    latest_chapter       INTEGER,
+    latest_volume        INTEGER,
+    last_release_at      TIMESTAMPTZ,
+    licensor_name        TEXT,
+    licensor_url          TEXT,
+    cover_image_url      TEXT,
+    mangadex_id          TEXT,
+    mangaupdates_id      TEXT,
+    match_method         TEXT NOT NULL CHECK (match_method IN ('anilist_only', 'mangadex_verified')),
+    synced_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (anime_id, source_type)
+);
+
+-- Per-anime "have we checked for an adaptation, and did we find one" state — see
+-- filler_sync_state's own comment above for why this can't just live on the cache
+-- table (a "no adaptation found" outcome has no cache row to hang a last-checked
+-- timestamp off of).
+CREATE TABLE manga_adaptation_sync_state (
+    anime_id           INTEGER PRIMARY KEY REFERENCES anime(id) ON DELETE CASCADE,
+    has_adaptation     BOOLEAN NOT NULL,
+    last_checked_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- =========================================================================
 -- PERSONAL LAYER (never touched by sync — this is the reason the site exists)
 -- =========================================================================

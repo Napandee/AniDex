@@ -3829,6 +3829,35 @@ a.drop-tag-chip-link:focus-visible {
   color: var(--pill-violet-text);
 }
 
+/* ── Manga/light-novel "living integration" badge + drawer (issue #454) ──────
+   .manga-status-badge layers pill-shaped visual overrides on top of #141's
+   .help-disclosure-btn — same toggle behavior (aria-expanded/aria-controls,
+   shared script.js click handler), different shape. Declared after
+   .help-disclosure-btn in source order so these win on the shared properties
+   (equal specificity, later wins) despite that base rule's `all: unset`. */
+.manga-status-badge {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--pill-teal-bg);
+  border: 1px solid var(--pill-teal-border);
+  color: var(--pill-teal-text);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.manga-status-badge:hover { border-color: var(--pill-teal-text); }
+.manga-status-badge:focus-visible { outline: 2px solid var(--pill-teal-text); outline-offset: 2px; }
+.manga-status-badge[aria-expanded="true"] { background: var(--pill-teal-border); }
+
+.manga-status-panel-body { font-size: 0.75rem; color: var(--t5); line-height: 1.5; padding: 0.5rem 0 0.2rem; display: grid; gap: 0.5rem; }
+.manga-source-row { display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; align-items: start; }
+.manga-source-type { font-weight: 700; color: var(--t2); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.manga-source-detail { color: var(--t5); }
+
 /* ── Rewatch ribbon (issue #330 — merged Watching/Repeating tabs) ────────────── */
 /* .card already has position:relative + overflow:hidden, so this only needs
    absolute positioning against it — no extra wrapper around the cover img. */

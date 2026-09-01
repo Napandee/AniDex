@@ -54,6 +54,7 @@ _FULL_SYNC_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_full_sync.py")
 _RECOMMENDER_SCRIPT = os.path.join(_SCRIPTS_DIR, "run_recommender.py")
 _AIRING_SCHEDULE_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_airing_schedule.py")
 _FILLER_DATA_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_filler_data.py")
+_MANGA_DATA_SCRIPT = os.path.join(_SCRIPTS_DIR, "sync_manga_data.py")
 _NETFLIX_CSV_IMPORT_SCRIPT = os.path.join(_SCRIPTS_DIR, "import_netflix_csv.py")
 _NETFLIX_CSV_IMPORT_TIMEOUT = 480  # seconds — same order as PROVIDER_STEP_TIMEOUT in
                                     # run_full_sync.py; a full-history CSV runs the same
@@ -448,6 +449,28 @@ def _refresh_filler_data() -> None:
         log.error("Filler data refresh exception: %s", e)
 
 
+def _refresh_manga_data() -> None:
+    """Weekly job: refresh manga_adaptation_cache/manga_adaptation_sync_state
+    (issue #454, spike #450) — a global table like filler_episode_cache, one pass
+    over the whole catalog rather than per-user. Weekly (not daily, unlike
+    filler_data_refresh) — chapter/status data doesn't need same-day freshness,
+    and the underlying AniList/MangaDex/MangaUpdates calls are per-title work
+    scripts/sync_manga_data.py's own per-title last-checked tracking already
+    keeps to a minimum after the first run. Longer timeout than the filler job's
+    (1200s) since this makes up to three external API calls per due title
+    instead of one.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, _MANGA_DATA_SCRIPT],
+            capture_output=True, text=True, timeout=2400, env=os.environ.copy(),
+        )
+        if result.returncode != 0:
+            log.error("Manga data refresh failed: %s", result.stderr[-800:])
+    except Exception as e:
+        log.error("Manga data refresh exception: %s", e)
+
+
 def _check_airing_episodes() -> None:
     """Hourly job: notify each user about their own unwatched episodes that started airing.
 
@@ -803,6 +826,14 @@ def _apply_schedule() -> None:
         _refresh_filler_data,
         CronTrigger(hour=3, minute=15, timezone="UTC"),
         id="filler_data_refresh", replace_existing=True,
+    )
+    # Issue #454 — weekly, deliberately not daily: manga/LN status doesn't need
+    # same-day freshness, unlike the hourly airing-schedule refresh. Offset from
+    # filler_data_refresh (daily 03:15) and weekly_digest (Mon 07:00) below.
+    _scheduler.add_job(
+        _refresh_manga_data,
+        CronTrigger(day_of_week="sun", hour=4, minute=15, timezone="UTC"),
+        id="manga_data_refresh", replace_existing=True,
     )
     _scheduler.add_job(
         _weekly_airing_digest,
@@ -2692,7 +2723,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 41
+LATEST_MIGRATION = 42
 
 
 def _build_version() -> str | None:
@@ -8601,6 +8632,29 @@ def library(request: Request, response: Response, status: str = None):
 
     stale_threshold = datetime.now(timezone.utc) - timedelta(days=60)
 
+    # Issue #454 — manga/light-novel "living integration" badge + detail modal,
+    # read-only against manga_adaptation_cache (populated by
+    # scripts/sync_manga_data.py). Batched across every anime on this page, same
+    # ANY(%s) pattern the filler-badge lookup above/upcoming page already use,
+    # not one query per card.
+    anime_ids_on_page = [row["id"] for row in rows]
+    manga_rows = (
+        db.fetchall(
+            """
+            SELECT anime_id, source_type, title, status, latest_chapter, latest_volume,
+                   last_release_at, licensor_name, licensor_url, match_method
+            FROM manga_adaptation_cache
+            WHERE anime_id = ANY(%s)
+            """,
+            (anime_ids_on_page,),
+        )
+        if anime_ids_on_page
+        else []
+    )
+    manga_by_anime: dict[int, list[dict]] = {}
+    for mr in manga_rows:
+        manga_by_anime.setdefault(mr["anime_id"], []).append(dict(mr))
+
     entries = []
     for row in rows:
         entry = dict(row)
@@ -8608,6 +8662,7 @@ def library(request: Request, response: Response, status: str = None):
             lnk for lnk in (row["external_links"] or [])
             if lnk.get("site") in STREAMING_SITES
         ]
+        entry["manga_adaptations"] = manga_by_anime.get(row["id"], [])
         # Issue #433 — mirrors the write-side allowlist filter (_filter_mood_tags
         # already guards every save) so a row still carrying a value from a
         # since-retired MOOD_TAGS entry can't render a raw mood_xxx string
