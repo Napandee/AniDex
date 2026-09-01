@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Anime Tracker{% endblock %}</title>
+  <title>{% block title %}AniDex{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
@@ -24,16 +24,16 @@
        the same per-session token every <form method="post">'s own hidden
        csrf_token field carries — see app/csrf.py and _nav_context. -->
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <!-- v=69 — bumped for #330's merged Watching/Repeating tab styles
-       (.rewatch-ribbon, .rewatch-toggle*). See the superseded
-       v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/v=66/v=67/v=68
-       comments for why this needs bumping on every style.css change in this
-       repo: several parallel branches land CSS independently and a stale
-       cache-bust value silently serves an old stylesheet to a browser that
-       already cached the previous version — v=57 itself only exists because
-       #275 skipped this exact step. Re-check this against origin/main right
-       before merging — another parallel PR may have already claimed v=69. -->
-  <link rel="stylesheet" href="/static/style.css?v=70">
+  <!-- v=71 — bumped for #418's .site-brand/.site-tagline header styles. See the
+       superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/
+       v=66/v=67/v=68/v=69/v=70 comments for why this needs bumping on every
+       style.css change in this repo: several parallel branches land CSS
+       independently and a stale cache-bust value silently serves an old
+       stylesheet to a browser that already cached the previous version — v=57
+       itself only exists because #275 skipped this exact step. Re-check this
+       against origin/main right before merging — another parallel PR may have
+       already claimed v=71. -->
+  <link rel="stylesheet" href="/static/style.css?v=71">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=29 — bumped for #312's global fetch() CSRF-header patch. See the
        superseded v=28 comment for why this needs bumping on every script.js
@@ -102,7 +102,10 @@
   {% endif %}
   <header>
     <nav>
-      <a href="/" class="site-name">Anime Tracker</a>
+      <a href="/" class="site-brand">
+        <span class="site-name">AniDex</span>
+        <span class="site-tagline">Your anime tracker to watch them all.</span>
+      </a>
       {% block nav_extra %}
       {% set current_path = request.url.path %}
       <div class="nav-links">

@@ -416,12 +416,26 @@ nav {
   gap: 2rem;
 }
 
+.site-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.15;
+  text-decoration: none;
+}
+
 .site-name {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--t1);
-  text-decoration: none;
   letter-spacing: 0.02em;
+}
+
+.site-tagline {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--t3);
+  letter-spacing: 0.01em;
 }
 
 .nav-links {
@@ -3976,7 +3990,11 @@ a.drop-tag-chip-link:focus-visible {
     gap: 0.5rem;
   }
 
-  .site-name { flex: 0 0 auto; white-space: nowrap; }
+  .site-brand { flex: 0 0 auto; }
+  .site-name { white-space: nowrap; }
+  /* Tagline dropped below 768px — see the #367 comment just below on how tight
+     this row already is once search/nav-links/account-fabs share it. */
+  .site-tagline { display: none; }
 
   /* issue #367 — flex: 1; min-width: 0 on the same row as .site-name let this
      shrink to ~57px (squeezed by the site name plus the 7rem margin reserved

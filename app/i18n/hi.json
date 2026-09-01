@@ -10,10 +10,10 @@
   "nav_admin_title": "एडमिन",
   "nav_logout_title": "लॉग आउट",
 
-  "title_login": "लॉग इन करें — Anime Tracker",
-  "title_register": "खाता बनाएँ — Anime Tracker",
-  "title_reset_password": "पासवर्ड रीसेट करें — Anime Tracker",
-  "title_settings": "सेटिंग्स — Anime Tracker",
+  "title_login": "लॉग इन करें — AniDex",
+  "title_register": "खाता बनाएँ — AniDex",
+  "title_reset_password": "पासवर्ड रीसेट करें — AniDex",
+  "title_settings": "सेटिंग्स — AniDex",
 
   "login_title": "लॉग इन करें",
   "email_label": "ईमेल",
@@ -103,7 +103,7 @@
   "twofa_disable_password_placeholder": "वर्तमान पासवर्ड",
   "twofa_disabled_success": "दो-चरणीय प्रमाणीकरण अक्षम कर दिया गया है।",
 
-  "title_2fa_setup": "दो-चरणीय प्रमाणीकरण सेट करें — Anime Tracker",
+  "title_2fa_setup": "दो-चरणीय प्रमाणीकरण सेट करें — AniDex",
   "twofa_setup_heading": "दो-चरणीय प्रमाणीकरण सेट करें",
   "twofa_setup_intro": "किसी प्रामाणिकरण ऐप (Google Authenticator, Authy, 1Password, आदि) से यह QR कोड स्कैन करें, फिर सेटअप की पुष्टि के लिए दिखाया गया 6-अंकों का कोड दर्ज करें।",
   "twofa_setup_qr_alt": "प्रामाणिकरण ऐप सेटअप के लिए QR कोड",
@@ -112,13 +112,13 @@
   "twofa_setup_code_placeholder": "123456",
   "twofa_setup_submit_btn": "पुष्टि करें और सक्षम करें",
 
-  "title_2fa_recovery_codes": "अपने रिकवरी कोड सहेजें — Anime Tracker",
+  "title_2fa_recovery_codes": "अपने रिकवरी कोड सहेजें — AniDex",
   "twofa_recovery_heading": "अपने रिकवरी कोड सहेजें",
   "twofa_recovery_desc": "आपके खाते पर अब दो-चरणीय प्रमाणीकरण सक्षम है।",
   "twofa_recovery_warning": "ये कोड केवल एक बार दिखाए जाते हैं। इन्हें कहीं सुरक्षित रखें — यदि आप अपने प्रामाणिकरण ऐप तक पहुंच खो देते हैं तो प्रत्येक कोड का उपयोग एक बार लॉगिन के लिए किया जा सकता है।",
   "twofa_recovery_continue_btn": "मैंने ये कोड सहेज लिए हैं — जारी रखें",
 
-  "title_2fa_login": "दो-चरणीय प्रमाणीकरण — Anime Tracker",
+  "title_2fa_login": "दो-चरणीय प्रमाणीकरण — AniDex",
   "login_2fa_heading": "अपना प्रमाणीकरण कोड दर्ज करें",
   "login_2fa_intro": "अपने प्रामाणिकरण ऐप का 6-अंकों का कोड दर्ज करें।",
   "login_2fa_code_label": "प्रमाणीकरण कोड",
@@ -307,7 +307,7 @@
   "link_view_anilist": "AniList पर देखें",
   "link_go_to_library": "लाइब्रेरी टैब पर जाएँ",
 
-  "title_search": "खोजें — Anime Tracker",
+  "title_search": "खोजें — AniDex",
   "search_placeholder": "शीर्षकों और नोट्स में खोजें…",
   "search_submit_btn": "खोजें",
   "search_result_singular": "{count} परिणाम मिला",
@@ -315,7 +315,7 @@
   "search_empty_result": "कोई परिणाम नहीं मिला",
   "search_matched_notes": "आपके नोट्स में मेल खाया",
 
-  "title_upcoming": "आगामी — Anime Tracker",
+  "title_upcoming": "आगामी — AniDex",
   "upcoming_page_title": "आगामी एपिसोड",
   "upcoming_page_sub": "आपकी \"देख रहे हैं\" और \"योजना\" सूची के नए एपिसोड।",
 
@@ -347,7 +347,7 @@
   "upcoming_day_back_btn": "महीने पर वापस जाएं",
   "upcoming_day_empty": "इस दिन कुछ भी प्रसारित नहीं हो रहा।",
 
-  "title_queue": "वॉच कतार — Anime Tracker",
+  "title_queue": "वॉच कतार — AniDex",
   "queue_page_title": "वॉच कतार",
   "queue_page_sub": "पहले मैनुअल प्राथमिकता, फिर अनुशंसा स्कोर के अनुसार क्रमबद्ध। किसी भी शीर्षक को सबसे ऊपर पिन करने के लिए उसके नोट्स पेज से प्राथमिकता सेट करें।",
   "queue_tag_filter_all": "सभी टैग",
@@ -381,7 +381,7 @@
   "filler_status_filler": "फिलर",
   "filler_status_mixed": "मिश्रित",
 
-  "notes_title": "नोट्स — {title} — Anime Tracker",
+  "notes_title": "नोट्स — {title} — AniDex",
   "notes_your_score": "आपका स्कोर",
   "notes_not_rated": "रेट नहीं किया गया",
   "notes_anilist_average": "AniList औसत",
@@ -450,7 +450,7 @@
   "relation_summary": "सारांश",
   "relation_other": "संबंधित",
 
-  "title_stats": "आँकड़े — Anime Tracker",
+  "title_stats": "आँकड़े — AniDex",
   "stats_page_title": "आँकड़े",
   "stats_drilldown_hint": "इसके पीछे के एनीमे देखने के लिए किसी संख्या, बार या हिस्से पर क्लिक करें।",
   "stats_hl_episodes": "देखे गए एपिसोड",
@@ -531,7 +531,7 @@
 
   "stats_wrapped_link": "अब तक का आपका साल →",
   "stats_wrapup_replay_btn": "↻ रीप्ले दिखाएं",
-  "title_stats_wrapped": "अब तक का आपका साल — Anime Tracker",
+  "title_stats_wrapped": "अब तक का आपका साल — AniDex",
   "stats_wrapped_page_title": "अब तक का आपका {year}",
   "stats_wrapped_page_sub": "हमेशा अप-टू-डेट — कोई वर्ष चयनकर्ता नहीं, यह बस दिखाता है कि आज तक साल में आप कहाँ तक पहुँचे हैं। वर्ष-दर-वर्ष तुलना के लिए, Stats पेज पर \"Year in anime\" कार्ड का उपयोग करें।",
   "stats_wrapped_empty": "{year} में अभी तक कुछ भी पूरा नहीं हुआ — कुछ पूरा करने के बाद वापस देखें।",
@@ -543,7 +543,7 @@
   "stats_wrapped_pace_on_pace": "पिछले साल की गति के बिल्कुल बराबर ({episodes} बनाम {prior_episodes} एपिसोड, साल के इस बिंदु तक)।",
   "stats_wrapped_pace_no_data": "आपकी गति की तुलना के लिए {prior_year} से अभी तक कोई डेटा नहीं है।",
 
-  "title_recommendations": "अनुशंसित — Anime Tracker",
+  "title_recommendations": "अनुशंसित — AniDex",
   "rec_page_title": "आपके लिए अनुशंसित",
   "rec_suggestions_count": "{count} सुझाव",
   "rec_new_this_season": "(इस सीज़न में {count} नए)",
@@ -581,7 +581,7 @@
   "rec_empty": "अभी कोई अनुशंसा नहीं — इन्हें बनाने के लिए रिकमेंडर चलाएँ।",
   "rec_seen_it_hint": "इसे रेट करें (वैकल्पिक) फिर AniList पर पूर्ण के रूप में चिह्नित करने के लिए पुष्टि करें।",
 
-  "title_library": "लाइब्रेरी — Anime Tracker",
+  "title_library": "लाइब्रेरी — AniDex",
   "lib_search_placeholder": "शीर्षक, जॉनर या टैग से फ़िल्टर करें…",
   "lib_sort_label": "क्रमबद्ध करें",
   "lib_sort_score": "स्कोर",
@@ -637,7 +637,7 @@
   "lib_ep_note_quote_label": "पसंदीदा उद्धरण / यादगार दृश्य",
   "lib_ep_note_quote_placeholder": "जैसे, कोई संवाद पंक्ति या याद रह गया कोई दृश्य…",
 
-  "title_admin": "एडमिन — Anime Tracker",
+  "title_admin": "एडमिन — AniDex",
   "admin_page_title": "एडमिन",
   "admin_page_sub": "इंस्टेंस-वाइड कॉन्फ़िगरेशन और परिचालन दृश्यता।",
   "admin_tab_users": "उपयोगकर्ता",

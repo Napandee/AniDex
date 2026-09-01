@@ -189,11 +189,11 @@ def _notify_sync_outcome(user_id: int, force_full_resync: bool, run_started_at: 
         (user_id, sync_type),
     )
     if not row or row["run_at"] < run_started_at:
-        notify(user_id, "❌ Sync failed", "Anime Tracker — sync failed before it could record results. Check container logs.")
+        notify(user_id, "❌ Sync failed", "AniDex — sync failed before it could record results. Check container logs.")
         return
 
     if row["status"] == "ok":
-        notify(user_id, "✅ Sync completed", "Anime Tracker — sync completed successfully.")
+        notify(user_id, "✅ Sync completed", "AniDex — sync completed successfully.")
         return
 
     failed_steps = [s for s in (row["steps"] or []) if s.get("status") == "error"]
@@ -204,11 +204,11 @@ def _notify_sync_outcome(user_id: int, force_full_resync: bool, run_started_at: 
         # secondary source (Crunchyroll/Netflix) needs attention. Distinct title from
         # a total failure so this doesn't read as "your library data is stale."
         body = (f"One or more sync steps failed, but your library data is up to date:\n{steps_text}"
-                if steps_text else (row["error_msg"] or "Anime Tracker — sync partially failed. Check container logs."))
+                if steps_text else (row["error_msg"] or "AniDex — sync partially failed. Check container logs."))
         notify(user_id, "⚠️ Sync partially failed", body)
     else:
         body = (f"One or more sync steps failed:\n{steps_text}"
-                if steps_text else (row["error_msg"] or "Anime Tracker — sync failed. Check container logs."))
+                if steps_text else (row["error_msg"] or "AniDex — sync failed. Check container logs."))
         notify(user_id, "❌ Sync failed", body)
 
 
@@ -733,11 +733,11 @@ def _notify_recommender_outcome(user_id: int, run_started_at: datetime) -> None:
         (user_id,),
     )
     if not row or row["run_at"] < run_started_at:
-        notify(user_id, "❌ Recommender failed", "Anime Tracker — recommender run failed before it could record results. Check container logs.")
+        notify(user_id, "❌ Recommender failed", "AniDex — recommender run failed before it could record results. Check container logs.")
         return
 
     if row["status"] != "ok":
-        body = row["error_msg"] or "Anime Tracker — recommender run failed. Check container logs."
+        body = row["error_msg"] or "AniDex — recommender run failed. Check container logs."
         notify(user_id, "❌ Recommender failed", body)
 
 
@@ -1329,7 +1329,7 @@ def _ip_login_rate_limited(ip: str | None) -> bool:
 # ── TOTP two-factor authentication (issue #83) ──────────────────────────────────
 # Local-account-only, deliberately unrelated to the OAuth login/callback routes above
 # (out of scope per the issue — Google/Discord already get the provider's own 2FA).
-_TOTP_ISSUER = "Anime Tracker"  # matches the brand name shown everywhere else in the
+_TOTP_ISSUER = "AniDex"  # matches the brand name shown everywhere else in the
                                 # app's own UI (base.html's site-name/title suffix) —
                                 # not the repo/package name, which differs (see
                                 # CLAUDE.local.md), so an authenticator app entry

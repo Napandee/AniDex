@@ -10,10 +10,10 @@
   "nav_admin_title": "管理",
   "nav_logout_title": "ログアウト",
 
-  "title_login": "ログイン — Anime Tracker",
-  "title_register": "アカウント作成 — Anime Tracker",
-  "title_reset_password": "パスワードの再設定 — Anime Tracker",
-  "title_settings": "設定 — Anime Tracker",
+  "title_login": "ログイン — AniDex",
+  "title_register": "アカウント作成 — AniDex",
+  "title_reset_password": "パスワードの再設定 — AniDex",
+  "title_settings": "設定 — AniDex",
 
   "login_title": "ログイン",
   "email_label": "メールアドレス",
@@ -103,7 +103,7 @@
   "twofa_disable_password_placeholder": "現在のパスワード",
   "twofa_disabled_success": "二段階認証を無効にしました。",
 
-  "title_2fa_setup": "二段階認証の設定 — Anime Tracker",
+  "title_2fa_setup": "二段階認証の設定 — AniDex",
   "twofa_setup_heading": "二段階認証を設定する",
   "twofa_setup_intro": "認証アプリ(Google Authenticator、Authy、1Passwordなど)でこのQRコードをスキャンし、表示された6桁のコードを入力して設定を確認してください。",
   "twofa_setup_qr_alt": "認証アプリ設定用のQRコード",
@@ -112,13 +112,13 @@
   "twofa_setup_code_placeholder": "123456",
   "twofa_setup_submit_btn": "確認して有効化",
 
-  "title_2fa_recovery_codes": "リカバリーコードを保存 — Anime Tracker",
+  "title_2fa_recovery_codes": "リカバリーコードを保存 — AniDex",
   "twofa_recovery_heading": "リカバリーコードを保存してください",
   "twofa_recovery_desc": "アカウントの二段階認証が有効になりました。",
   "twofa_recovery_warning": "これらのコードは一度しか表示されません。安全な場所に保存してください — 認証アプリにアクセスできなくなった場合、各コードは一度だけログインに使用できます。",
   "twofa_recovery_continue_btn": "コードを保存しました — 続ける",
 
-  "title_2fa_login": "二段階認証 — Anime Tracker",
+  "title_2fa_login": "二段階認証 — AniDex",
   "login_2fa_heading": "認証コードを入力してください",
   "login_2fa_intro": "認証アプリに表示される6桁のコードを入力してください。",
   "login_2fa_code_label": "認証コード",
@@ -307,7 +307,7 @@
   "link_view_anilist": "AniListで見る",
   "link_go_to_library": "ライブラリタブへ移動",
 
-  "title_search": "検索 — Anime Tracker",
+  "title_search": "検索 — AniDex",
   "search_placeholder": "タイトルとメモを検索…",
   "search_submit_btn": "検索",
   "search_result_singular": "{count}件の結果",
@@ -315,7 +315,7 @@
   "search_empty_result": "該当する結果はありません",
   "search_matched_notes": "メモ内で一致",
 
-  "title_upcoming": "放送予定 — Anime Tracker",
+  "title_upcoming": "放送予定 — AniDex",
   "upcoming_page_title": "放送予定のエピソード",
   "upcoming_page_sub": "視聴中・視聴予定リストの新しいエピソード。",
 
@@ -347,7 +347,7 @@
   "upcoming_day_back_btn": "月表示に戻る",
   "upcoming_day_empty": "この日は放送予定がありません。",
 
-  "title_queue": "視聴キュー — Anime Tracker",
+  "title_queue": "視聴キュー — AniDex",
   "queue_page_title": "視聴キュー",
   "queue_page_sub": "まず手動の優先度、次におすすめスコアの順で並んでいます。作品のノートページから優先度を設定すると一番上に固定されます。",
   "queue_tag_filter_all": "すべてのタグ",
@@ -381,7 +381,7 @@
   "filler_status_filler": "フィラー",
   "filler_status_mixed": "混合",
 
-  "notes_title": "ノート — {title} — Anime Tracker",
+  "notes_title": "ノート — {title} — AniDex",
   "notes_your_score": "自分の評価",
   "notes_not_rated": "未評価",
   "notes_anilist_average": "AniList平均",
@@ -450,7 +450,7 @@
   "relation_summary": "サマリー",
   "relation_other": "関連作品",
 
-  "title_stats": "統計 — Anime Tracker",
+  "title_stats": "統計 — AniDex",
   "stats_page_title": "統計",
   "stats_drilldown_hint": "数字・バー・区分をクリックすると、その内訳のアニメ一覧が表示されます。",
   "stats_hl_episodes": "視聴済みエピソード数",
@@ -531,7 +531,7 @@
 
   "stats_wrapped_link": "今年のまとめ →",
   "stats_wrapup_replay_btn": "↻ 振り返りを再生",
-  "title_stats_wrapped": "今年のまとめ — Anime Tracker",
+  "title_stats_wrapped": "今年のまとめ — AniDex",
   "stats_wrapped_page_title": "{year}年のまとめ",
   "stats_wrapped_page_sub": "常に最新の状態です — 年の選択はなく、今日までの進み具合をそのまま反映します。年ごとの比較には、統計ページの「年間アニメまとめ」カードをご利用ください。",
   "stats_wrapped_empty": "{year}年はまだ何も完了していません — 何か見終わったらまた確認してください。",
@@ -543,7 +543,7 @@
   "stats_wrapped_pace_on_pace": "去年とほぼ同じペースです（年内の同じ時点で{episodes}話 対 {prior_episodes}話）。",
   "stats_wrapped_pace_no_data": "ペースを比較できる{prior_year}年のデータがまだありません。",
 
-  "title_recommendations": "おすすめ — Anime Tracker",
+  "title_recommendations": "おすすめ — AniDex",
   "rec_page_title": "あなたへのおすすめ",
   "rec_suggestions_count": "{count}件の提案",
   "rec_new_this_season": "（今シーズン新着{count}件）",
@@ -581,7 +581,7 @@
   "rec_empty": "まだおすすめはありません — レコメンダーを実行して生成してください。",
   "rec_seen_it_hint": "評価（任意）してから確定すると、AniListで完了としてマークされます。",
 
-  "title_library": "ライブラリ — Anime Tracker",
+  "title_library": "ライブラリ — AniDex",
   "lib_search_placeholder": "タイトル・ジャンル・タグで絞り込み…",
   "lib_sort_label": "並び替え",
   "lib_sort_score": "評価",
@@ -637,7 +637,7 @@
   "lib_ep_note_quote_label": "お気に入りの台詞 / 印象に残ったシーン",
   "lib_ep_note_quote_placeholder": "例: 心に残ったセリフやシーン…",
 
-  "title_admin": "管理 — Anime Tracker",
+  "title_admin": "管理 — AniDex",
   "admin_page_title": "管理",
   "admin_page_sub": "インスタンス全体の設定と運用状況の可視化。",
   "admin_tab_users": "ユーザー",

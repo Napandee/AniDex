@@ -10,10 +10,10 @@
   "nav_admin_title": "Admin",
   "nav_logout_title": "Log out",
 
-  "title_login": "Log in — Anime Tracker",
-  "title_register": "Create account — Anime Tracker",
-  "title_reset_password": "Reset password — Anime Tracker",
-  "title_settings": "Settings — Anime Tracker",
+  "title_login": "Log in — AniDex",
+  "title_register": "Create account — AniDex",
+  "title_reset_password": "Reset password — AniDex",
+  "title_settings": "Settings — AniDex",
 
   "login_title": "Log in",
   "email_label": "Email",
@@ -103,7 +103,7 @@
   "twofa_disable_password_placeholder": "current password",
   "twofa_disabled_success": "Two-factor authentication has been disabled.",
 
-  "title_2fa_setup": "Set up two-factor authentication — Anime Tracker",
+  "title_2fa_setup": "Set up two-factor authentication — AniDex",
   "twofa_setup_heading": "Set up two-factor authentication",
   "twofa_setup_intro": "Scan this QR code with an authenticator app (Google Authenticator, Authy, 1Password, etc.), then enter the 6-digit code it shows to confirm setup.",
   "twofa_setup_qr_alt": "QR code for authenticator app setup",
@@ -112,13 +112,13 @@
   "twofa_setup_code_placeholder": "123456",
   "twofa_setup_submit_btn": "Confirm & enable",
 
-  "title_2fa_recovery_codes": "Save your recovery codes — Anime Tracker",
+  "title_2fa_recovery_codes": "Save your recovery codes — AniDex",
   "twofa_recovery_heading": "Save your recovery codes",
   "twofa_recovery_desc": "Two-factor authentication is now enabled on your account.",
   "twofa_recovery_warning": "These codes are shown only once. Save them somewhere safe — each one can be used a single time to log in if you lose access to your authenticator app.",
   "twofa_recovery_continue_btn": "I've saved these codes — continue",
 
-  "title_2fa_login": "Two-factor authentication — Anime Tracker",
+  "title_2fa_login": "Two-factor authentication — AniDex",
   "login_2fa_heading": "Enter your authentication code",
   "login_2fa_intro": "Enter the 6-digit code from your authenticator app.",
   "login_2fa_code_label": "Authentication code",
@@ -307,7 +307,7 @@
   "link_view_anilist": "View on AniList",
   "link_go_to_library": "Go to library tab",
 
-  "title_search": "Search — Anime Tracker",
+  "title_search": "Search — AniDex",
   "search_placeholder": "Search titles and notes…",
   "search_submit_btn": "Search",
   "search_result_singular": "{count} result for",
@@ -315,7 +315,7 @@
   "search_empty_result": "No results for",
   "search_matched_notes": "Matched in your notes",
 
-  "title_upcoming": "Upcoming — Anime Tracker",
+  "title_upcoming": "Upcoming — AniDex",
   "upcoming_page_title": "Upcoming Episodes",
   "upcoming_page_sub": "New episodes for your watching & planning list.",
 
@@ -347,7 +347,7 @@
   "upcoming_day_back_btn": "Back to month",
   "upcoming_day_empty": "Nothing airing on this day.",
 
-  "title_queue": "Watch Queue — Anime Tracker",
+  "title_queue": "Watch Queue — AniDex",
   "queue_page_title": "Watch Queue",
   "queue_page_sub": "Ordered by manual priority, then recommender score. Set a priority from any title's notes page to pin it to the top.",
   "queue_tag_filter_all": "All tags",
@@ -381,7 +381,7 @@
   "filler_status_filler": "Filler",
   "filler_status_mixed": "Mixed",
 
-  "notes_title": "Notes — {title} — Anime Tracker",
+  "notes_title": "Notes — {title} — AniDex",
   "notes_your_score": "Your score",
   "notes_not_rated": "Not rated",
   "notes_anilist_average": "AniList average",
@@ -450,7 +450,7 @@
   "relation_summary": "Summary",
   "relation_other": "Related",
 
-  "title_stats": "Stats — Anime Tracker",
+  "title_stats": "Stats — AniDex",
   "stats_page_title": "Stats",
   "stats_drilldown_hint": "Click a number, bar, or slice to see the anime behind it.",
   "stats_hl_episodes": "Episodes watched",
@@ -531,7 +531,7 @@
 
   "stats_wrapped_link": "Your year so far →",
   "stats_wrapup_replay_btn": "↻ Show reveal",
-  "title_stats_wrapped": "Your Year So Far — Anime Tracker",
+  "title_stats_wrapped": "Your Year So Far — AniDex",
   "stats_wrapped_page_title": "Your {year} so far",
   "stats_wrapped_page_sub": "Always up to date — no year picker, this just reflects however far into the year you are today. For year-over-year comparisons, use the \"Year in anime\" card on Stats instead.",
   "stats_wrapped_empty": "Nothing completed yet in {year} — check back once you've finished something.",
@@ -543,7 +543,7 @@
   "stats_wrapped_pace_on_pace": "Right on pace with last year ({episodes} vs {prior_episodes} episodes by this point in the year).",
   "stats_wrapped_pace_no_data": "No data from {prior_year} yet to compare your pace against.",
 
-  "title_recommendations": "Recommended — Anime Tracker",
+  "title_recommendations": "Recommended — AniDex",
   "rec_page_title": "Recommended for you",
   "rec_suggestions_count": "{count} suggestions",
   "rec_new_this_season": "({count} new this season)",
@@ -581,7 +581,7 @@
   "rec_empty": "No recommendations yet — run the recommender to generate them.",
   "rec_seen_it_hint": "Rate it (optional) then confirm to mark as completed on AniList.",
 
-  "title_library": "Library — Anime Tracker",
+  "title_library": "Library — AniDex",
   "lib_search_placeholder": "Filter by title, genre or tag…",
   "lib_sort_label": "Sort",
   "lib_sort_score": "Score",
@@ -637,7 +637,7 @@
   "lib_ep_note_quote_label": "Favorite quote / memorable scene",
   "lib_ep_note_quote_placeholder": "e.g. a line of dialogue, a scene that stuck with you…",
 
-  "title_admin": "Admin — Anime Tracker",
+  "title_admin": "Admin — AniDex",
   "admin_page_title": "Admin",
   "admin_page_sub": "Instance-wide configuration and operational visibility.",
   "admin_tab_users": "Users",

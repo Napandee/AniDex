@@ -1,5 +1,7 @@
 # AniDex
 
+*Your anime tracker to watch them all.*
+
 A self-hosted anime tracking, rating, and recommendation app built on top of AniList.
 
 AniList handles the catalog. This app adds the personal layer AniList's own UI doesn't
