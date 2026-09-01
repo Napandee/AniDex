@@ -42,8 +42,9 @@ Admins get a tabbed panel:
 - **Invites** — issue invites for new accounts.
 - **Instance Config** — sync schedule time (instance-wide, not per-user), OAuth
   provider setup.
-- **Operability** — instance health readout and the admin audit log (which admin did
-  what, when).
+- **Operability** — instance health readout (including whether AniList itself has
+  recently signalled a rate limit, so a sync slowdown is visible instead of silently
+  retrying in the background) and the admin audit log (which admin did what, when).
 - **Data Quality** — sync drift, orphaned rows, and other data-integrity signals
   across every user on the instance (the admin-wide counterpart to the personal
   Library Health card on [Stats](stats.md)).
