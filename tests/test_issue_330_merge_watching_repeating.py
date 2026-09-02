@@ -35,32 +35,6 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/
 SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
 
 
-def _try_connect():
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        return conn
-    except Exception:
-        return None
-
-
-@pytest.fixture(scope="module")
-def pg_conn():
-    conn = _try_connect()
-    if conn is None:
-        pytest.skip(
-            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
-            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
-        )
-    with conn.cursor() as cur:
-        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        cur.execute(SCHEMA_SQL)
-    yield conn
-    conn.close()
-
-
 @pytest.fixture()
 def app_client(pg_conn, monkeypatch):
     monkeypatch.setenv("SESSION_SECRET_KEY", "test-issue-330-secret")

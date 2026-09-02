@@ -8,6 +8,8 @@ import pytest
 import anilist_sync_common as common
 from anilist_sync_common import is_plausible_match, seed_search_cache, search_cache_snapshot
 
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
+
 
 # ── Persistent title-search cache seeding (issue #115) ──────────────────────────
 
@@ -694,35 +696,6 @@ def test_find_anilist_id_caches_season_suffix_search_result(monkeypatch):
 # genuinely new AniList entry hit this constraint in production. This section
 # exercises the constraint for real, against a real Postgres, for every source
 # string an actual call site uses — see migrations/032_fix_outbox_source_check.sql.
-
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
-SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
-
-
-def _try_connect():
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        return conn
-    except Exception:
-        return None
-
-
-@pytest.fixture(scope="module")
-def pg_conn():
-    conn = _try_connect()
-    if conn is None:
-        pytest.skip(
-            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
-            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
-        )
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        cur.execute(SCHEMA_SQL)
-    yield conn
-    conn.close()
 
 
 _next_outbox_user_id = [9000]

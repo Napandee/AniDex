@@ -34,26 +34,6 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/
 # _fetch_visible_recommendations — real Postgres, real LEFT JOIN
 # ---------------------------------------------------------------------------
 
-def _try_connect():
-    try:
-        import psycopg2
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        return conn
-    except Exception:
-        return None
-
-
-@pytest.fixture(scope="module")
-def pg_conn():
-    conn = _try_connect()
-    if conn is None:
-        pytest.skip("no reachable Postgres for DATABASE_URL — skipping live DB check")
-    yield conn
-    conn.close()
-
 
 PLANNING_ANIME_ID = 9100
 DISCOVERY_ANIME_ID = 9101

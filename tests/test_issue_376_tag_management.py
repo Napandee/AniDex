@@ -18,55 +18,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
-SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
 
 USER_ID = 900376
 ANIME_A = 900377  # tags: ["comfort watch", "Slow Burn"]
 ANIME_B = 900378  # tags: ["Slow burn", "background"]  (case-variant of A's "Slow Burn")
 ANIME_C = 900379  # tags: ["unrelated"], mood_tags: ["comfort"]  (must never be touched)
-
-
-def _try_connect():
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        return conn
-    except Exception:
-        return None
-
-
-@pytest.fixture(scope="module")
-def pg_conn():
-    conn = _try_connect()
-    if conn is None:
-        pytest.skip(
-            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
-            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
-        )
-    with conn.cursor() as cur:
-        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        cur.execute(SCHEMA_SQL)
-    yield conn
-    conn.close()
-
-
-@pytest.fixture()
-def app_module(pg_conn, monkeypatch):
-    monkeypatch.setenv("SESSION_SECRET_KEY", "test-376-key")
-    import app.main as m
-
-    return m
-
-
-@pytest.fixture()
-def client(app_module):
-    from fastapi.testclient import TestClient
-
-    with TestClient(app_module.app) as c:
-        yield c
 
 
 @pytest.fixture(autouse=True)
