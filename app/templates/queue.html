@@ -148,9 +148,19 @@
   {% endfor %}
 </ol>
 {% else %}
-<p class="empty">{{ t('queue_empty') }}</p>
+{# Issue #472 — same truly-empty-vs-filtered-empty split as library.html:
+   nothing planned/paused is a different situation from "your filter matched
+   nothing" below, and gets a CTA into finding something to watch next
+   instead of a filter-clearing action. #}
+<div class="empty empty-truly">
+  <p class="empty-headline">{{ t('queue_empty') }}</p>
+  <a href="/recommendations" class="empty-cta-btn">{{ t('queue_empty_cta') }}</a>
+</div>
 {% endif %}
-<p class="empty" id="queue-no-filter-results" style="display:none">{{ t('queue_no_matches') }}</p>
+<div class="empty empty-filtered" id="queue-no-filter-results" style="display:none">
+  <p class="empty-headline">{{ t('queue_no_matches') }}</p>
+  <button type="button" id="clear-queue-filters-btn" class="empty-clear-btn">{{ t('queue_clear_filters_btn') }}</button>
+</div>
 
 {# ── Rewatch reminders (issue #191) ─────────────────────────────────────── #}
 <div class="extra-section" style="margin-top:2rem;">

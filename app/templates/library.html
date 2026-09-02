@@ -333,9 +333,24 @@
   {% endfor %}
 </div>
 {% else %}
-<p class="empty">{{ t('lib_empty') }}</p>
+{# Issue #472 — truly-empty state: a prominent CTA into the same add-anime
+   flow the FAB already opens, since "no entries" (this status tab, possibly
+   the whole library) is a fundamentally different situation from a filter
+   just matching nothing (see #no-filter-results below), and deserves a
+   different, more actionable treatment. #}
+<div class="empty empty-truly">
+  <p class="empty-headline">{{ t('lib_empty') }}</p>
+  <button type="button" id="empty-state-add-btn" class="empty-cta-btn">{{ t('lib_empty_cta') }}</button>
+</div>
 {% endif %}
-<p class="empty" id="no-filter-results" style="display:none">{{ t('queue_no_matches') }}</p>
+{# Issue #472 — filtered-to-empty state: same base .empty look, but a
+   "Clear filters" affordance instead of the add-anime CTA above — the
+   library isn't empty here, the current filter combination just doesn't
+   match anything in it. #}
+<div class="empty empty-filtered" id="no-filter-results" style="display:none">
+  <p class="empty-headline">{{ t('queue_no_matches') }}</p>
+  <button type="button" id="clear-library-filters-btn" class="empty-clear-btn">{{ t('lib_clear_filters_btn') }}</button>
+</div>
 
 <button id="add-anime-fab" class="add-anime-fab" title="{{ t('lib_add_anime_fab_title') }}">+</button>
 
@@ -960,6 +975,36 @@
       form.innerHTML = `<span class="add-rate-done">${t('js_saved_as', {status: t('status_' + status.toLowerCase())})}${selectedScore ? ' · ' + '★'.repeat(selectedScore) : ''}</span>`;
     });
   }
+}());
+
+// ── Empty-state actions (issue #472) ────────────────────────────────────────
+(function () {
+  document.getElementById('empty-state-add-btn')?.addEventListener('click', () => {
+    document.getElementById('add-anime-fab')?.click();
+  });
+
+  document.getElementById('clear-library-filters-btn')?.addEventListener('click', () => {
+    if (librarySearch) {
+      librarySearch.value = '';
+      librarySearch.dispatchEvent(new Event('input'));
+    }
+    document.querySelector('.filter-btn[data-format=""]')?.click();
+    document.querySelector('.filter-btn[data-score-filter=""]')?.click();
+    document.querySelector('.filter-btn[data-favorite-filter=""]')?.click();
+    const rewatchToggle = document.querySelector('.rewatch-toggle');
+    if (rewatchToggle && rewatchToggle.classList.contains('active')) rewatchToggle.click();
+    const seasonSel = document.getElementById('season-filter');
+    if (seasonSel && seasonSel.value) {
+      seasonSel.value = '';
+      seasonSel.dispatchEvent(new Event('change'));
+    }
+    const tagSel = document.getElementById('tag-filter');
+    if (tagSel && tagSel.value) {
+      tagSel.value = '';
+      tagSel.dispatchEvent(new Event('change'));
+    }
+    if (typeof applyLibraryFilters === 'function') applyLibraryFilters();
+  });
 }());
 </script>
 

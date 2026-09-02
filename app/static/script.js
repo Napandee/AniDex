@@ -1301,6 +1301,19 @@ document.querySelectorAll('.btn-delete-sm').forEach(btn => {
       applyQueueFilters();
     });
   }
+
+  // Issue #472 — filtered-to-empty state's "Clear filters" action.
+  document.getElementById('clear-queue-filters-btn')?.addEventListener('click', () => {
+    if (tagSel && tagSel.value) {
+      tagSel.value = '';
+      activeTag = '';
+    }
+    if (epSel && epSel.value) {
+      epSel.value = '';
+      activeEpisodeBucket = '';
+    }
+    applyQueueFilters();
+  });
 }());
 
 // ── Queue card click-through to notes (issue #259) ─────────────────────────────

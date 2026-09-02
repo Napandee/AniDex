@@ -1156,6 +1156,50 @@ main {
   text-align: center;
 }
 
+/* Issue #472 — empty-state differentiation: "truly empty" (no data at all)
+   gets a prominent filled CTA; "filtered to empty" (data exists, current
+   filters just match none of it) gets a quieter clear-filters action. Both
+   reuse the base .empty look/spacing above, layered as a flex column only
+   where the action button is present — other single-line .empty usages
+   elsewhere (tags/upcoming/recommendations/rewatch) are untouched. */
+.empty-truly,
+.empty-filtered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+.empty-headline { margin: 0; }
+
+.empty-cta-btn {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-style: normal;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.empty-cta-btn:hover { background: var(--accent-hover); }
+
+.empty-clear-btn {
+  display: inline-block;
+  padding: 0.35rem 0.9rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--t3);
+  font-size: 0.8rem;
+  font-style: normal;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.empty-clear-btn:hover { background: var(--bg-surface); color: var(--t1); }
+
 /* ── Streaming links ─────────────────────────────────────────────────────── */
 .stream-links {
   display: flex;
