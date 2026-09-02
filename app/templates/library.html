@@ -975,6 +975,27 @@
       form.innerHTML = `<span class="add-rate-done">${t('js_saved_as', {status: t('status_' + status.toLowerCase())})}${selectedScore ? ' · ' + '★'.repeat(selectedScore) : ''}</span>`;
     });
   }
+
+  // Issue #478 — top-bar /search's zero-result state links here with
+  // ?addSearch=<query> instead of duplicating this modal's markup/JS on
+  // search.html. Auto-open pre-filled with that query and run the AniList
+  // search immediately (skipping the normal debounce, since this is an
+  // explicit navigation, not incremental typing).
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const addSearch = params.get('addSearch');
+    if (!addSearch) return;
+    openModal();
+    searchInput.value = addSearch;
+    if (addSearch.trim().length >= 2) {
+      statusEl.textContent = t('js_searching');
+      doSearch(addSearch.trim());
+    }
+    params.delete('addSearch');
+    const url = new URL(location.href);
+    url.search = params.toString();
+    history.replaceState(null, '', url);
+  }());
 }());
 
 // ── Empty-state actions (issue #472) ────────────────────────────────────────

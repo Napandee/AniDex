@@ -4104,7 +4104,17 @@ a.drop-tag-chip-link:focus-visible {
 }
 .search-submit:hover { background: var(--accent-hover); }
 .search-count { font-size: 0.875rem; color: var(--t5); margin-bottom: 1rem; }
-.search-empty { color: var(--t6); font-size: 0.9rem; }
+/* Issue #478 — now a small flex column (headline + AniList quick-add CTA)
+   rather than a single line, reusing #472's .empty-cta-btn look. */
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  color: var(--t6);
+  font-size: 0.9rem;
+}
+.search-empty-headline { margin: 0; }
 .search-matched-notes {
   font-size: 0.75rem;
   color: var(--t6);

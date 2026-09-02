@@ -61,7 +61,15 @@
       {% endfor %}
     </div>
     {% else %}
-    <p class="search-empty">{{ t('search_empty_result') }} <strong>{{ q }}</strong>.</p>
+    {# Issue #478 — this only searches the user's own library/notes, not
+       AniList's catalog, so a zero-result search here doesn't necessarily
+       mean the title doesn't exist — it just isn't tracked yet. Route into
+       the existing add-anime flow (library.html's FAB modal) pre-filled
+       with this query, rather than leaving a dead end. #}
+    <div class="search-empty">
+      <p class="search-empty-headline">{{ t('search_empty_result') }} <strong>{{ q }}</strong>.</p>
+      <a href="/?addSearch={{ q | urlencode }}" class="empty-cta-btn">{{ t('search_add_via_anilist_btn') }}</a>
+    </div>
     {% endif %}
   {% endif %}
 

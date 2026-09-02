@@ -24,21 +24,18 @@
        the same per-session token every <form method="post">'s own hidden
        csrf_token field carries — see app/csrf.py and _nav_context. -->
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <!-- v=85 — bumped for #472's empty-state CSS (.empty-truly/.empty-filtered/
-       .empty-cta-btn/.empty-clear-btn). Also catches up #470's
-       .card-detail-badge/.card-detail-panel CSS, which merged without this
-       step — a real instance of exactly the staleness risk this comment
-       warns about, caught while working the next issue in the same area.
+  <!-- v=86 — bumped for #478's .search-empty flex-column + headline CSS.
        See the superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/
        v=64/v=65/v=66/v=67/v=68/v=69/v=70/v=71/v=72/v=73/v=74/v=75/v=76/v=77/
-       v=78/v=79/v=80/v=81/v=82/v=83/v=84 comments for why this needs bumping
-       on every style.css change in this repo: several parallel branches land
-       CSS independently and a stale cache-bust value silently serves an old
-       stylesheet to a browser that already cached the previous version —
-       v=57 itself only exists because #275 skipped this exact step.
+       v=78/v=79/v=80/v=81/v=82/v=83/v=84/v=85 comments for why this needs
+       bumping on every style.css change in this repo: several parallel
+       branches land CSS independently and a stale cache-bust value silently
+       serves an old stylesheet to a browser that already cached the
+       previous version — v=57 itself only exists because #275 skipped this
+       exact step.
        Re-check this against origin/main right before merging — another
-       parallel PR may have already claimed v=85. -->
-  <link rel="stylesheet" href="/static/style.css?v=85">
+       parallel PR may have already claimed v=86. -->
+  <link rel="stylesheet" href="/static/style.css?v=86">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=33 — bumped for #472's queue "Clear filters" handler
        (clear-queue-filters-btn). See the superseded v=28/v=29/v=30/v=31/v=32
