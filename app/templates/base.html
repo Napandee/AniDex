@@ -24,19 +24,17 @@
        the same per-session token every <form method="post">'s own hidden
        csrf_token field carries — see app/csrf.py and _nav_context. -->
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <!-- v=83 — bumped for #454's manga/light-novel badge moving from an inline
-       text pill to a compact icon-only footer action (.manga-status-badge
-       resized to match .btn-anilist-sm/.btn-delete-sm's footprint), per direct
-       user feedback that the original badge was too large. See the superseded
-       v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/v=66/v=67/
-       v=68/v=69/v=70/v=71/v=72/v=73/v=74/v=75/v=76/v=77/v=78/v=79/v=80/v=81/
-       v=82 comments for why this needs bumping on every style.css change in
-       this repo: several parallel branches land CSS independently and a stale
-       cache-bust value silently serves an old stylesheet to a browser that
-       already cached the previous version — v=57 itself only exists because
-       #275 skipped this exact step. Re-check this against origin/main right
-       before merging — another parallel PR may have already claimed v=83. -->
-  <link rel="stylesheet" href="/static/style.css?v=83">
+  <!-- v=84 — bumped for #467's nav-links 7th item (Tags) plus the mobile
+       scroll-affordance mask-image. See the superseded v=51/v=54/v=56/v=57/
+       v=58/v=59/v=60/v=61/v=62/v=63/v=64/v=65/v=66/v=67/v=68/v=69/v=70/v=71/
+       v=72/v=73/v=74/v=75/v=76/v=77/v=78/v=79/v=80/v=81/v=82/v=83 comments for
+       why this needs bumping on every style.css change in this repo: several
+       parallel branches land CSS independently and a stale cache-bust value
+       silently serves an old stylesheet to a browser that already cached the
+       previous version — v=57 itself only exists because #275 skipped this
+       exact step. Re-check this against origin/main right before merging —
+       another parallel PR may have already claimed v=84. -->
+  <link rel="stylesheet" href="/static/style.css?v=84">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=32 — bumped for #444/#452's AniDexWrappedFlow (the full-screen slide
        flow) + AniDexWrapupReveal's scope narrowing. See the superseded v=28/
@@ -112,6 +110,18 @@
       </a>
       {% block nav_extra %}
       {% set current_path = request.url.path %}
+      {# Issue #467 — nav-IA rule, applied retroactively (Tags promoted below) and
+         going forward for any future top-level-feature decision:
+         · Primary nav (.nav-links, this list) is for pages that are a frequent,
+           standalone workflow the user returns to directly and repeatedly —
+           the same bar #255 used to promote Streaming Coverage out of Settings.
+         · A page reached *from* another primary page (e.g. Wrapped from Stats,
+           via the account-fabs icon below) doesn't need its own tab here —
+           it gets a small, always-reachable entry point elsewhere in the
+           header instead, scaled to how often it's actually opened.
+         · Settings-adjacent config pages (streaming credentials, sync
+           providers) stay inside Settings; they're edited rarely, not
+           browsed. #}
       <div class="nav-links">
         <a href="/" class="nav-link{% if current_path == '/' %} active{% endif %}">{{ t('nav_library') }}</a>
         <a href="/upcoming" class="nav-link{% if current_path == '/upcoming' %} active{% endif %}">{{ t('nav_upcoming') }}</a>
@@ -121,6 +131,10 @@
            a link buried in Settings, despite being meant as a primary page. #}
         <a href="/streaming" class="nav-link{% if current_path == '/streaming' %} active{% endif %}">{{ t('nav_streaming') }}</a>
         <a href="/stats" class="nav-link{% if current_path == '/stats' %} active{% endif %}">{{ t('nav_stats') }}</a>
+        {# Issue #467 — Tags (#376: bulk rename/merge/delete) meets the same
+           standalone-workflow bar Streaming did for #255; was previously only
+           reachable via one text link buried in Settings → Preferences. #}
+        <a href="/tags" class="nav-link{% if current_path == '/tags' %} active{% endif %}">{{ t('nav_tags') }}</a>
       </div>
       <form class="nav-search-form" action="/search" method="get">
         <label for="nav-search-input" class="sr-only">{{ t('nav_search_label') }}</label>
@@ -128,6 +142,13 @@
       </form>
       {% if nav_user %}
       <div class="account-fabs">
+        {# Issue #467 — Wrapped (#444/#452) doesn't meet the primary-nav bar (see
+           the nav-IA rule above): it's a periodic recap, not a page browsed
+           repeatedly, so it gets a lightweight always-reachable icon here
+           instead of a permanent .nav-links tab. #}
+        <a href="/stats/wrapped" class="icon-fab{% if current_path == '/stats/wrapped' %} active{% endif %}" title="{{ t('nav_wrapped_title') }}" aria-label="{{ t('nav_wrapped_title') }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+        </a>
         <a href="/settings" class="icon-fab{% if current_path.startswith('/settings') %} active{% endif %}" title="{{ t('nav_settings_title') }}" aria-label="{{ t('nav_settings_title') }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </a>
