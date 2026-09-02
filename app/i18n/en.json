@@ -320,6 +320,7 @@
   "search_result_singular": "{count} result for",
   "search_result_plural": "{count} results for",
   "search_empty_result": "No results for",
+  "search_add_via_anilist_btn": "Search AniList to add it →",
   "search_matched_notes": "Matched in your notes",
 
   "title_upcoming": "Upcoming — AniDex",

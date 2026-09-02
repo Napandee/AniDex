@@ -320,6 +320,7 @@
   "search_result_singular": "{count}件の結果",
   "search_result_plural": "{count}件の結果",
   "search_empty_result": "該当する結果はありません",
+  "search_add_via_anilist_btn": "AniListで検索して追加 →",
   "search_matched_notes": "メモ内で一致",
 
   "title_upcoming": "放送予定 — AniDex",

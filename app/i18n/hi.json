@@ -320,6 +320,7 @@
   "search_result_singular": "{count} परिणाम मिला",
   "search_result_plural": "{count} परिणाम मिले",
   "search_empty_result": "कोई परिणाम नहीं मिला",
+  "search_add_via_anilist_btn": "AniList पर खोजें और जोड़ें →",
   "search_matched_notes": "आपके नोट्स में मेल खाया",
 
   "title_upcoming": "आगामी — AniDex",

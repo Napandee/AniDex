@@ -320,6 +320,7 @@
   "search_result_singular": "找到 {count} 个结果，关于",
   "search_result_plural": "找到 {count} 个结果，关于",
   "search_empty_result": "没有找到关于以下内容的结果",
+  "search_add_via_anilist_btn": "在 AniList 中搜索并添加 →",
   "search_matched_notes": "在笔记中匹配",
 
   "title_upcoming": "即将播出 — AniDex",

@@ -228,3 +228,39 @@ def test_search_notes_never_leak_across_users(pg_conn, app_module, client):
     resp_alice = client.get("/search", params={"q": "embarrassing confession"})
     assert resp_alice.status_code == 200
     assert "Shared Catalog Anime" not in resp_alice.text
+
+
+# ── Issue #478 — zero-result search links into the AniList quick-add flow ──────
+
+def test_search_zero_results_shows_anilist_quick_add_link(pg_conn, app_module, client):
+    _register_and_login(client)
+    # Empty users table means no library entries exist at all — /search for
+    # any query returns zero rows.
+    resp = client.get("/search", params={"q": "Some Totally Untracked Show"})
+    assert resp.status_code == 200
+    assert "Some Totally Untracked Show" in resp.text
+    # The CTA must link to library's add-anime flow, pre-filled with the
+    # original query via ?addSearch= (Jinja's urlencode uses %20, not +), not
+    # a dead end.
+    assert 'href="/?addSearch=Some%20Totally%20Untracked%20Show"' in resp.text
+
+
+def test_search_with_results_has_no_quick_add_link(pg_conn, app_module, client):
+    _register_and_login(client)
+    uid = _current_user_id(pg_conn, "owner@example.com")
+    _insert_anime(pg_conn, 1, "A Real Match")
+    _insert_entry(pg_conn, uid, 1)
+
+    resp = client.get("/search", params={"q": "Real Match"})
+    assert resp.status_code == 200
+    assert "A Real Match" in resp.text
+    # A search that DOES return library matches must be unaffected — no
+    # quick-add CTA rendered alongside real results.
+    assert "addSearch=" not in resp.text
+
+
+def test_search_empty_query_has_no_quick_add_link(pg_conn, app_module, client):
+    _register_and_login(client)
+    resp = client.get("/search")
+    assert resp.status_code == 200
+    assert "addSearch=" not in resp.text
