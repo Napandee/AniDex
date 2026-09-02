@@ -89,7 +89,7 @@ def _years_ago(years: int) -> date:
     return date(today.year - years, today.month, today.day)
 
 
-ONTHISDAY_CARD_MARKER = 'class="onthisday-card"'
+ONTHISDAY_CARD_MARKER = 'class="panel onthisday-card"'
 
 
 # ── 1/2/3. Match/no-match, years_ago gating ─────────────────────────────────

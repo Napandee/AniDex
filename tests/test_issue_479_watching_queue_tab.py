@@ -81,8 +81,8 @@ def _insert_entry(pg_conn, user_id, anime_id, status, anilist_updated_at=None):
 def _item_html(body: str, anime_id: int) -> str:
     marker = f'data-anime-id="{anime_id}"'
     start = body.index(marker)
-    item_start = body.rindex('<li class="queue-item"', 0, start)
-    next_item = body.find('<li class="queue-item"', start)
+    item_start = body.rindex('<li class="list-row queue-item"', 0, start)
+    next_item = body.find('<li class="list-row queue-item"', start)
     end = next_item if next_item != -1 else body.index("</ol>", start)
     return body[item_start:end]
 

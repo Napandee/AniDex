@@ -1719,15 +1719,21 @@ a.filler-episode-range:hover { filter: brightness(1.08); }
 .settings-group-body > div > div { padding: 1.1rem 1rem 1.2rem; display: flex; flex-direction: column; gap: 1.4rem; }
 .settings-group-body > div > div > .settings-section { margin: 0; padding: 0; border: none; }
 
+/* Shared bordered-surface panel primitive (issue #468) — border/radius/background
+   common to bordered content blocks (library health, on-this-day, auth cards);
+   the per-feature class below layers only its own padding/layout/size deltas. */
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface-alt);
+}
+
 /* Library health (#337) card treatment (issue #370) — was a plain
    .settings-section indistinguishable from "Data export" a few lines below it
    despite being a dedicated feature; matches .cred-card's bordered/icon look
    instead, but deliberately NOT collapsible (see the comment in settings.html
    right above this card for why it must always stay visible). */
 .library-health-card {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface-alt);
   padding: 1rem 1rem 1.1rem;
   display: flex;
   flex-direction: column;
@@ -1976,11 +1982,10 @@ body.auth-page main {
 }
 
 .auth-card {
+  /* .panel supplies border/border-radius; background overridden below */
   width: 100%;
   max-width: 360px;
   background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
   padding: 1.75rem;
 }
 
@@ -2224,13 +2229,19 @@ body.auth-page main {
   gap: 0.5rem;
 }
 
-.queue-item {
+/* Shared horizontal item-row primitive (issue #468) — flex-row card shape common
+   to queue/upcoming list items; per-feature classes layer their own alignment/
+   padding/transition deltas. */
+.list-row {
   display: flex;
-  align-items: flex-start;
   gap: 1rem;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.queue-item {
+  align-items: flex-start;
   padding: 0.85rem 1rem;
   transition: border-color 0.15s, box-shadow 0.15s;
   position: relative;
@@ -2388,12 +2399,7 @@ body.auth-page main {
 }
 
 .upcoming-item {
-  display: flex;
   align-items: center;
-  gap: 1rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
   padding: 0.75rem;
   transition: border-color 0.15s;
 }
@@ -2619,9 +2625,6 @@ a.upcoming-month-cell:focus-visible { outline: 2px solid var(--accent); outline-
 
 /* Issue #338 — "on this day" watch-anniversary card, /upcoming page header */
 .onthisday-card {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface-alt);
   padding: 0.85rem 1rem;
   margin-bottom: 1.5rem;
 }

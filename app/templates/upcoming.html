@@ -2,7 +2,7 @@
 {% block title %}{{ t('title_upcoming') }}{% endblock %}
 
 {% macro entry_card(e) %}
-    <li class="upcoming-item">
+    <li class="list-row upcoming-item">
       {% if e.cover_image_url %}
       <img src="{{ e.cover_image_url }}" alt="{{ e.title_romaji }}" class="upcoming-cover" onerror="this.onerror=null;this.style.opacity='0';">
       {% endif %}
@@ -40,7 +40,7 @@
    view (see the route's week_offset/month_offset/date_filter guard), so no
    extra check is needed here beyond "is there anything to show". #}
 {% if on_this_day %}
-<div class="onthisday-card">
+<div class="panel onthisday-card">
   <h2 class="onthisday-title">{{ t('on_this_day_title') }}</h2>
   <ul class="onthisday-list">
     {% for e in on_this_day %}
