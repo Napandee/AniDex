@@ -20,3 +20,6 @@ compose/postgres-data/
 
 # Per-checkout dev stack project name (scripts/dev/up.sh / down.sh)
 .dev-stack-project
+
+# Pre-migration pg_dump backups written by scripts/mark_migration_applied.sh (#469)
+migration_backups/
