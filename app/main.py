@@ -41,6 +41,7 @@ load_dotenv()
 
 from app import db, config, privacy, outbox, i18n, sessions, credential_check, pat, mcp_server, csrf, plex_auth, vapid
 from app.notify import DISCORD_WEBHOOK_RE, notify, ntfy_host_blocked
+from app.routers.auth import router as auth_router
 
 def _get_anilist_token(user_id: int) -> str:
     """Return this user's AniList token from settings DB."""
@@ -2233,267 +2234,13 @@ def _no_users_exist() -> bool:
     return db.fetchone("SELECT COUNT(*) AS n FROM users")["n"] == 0
 
 
-@app.get("/auth/login", response_class=HTMLResponse)
-def auth_login_page(request: Request, error: str = ""):
-    if _no_users_exist():
-        return RedirectResponse(url="/auth/register", status_code=303)
-    return templates.TemplateResponse(
-        request,
-        "auth_login.html",
-        {
-            "error": error,
-            "oauth_google_configured": oauth_configured("google"),
-            "oauth_discord_configured": oauth_configured("discord"),
-        },
-    )
-
-
-@app.post("/auth/login")
-def auth_login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
-    if _ip_login_rate_limited(_client_ip(request)):
-        return templates.TemplateResponse(
-            request,
-            "auth_login.html",
-            {
-                "error": "Too many login attempts from this network. Try again later.",
-                "oauth_google_configured": oauth_configured("google"),
-                "oauth_discord_configured": oauth_configured("discord"),
-            },
-            status_code=429,
-        )
-    email = email.strip().lower()
-    # Match by email regardless of auth_provider — an OAuth-originated account can
-    # have a local password set from Settings too (see #11), and auth_provider is
-    # purely historical ("how this account was originally created"), not a gate on
-    # which login methods currently work. password_hash being unset (OAuth-only,
-    # never added a password) still correctly fails the check below.
-    user = db.fetchone("SELECT * FROM users WHERE email = %s", (email,))
-
-    if user and user["locked_until"] and user["locked_until"] > datetime.now(timezone.utc):
-        minutes_left = max(1, int((user["locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
-        return RedirectResponse(
-            url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
-            status_code=303,
-        )
-
-    valid = user and user["password_hash"] and bcrypt.checkpw(
-        password.encode("utf-8"), user["password_hash"].encode("utf-8")
-    )
-    if not valid:
-        if user:
-            attempts = user["failed_login_attempts"] + 1
-            if attempts >= _LOGIN_MAX_ATTEMPTS:
-                db.execute(
-                    "UPDATE users SET failed_login_attempts = %s, locked_until = now() + (%s * interval '1 minute') WHERE id = %s",
-                    (attempts, _LOGIN_LOCKOUT_MINUTES, user["id"]),
-                )
-            else:
-                db.execute(
-                    "UPDATE users SET failed_login_attempts = %s WHERE id = %s",
-                    (attempts, user["id"]),
-                )
-        return RedirectResponse(
-            url="/auth/login?error=Invalid+email+or+password", status_code=303
-        )
-
-    if not user["is_active"]:
-        return RedirectResponse(
-            url="/auth/login?error=This+account+has+been+deactivated", status_code=303
-        )
-
-    if user["totp_enabled"]:
-        # Issue #83 — hold off on last_login_at/the real session until the second
-        # factor also succeeds. The password itself is proven correct at this point,
-        # so failed_login_attempts/locked_until (the PASSWORD guess budget) reset
-        # right away, same as the no-2FA path below — that's a separate concern from
-        # totp_failed_attempts/totp_locked_until (the CODE guess budget), which
-        # auth_login_2fa_submit owns exclusively from here on. If that TOTP counter
-        # is already locked, say so now instead of bouncing the user into a 2FA
-        # prompt they can't actually get past.
-        if user["totp_locked_until"] and user["totp_locked_until"] > datetime.now(timezone.utc):
-            minutes_left = max(1, int((user["totp_locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
-            return RedirectResponse(
-                url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
-                status_code=303,
-            )
-        db.execute(
-            "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
-            (user["id"],),
-        )
-        request.session[_PENDING_2FA_SESSION_KEY] = user["id"]
-        return RedirectResponse(url="/auth/login/2fa", status_code=303)
-
-    db.execute(
-        "UPDATE users SET last_login_at = now(), failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
-        (user["id"],),
-    )
-    _set_authenticated_session(request, user["id"])
-    return RedirectResponse(url="/", status_code=303)
-
-
-@app.get("/auth/login/2fa", response_class=HTMLResponse)
-def auth_login_2fa_page(request: Request, error: str = ""):
-    """Second-factor prompt (issue #83) — only reachable via the pending_2fa_user_id
-    session key auth_login_submit sets after a correct password on an account with
-    TOTP enabled. Never starts a real session itself; that only happens on a
-    verified code/recovery code below, via _set_authenticated_session (issue #82's
-    session-token model under the hood, see that helper's docstring)."""
-    if not request.session.get(_PENDING_2FA_SESSION_KEY):
-        return RedirectResponse(url="/auth/login", status_code=303)
-    return templates.TemplateResponse(request, "auth_login_2fa.html", {"error": error})
-
-
-@app.post("/auth/login/2fa")
-def auth_login_2fa_submit(request: Request, code: str = Form(...)):
-    if _ip_login_rate_limited(_client_ip(request)):
-        return templates.TemplateResponse(
-            request,
-            "auth_login_2fa.html",
-            {"error": "Too many login attempts from this network. Try again later."},
-            status_code=429,
-        )
-    pending_id = request.session.get(_PENDING_2FA_SESSION_KEY)
-    if not pending_id:
-        return RedirectResponse(url="/auth/login", status_code=303)
-
-    user = db.fetchone("SELECT * FROM users WHERE id = %s", (pending_id,))
-    if not user or not user["totp_enabled"] or not user["is_active"]:
-        # Account state changed mid-flow (2FA disabled elsewhere, deactivated, or
-        # deleted) — no valid pending login to complete.
-        request.session.pop(_PENDING_2FA_SESSION_KEY, None)
-        return RedirectResponse(url="/auth/login", status_code=303)
-
-    if user["totp_locked_until"] and user["totp_locked_until"] > datetime.now(timezone.utc):
-        request.session.pop(_PENDING_2FA_SESSION_KEY, None)
-        minutes_left = max(1, int((user["totp_locked_until"] - datetime.now(timezone.utc)).total_seconds() // 60) + 1)
-        return RedirectResponse(
-            url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{minutes_left}+minutes",
-            status_code=303,
-        )
-
-    code = code.strip()
-    valid = bool(code) and pyotp.TOTP(config.decrypt_secret(user["totp_secret"])).verify(code, valid_window=1)
-    if not valid and code:
-        # Falls back to a one-time recovery code (issue #83's lost-authenticator path)
-        # — only tried if the TOTP check itself failed, so a valid 6-digit code is
-        # never wasted second-guessing it against the recovery-code table.
-        valid = _consume_recovery_code_if_valid(user["id"], code) is not None
-
-    if not valid:
-        attempts = user["totp_failed_attempts"] + 1
-        if attempts >= _TOTP_LOGIN_MAX_ATTEMPTS:
-            db.execute(
-                "UPDATE users SET totp_failed_attempts = %s, totp_locked_until = now() + (%s * interval '1 minute') WHERE id = %s",
-                (attempts, _TOTP_LOGIN_LOCKOUT_MINUTES, user["id"]),
-            )
-            # Crossing the lockout threshold ends this login attempt just as
-            # definitively as the two early-return branches above — clear the
-            # pending state AND redirect straight to /auth/login with the lockout
-            # message immediately, rather than back to /auth/login/2fa, so an
-            # immediate follow-up GET can't re-render a code-entry form the account
-            # is now locked out of even for one extra round trip.
-            request.session.pop(_PENDING_2FA_SESSION_KEY, None)
-            return RedirectResponse(
-                url=f"/auth/login?error=Too+many+failed+attempts.+Try+again+in+{_TOTP_LOGIN_LOCKOUT_MINUTES}+minutes",
-                status_code=303,
-            )
-        db.execute(
-            "UPDATE users SET totp_failed_attempts = %s WHERE id = %s",
-            (attempts, user["id"]),
-        )
-        return RedirectResponse(url="/auth/login/2fa?error=Invalid+code", status_code=303)
-
-    db.execute(
-        "UPDATE users SET last_login_at = now(), totp_failed_attempts = 0, totp_locked_until = NULL WHERE id = %s",
-        (user["id"],),
-    )
-    _set_authenticated_session(request, user["id"])
-    return RedirectResponse(url="/", status_code=303)
-
-
-@app.get("/auth/register", response_class=HTMLResponse)
-def auth_register_page(request: Request, error: str = ""):
-    return templates.TemplateResponse(request, "auth_register.html", {"error": error})
-
-
-@app.post("/auth/register")
-def auth_register_submit(request: Request, email: str = Form(...), password: str = Form(...)):
-    email = email.strip().lower()
-    if len(password) < 8:
-        return RedirectResponse(
-            url="/auth/register?error=Password+must+be+at+least+8+characters", status_code=303
-        )
-
-    existing = db.fetchone(
-        "SELECT id FROM users WHERE auth_provider = 'local' AND auth_provider_id = %s",
-        (email,),
-    )
-    if existing:
-        return RedirectResponse(
-            url="/auth/register?error=An+account+with+that+email+already+exists", status_code=303
-        )
-
-    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    user, denied = _resolve_or_create_user("local", email, email, None, None)
-    if denied:
-        return denied
-    db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user["id"]))
-
-    _set_authenticated_session(request, user["id"])
-    return RedirectResponse(url="/", status_code=303)
-
-
-def _valid_reset_token(token: str):
-    """Returns the password_resets row if the token is usable, else None.
-
-    Looks up by SHA256(token) (issue #358) — the raw token is never stored, same
-    hash-and-lookup pattern as sessions.hash_token(), reusing that exact function
-    rather than a second hashing convention."""
-    row = db.fetchone(
-        "SELECT * FROM password_resets WHERE token_hash = %s AND used_at IS NULL AND expires_at > now()",
-        (sessions.hash_token(token),),
-    )
-    return row
-
-
-@app.get("/auth/reset-password/{token}", response_class=HTMLResponse)
-def auth_reset_password_page(request: Request, token: str, error: str = ""):
-    valid = bool(_valid_reset_token(token))
-    return templates.TemplateResponse(
-        request,
-        "auth_reset_password.html",
-        {"valid": valid, "token": token, "error": error},
-        status_code=200 if valid else 400,
-    )
-
-
-@app.post("/auth/reset-password/{token}")
-def auth_reset_password_submit(request: Request, token: str, password: str = Form(...)):
-    reset = _valid_reset_token(token)
-    if not reset:
-        return templates.TemplateResponse(
-            request,
-            "auth_reset_password.html",
-            {"valid": False, "token": token, "error": ""},
-            status_code=400,
-        )
-    if len(password) < 8:
-        return RedirectResponse(
-            url=f"/auth/reset-password/{token}?error=Password+must+be+at+least+8+characters",
-            status_code=303,
-        )
-
-    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    db.execute(
-        "UPDATE users SET password_hash = %s, failed_login_attempts = 0, locked_until = NULL WHERE id = %s",
-        (password_hash, reset["user_id"]),
-    )
-    db.execute(
-        "UPDATE password_resets SET used_at = now() WHERE token_hash = %s",
-        (sessions.hash_token(token),),
-    )
-
-    return RedirectResponse(url="/auth/login", status_code=303)
+# Local email+password auth routes (login, 2FA, register, password reset,
+# logout) — extracted to app/routers/auth.py, issue #463 slice 1. OAuth
+# login/link/callback routes stay here below for a future slice.
+app.include_router(auth_router)
+# Re-exported so `app.main._valid_reset_token` still resolves for callers/tests
+# that reference it at its old location — same function object, not a copy.
+from app.routers.auth import _valid_reset_token
 
 
 @app.get("/auth/login/{provider}")
@@ -2651,10 +2398,7 @@ def settings_unlink(request: Request, provider: str):
     return RedirectResponse(url="/settings", status_code=303)
 
 
-@app.post("/auth/logout")
-def auth_logout(request: Request):
-    _end_session(request)
-    return RedirectResponse(url="/", status_code=303)
+# /auth/logout now lives in app/routers/auth.py (issue #463 slice 1).
 
 
 def _require_admin(request: Request):
