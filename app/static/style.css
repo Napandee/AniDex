@@ -4328,6 +4328,13 @@ a.drop-tag-chip-link:focus-visible {
     border-radius: 0;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    /* Issue #467 — persistent right-edge fade hinting the chip row scrolls
+       (it now holds 7 items, reliably wider than the viewport). A fixed mask
+       rather than a scroll-position-driven one: simpler, no JS, and still
+       correct once the user has scrolled all the way — the row loops back to
+       showing more items via momentum scroll on touch devices either way. */
+    mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent 100%);
   }
   .nav-links::-webkit-scrollbar { display: none; }
 
