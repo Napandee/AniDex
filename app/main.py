@@ -849,6 +849,14 @@ def _apply_schedule() -> None:
         CronTrigger(minute=0, timezone="UTC"),
         id="airing_check", replace_existing=True,
     )
+    # Issue #466 — hourly like airing_check above, offset 20 minutes so the two
+    # don't compete; pending-migration/rate-limit state barely changes minute to
+    # minute, hourly is plenty responsive without adding real load.
+    _scheduler.add_job(
+        _check_health_signals,
+        CronTrigger(minute=20, timezone="UTC"),
+        id="health_signal_check", replace_existing=True,
+    )
     # Issue #299 — catalog-wide, not per-user, and not tied to instance_config's
     # user-facing sync-time settings (those are about each user's own AniList/CR/
     # Netflix sync). Fixed low-traffic UTC time, offset from every other job above
@@ -2834,6 +2842,58 @@ def _anilist_rate_limit_status() -> dict | None:
         "observed_at": row["observed_at"],
         "active": resumes_at > datetime.now(timezone.utc),
     }
+
+
+def _check_health_signals() -> None:
+    """Hourly job (issue #466): push the pending-migration-count (#380) and AniList
+    rate-limit (#381) health signals — until now pull-only on the admin Instance
+    Health page — through the existing notify() dispatcher to every admin user.
+
+    Dedup is state-transition based, via instance_config, rather than a fresh alert
+    on every hourly tick the condition happens to still be true: each signal's
+    "last alerted" value is stored, and a repeat alert only fires when that value
+    actually changes (the pending-migration count grows further, or a new
+    rate-limit event with a different observed_at is recorded) — not just because
+    the same already-known problem is still true an hour later. When a signal
+    clears, its stored state clears too, so the next time it goes bad it alerts
+    again instead of staying silently suppressed forever. Deliberately this simple
+    — see #466's own scope note against building enterprise-grade alerting for a
+    personal, single-operator instance.
+    """
+    admin_ids = [row["id"] for row in db.fetchall("SELECT id FROM users WHERE is_admin = true")]
+    if not admin_ids:
+        return
+
+    pending = _pending_migration_count()
+    last_pending = _instance_config_get("health_alert_last_pending_migrations")
+    if pending and pending > 0:
+        if str(pending) != last_pending:
+            body = (
+                f"{pending} migration file(s) are ahead of this database's applied "
+                "state. Run scripts/mark_migration_applied.sh before more "
+                "schema-dependent code lands."
+            )
+            for admin_id in admin_ids:
+                notify(admin_id, "AniDex: pending migration(s) not yet applied", body)
+            _instance_config_set("health_alert_last_pending_migrations", str(pending))
+    elif last_pending:
+        _instance_config_set("health_alert_last_pending_migrations", "")
+
+    rate_limit = _anilist_rate_limit_status()
+    last_rate_limit = _instance_config_get("health_alert_last_rate_limit_observed_at")
+    if rate_limit and rate_limit["active"]:
+        observed_key = rate_limit["observed_at"].isoformat()
+        if observed_key != last_rate_limit:
+            body = (
+                f"AniList rate-limited a sync request (source: {rate_limit['source']}). "
+                "Syncs already back off and retry automatically per AniList's own "
+                "Retry-After header — no action needed unless this persists."
+            )
+            for admin_id in admin_ids:
+                notify(admin_id, "AniDex: AniList rate limit active", body)
+            _instance_config_set("health_alert_last_rate_limit_observed_at", observed_key)
+    elif last_rate_limit:
+        _instance_config_set("health_alert_last_rate_limit_observed_at", "")
 
 
 def _instance_health() -> dict:
