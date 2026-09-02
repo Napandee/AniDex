@@ -4596,7 +4596,14 @@ def queue(request: Request, status: str = None):
     if denied:
         return denied
 
-    queue_statuses = ["ALL", "PLANNING", "PAUSED"]
+    # Issue #479 — WATCHING is a 4th tab, not folded into the "ALL" bucket:
+    # ALL stays exactly ('PLANNING', 'PAUSED') as before (queue = what to
+    # start/resume next), while WATCHING answers a different question ("what
+    # am I mid-watch on right now") and gets its own recency-first ordering
+    # below rather than reusing watch_next_priority/rec_score, which are
+    # queue-prioritization signals for unstarted entries, not for something
+    # already in progress.
+    queue_statuses = ["ALL", "PLANNING", "PAUSED", "WATCHING"]
     active_status = status.upper() if status and status.upper() in queue_statuses else "ALL"
 
     status_filter = (
@@ -4605,6 +4612,20 @@ def queue(request: Request, status: str = None):
         else "le.status = %s"
     )
     params = (user["id"],) if active_status == "ALL" else (active_status, user["id"])
+
+    # WATCHING: most-recently-progressed first (anilist_updated_at — the same
+    # column library.html's own "Recently updated" sort already uses), nulls
+    # last. Every other tab's ordering is completely unchanged.
+    order_by = (
+        "le.anilist_updated_at DESC NULLS LAST, a.title_romaji"
+        if active_status == "WATCHING"
+        else """
+            CASE WHEN pn.watch_next_priority IS NOT NULL THEN 0 ELSE 1 END,
+            pn.watch_next_priority ASC NULLS LAST,
+            rs.score DESC NULLS LAST,
+            a.title_romaji
+        """
+    )
 
     rows = db.fetchall(
         f"""
@@ -4633,11 +4654,7 @@ def queue(request: Request, status: str = None):
         LEFT JOIN recommendation_scores rs
                ON rs.anime_id = a.id AND rs.dismissed = false AND rs.user_id = le.user_id
         WHERE {status_filter} AND le.user_id = %s
-        ORDER BY
-            CASE WHEN pn.watch_next_priority IS NOT NULL THEN 0 ELSE 1 END,
-            pn.watch_next_priority ASC NULLS LAST,
-            rs.score DESC NULLS LAST,
-            a.title_romaji
+        ORDER BY {order_by}
         """,
         params,
     )

@@ -376,6 +376,7 @@
   "queue_notes_link_label": "笔记",
   "queue_move_planning_btn": "移至计划观看",
   "queue_empty": "计划观看或已暂停列表中暂无内容。",
+  "queue_watching_empty": "目前没有正在观看的内容。",
   "queue_empty_cta": "查看推荐",
   "queue_no_matches": "没有匹配项。",
   "queue_clear_filters_btn": "清除筛选",
