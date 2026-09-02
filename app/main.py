@@ -24,6 +24,7 @@ import psycopg2.extras
 import pyotp
 import qrcode
 import qrcode.image.svg
+from apscheduler.events import EVENT_JOB_MAX_INSTANCES
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
@@ -73,6 +74,34 @@ _sync_state: dict[int, dict] = {}
 
 _scheduler = BackgroundScheduler(timezone="UTC")
 
+# Issue #475 — APScheduler's max_instances=1 default already prevents two
+# concurrent runs of the same job, but silently *skips* the overlapping run
+# with nothing logged or surfaced anywhere. Registered once here (not inside
+# _apply_schedule(), which can re-run on every Instance Config schedule
+# update and would otherwise register a duplicate listener — and duplicate
+# notifications — per re-application) so every job below gets this for free
+# just by declaring max_instances=1 explicitly.
+def _on_job_max_instances(event) -> None:
+    job_id = event.job_id
+    log.warning(
+        "Scheduler job %s skipped — previous run still executing (max_instances reached)",
+        job_id,
+    )
+    try:
+        admin_ids = [row["id"] for row in db.fetchall("SELECT id FROM users WHERE is_admin = true")]
+        body = (
+            f"Scheduled job '{job_id}' was skipped because its previous run "
+            "hadn't finished yet. If this keeps happening for the same job, "
+            "it may be stuck — check container logs."
+        )
+        for admin_id in admin_ids:
+            notify(admin_id, "AniDex: scheduled job overlap", body)
+    except Exception as e:
+        log.error("Failed to notify admins about job overlap for %s: %s", job_id, e)
+
+
+_scheduler.add_listener(_on_job_max_instances, EVENT_JOB_MAX_INSTANCES)
+
 
 def _get_sync_state(user_id: int) -> dict:
     return _sync_state.setdefault(user_id, {"running": False, "last_result": None})
@@ -120,6 +149,14 @@ def _run_sync_task(
             # starves the others. This outer ceiling comfortably covers the sum of all
             # per-step budgets plus interpreter/DB-connect overhead, and only fires if
             # something goes more wrong than a single step running long.
+            #
+            # Issue #475 — this is also what bounds _scheduled_full_sync's sequential
+            # per-user loop: because each user's sync runs in its own subprocess
+            # rather than inline, a hung provider call for one user can delay the
+            # loop by at most this many seconds, never indefinitely. subprocess.run
+            # kills the child and raises TimeoutExpired on expiry, caught by the
+            # except Exception below same as any other failure, so the loop always
+            # reaches the next user.
             [sys.executable, script],
             capture_output=True, text=True, timeout=1500, env=env,
         )
@@ -732,7 +769,16 @@ def _scheduled_wrapped_year_end_reminder() -> None:
 
 def _scheduled_full_sync() -> None:
     """Loop every user with sync credentials configured. One user's failure is caught
-    and logged to that user's own sync_log, not allowed to stop anyone else's sync."""
+    and logged to that user's own sync_log, not allowed to stop anyone else's sync.
+
+    Issue #475's "per-user timeout so one hung provider call can't indefinitely
+    delay subsequent users" is already satisfied here, not bolted on: each
+    user's sync runs in its own subprocess (_run_sync_task -> subprocess.run,
+    see its timeout=1500 there), so a hung provider call can block this loop
+    for at most that subprocess's timeout, never indefinitely — the subprocess
+    boundary was already doing this job since #91, this issue just confirms
+    and tests it rather than adding a second, redundant timeout layer.
+    """
     for user in _users_with_sync_credentials():
         user_id = user["id"]
         state = _get_sync_state(user_id)
@@ -829,25 +875,36 @@ def _apply_schedule() -> None:
     except ValueError:
         b_hour, b_min = "2", "0"
 
+    # Issue #475 — every job below now explicitly declares max_instances=1
+    # (APScheduler's own default, made explicit so it reads as a deliberate
+    # choice, not an oversight — see _on_job_max_instances above for what
+    # happens when this is what skips a run) and a misfire_grace_time: 3600s
+    # (1 hour) for daily-or-less-frequent jobs, where still running late is
+    # clearly better than not running at all, and 600s (10 min) for the
+    # hourly checks, where a stale run is less worth catching up on.
     _scheduler.add_job(
         _scheduled_full_sync,
         CronTrigger(hour=d_hour, minute=d_min, timezone="UTC"),
         id="daily_sync", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     _scheduler.add_job(
         _scheduled_recommender,
         CronTrigger(day_of_week=rec_day, hour=r_hour, minute=r_min, timezone="UTC"),
         id="weekly_recommender", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     _scheduler.add_job(
         _refresh_airing_schedule,
         CronTrigger(minute=45, timezone="UTC"),
         id="airing_schedule_refresh", replace_existing=True,
+        max_instances=1, misfire_grace_time=600,
     )
     _scheduler.add_job(
         _check_airing_episodes,
         CronTrigger(minute=0, timezone="UTC"),
         id="airing_check", replace_existing=True,
+        max_instances=1, misfire_grace_time=600,
     )
     # Issue #466 — hourly like airing_check above, offset 20 minutes so the two
     # don't compete; pending-migration/rate-limit state barely changes minute to
@@ -856,6 +913,7 @@ def _apply_schedule() -> None:
         _check_health_signals,
         CronTrigger(minute=20, timezone="UTC"),
         id="health_signal_check", replace_existing=True,
+        max_instances=1, misfire_grace_time=600,
     )
     # Issue #299 — catalog-wide, not per-user, and not tied to instance_config's
     # user-facing sync-time settings (those are about each user's own AniList/CR/
@@ -865,6 +923,7 @@ def _apply_schedule() -> None:
         _refresh_filler_data,
         CronTrigger(hour=3, minute=15, timezone="UTC"),
         id="filler_data_refresh", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     # Issue #454 — weekly, deliberately not daily: manga/LN status doesn't need
     # same-day freshness, unlike the hourly airing-schedule refresh. Offset from
@@ -873,6 +932,7 @@ def _apply_schedule() -> None:
         _refresh_manga_data,
         CronTrigger(day_of_week="sun", hour=4, minute=15, timezone="UTC"),
         id="manga_data_refresh", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     # Issue #447 — weekly, matching Fribb/anime-lists' own real update cadence
     # (confirmed live: roughly weekly commits). Offset an hour after
@@ -881,11 +941,13 @@ def _apply_schedule() -> None:
         _refresh_id_mappings,
         CronTrigger(day_of_week="sun", hour=5, minute=15, timezone="UTC"),
         id="id_mapping_refresh", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     _scheduler.add_job(
         _weekly_airing_digest,
         CronTrigger(day_of_week="mon", hour=7, minute=0, timezone="UTC"),
         id="weekly_digest", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     # Issue #196 — "your year so far" (/stats/wrapped) check-in nudges. Fixed
     # calendar dates, instance-wide like every other cron trigger here — see
@@ -895,11 +957,13 @@ def _apply_schedule() -> None:
         _scheduled_wrapped_midyear_checkin,
         CronTrigger(month=7, day=1, hour=9, minute=0, timezone="UTC"),
         id="wrapped_midyear_checkin", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     _scheduler.add_job(
         _scheduled_wrapped_year_end_reminder,
         CronTrigger(month=12, day=20, hour=9, minute=0, timezone="UTC"),
         id="wrapped_year_end_reminder", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     # Issue #375 — first of every month, well after weekly_digest's Monday-morning
     # slot so the two don't compete for attention on the same day.
@@ -907,6 +971,7 @@ def _apply_schedule() -> None:
         _scheduled_monthly_recap,
         CronTrigger(day=1, hour=8, minute=0, timezone="UTC"),
         id="monthly_recap", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
     # Issue #372 — admin-configurable like daily_sync/weekly_recommender above,
     # via the same Instance Config form/instance_config keys.
@@ -914,6 +979,7 @@ def _apply_schedule() -> None:
         _scheduled_instance_backup,
         CronTrigger(hour=b_hour, minute=b_min, timezone="UTC"),
         id="instance_backup", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
     )
 
 
