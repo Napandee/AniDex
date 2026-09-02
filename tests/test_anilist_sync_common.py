@@ -804,6 +804,52 @@ def test_emit_sync_result_silent_in_dry_run(capsys):
     assert capsys.readouterr().out == ""
 
 
+def test_emit_sync_error_prints_sync_error_line(capsys):
+    common.emit_sync_error("cookie_expired")
+    out = capsys.readouterr().out
+    assert out == 'SYNC_ERROR: {"error_type": "cookie_expired"}\n'
+
+
+def test_classify_fetch_error_401_is_cookie_expired():
+    import httpx
+    request = httpx.Request("GET", "https://example.com")
+    response = httpx.Response(401, request=request)
+    exc = httpx.HTTPStatusError("401", request=request, response=response)
+    assert common.classify_fetch_error(exc) == "cookie_expired"
+
+
+def test_classify_fetch_error_403_is_cookie_expired():
+    import httpx
+    request = httpx.Request("GET", "https://example.com")
+    response = httpx.Response(403, request=request)
+    exc = httpx.HTTPStatusError("403", request=request, response=response)
+    assert common.classify_fetch_error(exc) == "cookie_expired"
+
+
+def test_classify_fetch_error_500_is_not_cookie_expired():
+    import httpx
+    request = httpx.Request("GET", "https://example.com")
+    response = httpx.Response(500, request=request)
+    exc = httpx.HTTPStatusError("500", request=request, response=response)
+    assert common.classify_fetch_error(exc) is None
+
+
+def test_classify_fetch_error_netflix_build_id_runtime_error_is_cookie_expired():
+    exc = RuntimeError(
+        "Could not resolve Netflix build_id from page state — Netflix may have "
+        "changed its page structure, or the session cookies are invalid/expired."
+    )
+    assert common.classify_fetch_error(exc) == "cookie_expired"
+
+
+def test_classify_fetch_error_unrelated_runtime_error_is_not_cookie_expired():
+    assert common.classify_fetch_error(RuntimeError("something else broke")) is None
+
+
+def test_classify_fetch_error_generic_exception_is_none():
+    assert common.classify_fetch_error(ValueError("bad json")) is None
+
+
 def test_compute_fetch_watermark_returns_max_across_series():
     from datetime import datetime, timezone
     state_map = {

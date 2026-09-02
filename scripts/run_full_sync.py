@@ -105,9 +105,11 @@ def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, 
     live line-by-line while the step is running.
 
     Returns {"ok": bool, "entries_updated": int|None, "entries_fetched": int|None,
-    "full_pull": bool|None} — the last three keys come straight from the child's
-    SYNC_RESULT line and are all None if it didn't emit one (e.g. it failed before
-    reaching that point).
+    "full_pull": bool|None, "error_type": str|None} — the middle three keys come
+    straight from the child's SYNC_RESULT line and are all None if it didn't emit one
+    (e.g. it failed before reaching that point). error_type comes from a child's
+    SYNC_ERROR line (issue #477 — e.g. "cookie_expired") and is None on success or on
+    any failure the child didn't classify.
 
     subprocess.TimeoutExpired is deliberately not caught here — it propagates up to
     _run_step's existing generic exception handler (issue #91), which already turns
@@ -124,14 +126,20 @@ def run(cmd: list[str], extra_env: dict | None = None, cwd: Path | None = None, 
     print(output, end="", flush=True)
 
     sync_result = {"entries_updated": None, "entries_fetched": None, "full_pull": None}
+    error_type = None
     for line in output.splitlines():
         if line.startswith("SYNC_RESULT: "):
             try:
                 sync_result.update(json.loads(line[len("SYNC_RESULT: "):]))
             except json.JSONDecodeError:
                 pass
+        elif line.startswith("SYNC_ERROR: "):
+            try:
+                error_type = json.loads(line[len("SYNC_ERROR: "):]).get("error_type")
+            except json.JSONDecodeError:
+                pass
 
-    return {"ok": result.returncode == 0, **sync_result}
+    return {"ok": result.returncode == 0, "error_type": error_type, **sync_result}
 
 
 def _start_log(sync_type: str, trigger: str) -> int:
@@ -257,6 +265,12 @@ def _do_netflix(
         timeout=PROVIDER_STEP_TIMEOUT,
     )
     if not result["ok"]:
+        # Issue #477 — a classified cookie/session expiry gets a distinct, actionable
+        # message instead of the generic wrapper text; _notify_sync_outcome() (app/
+        # main.py) surfaces this error_msg verbatim in the failure notification.
+        if result.get("error_type") == "cookie_expired":
+            return {"status": "error", **_EMPTY_STEP_RESULT,
+                    "error_msg": "Netflix — your connection has expired. Reconnect it in Settings."}
         return {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": "Netflix → AniList sync failed"}
 
     return {"status": "ok", "entries_updated": result["entries_updated"], "error_msg": None,
@@ -305,6 +319,10 @@ def _do_primevideo(primevideo_cookie_header: str, credentials_env: dict,
         timeout=PROVIDER_STEP_TIMEOUT,
     )
     if not result["ok"]:
+        # Issue #477 — see the matching comment in _do_netflix() above.
+        if result.get("error_type") == "cookie_expired":
+            return {"status": "error", **_EMPTY_STEP_RESULT,
+                    "error_msg": "Prime Video — your connection has expired. Reconnect it in Settings."}
         return {"status": "error", **_EMPTY_STEP_RESULT, "error_msg": "Prime Video → AniList sync failed"}
 
     return {"status": "ok", "entries_updated": result["entries_updated"], "error_msg": None,
