@@ -1571,6 +1571,7 @@ async def startup_mcp() -> None:
 def shutdown() -> None:
     outbox.stop_worker()
     _scheduler.shutdown(wait=False)
+    db.close_pool()
     log.info("APScheduler stopped")
 
 
