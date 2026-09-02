@@ -38,7 +38,69 @@ if "SETTINGS_ENCRYPTION_KEY" not in os.environ:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+import psycopg2
 import pytest
+
+# ── Shared Postgres-backed app/client fixtures (issue #464) ─────────────────
+#
+# Before this, ~33-63 individual test files each independently redefined the
+# same `pg_conn`/`app_module`/`client` trio (identical DROP-SCHEMA-and-reload
+# logic, identical TestClient wiring, only a cosmetically different dummy
+# SESSION_SECRET_KEY string per file — nothing in the suite ever asserts on
+# that value, so a single shared one is exactly as good). Centralizing it here
+# means a real bug in the shared setup (e.g. #310's SETTINGS_ENCRYPTION_KEY
+# handling, or a future schema-reset change) only needs fixing once, instead
+# of risking silent per-file drift the way scattered fixtures let the fastapi/
+# starlette #50 incident's smoke test look like real verification without
+# actually being it (see CLAUDE.local.md's "Dependency PR review process").
+#
+# A file with its own reasons to differ (a non-standard schema reset, extra
+# app_module setup) is unaffected — this only replaces exact duplicates.
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
+SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
+
+
+def _try_connect():
+    try:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        return conn
+    except Exception:
+        return None
+
+
+@pytest.fixture(scope="module")
+def pg_conn():
+    conn = _try_connect()
+    if conn is None:
+        pytest.skip(
+            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
+            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
+        )
+    with conn.cursor() as cur:
+        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+        cur.execute(SCHEMA_SQL)
+    yield conn
+    conn.close()
+
+
+@pytest.fixture()
+def app_module(pg_conn, monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET_KEY", "test-key")
+    import app.main as m
+
+    return m
+
+
+@pytest.fixture()
+def client(app_module):
+    from starlette.testclient import TestClient
+
+    with TestClient(app_module.app) as c:
+        yield c
 
 
 @pytest.fixture(autouse=True)

@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
 SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
 
+
 USER_ID = 1
 
 
@@ -130,32 +131,6 @@ def test_pace_stat_leap_year_boundary_uses_calendar_date_not_ordinal():
 
 
 # ── DB-backed coverage ───────────────────────────────────────────────────────────
-
-
-def _try_connect():
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        return conn
-    except Exception:
-        return None
-
-
-@pytest.fixture(scope="module")
-def pg_conn():
-    conn = _try_connect()
-    if conn is None:
-        pytest.skip(
-            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
-            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
-        )
-    with conn.cursor() as cur:
-        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        cur.execute(SCHEMA_SQL)
-    yield conn
-    conn.close()
 
 
 @pytest.fixture()

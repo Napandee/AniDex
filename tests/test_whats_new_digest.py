@@ -51,35 +51,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://test:test@localhost/test")
 SCHEMA_SQL = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
 
+
 USER_ID = 1001
 ANIME_A = 9001
 ANIME_B = 9002
-
-
-def _try_connect():
-    try:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=2)
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-        return conn
-    except Exception:
-        return None
-
-
-@pytest.fixture(scope="module")
-def pg_conn():
-    conn = _try_connect()
-    if conn is None:
-        pytest.skip(
-            f"No reachable Postgres at {DATABASE_URL} — this suite needs a real "
-            "throwaway instance (same one .github/workflows/pr-validate.yml provisions)."
-        )
-    with conn.cursor() as cur:
-        cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        cur.execute(SCHEMA_SQL)
-    yield conn
-    conn.close()
 
 
 @pytest.fixture(autouse=True)
@@ -91,16 +66,6 @@ def _clean_tables(pg_conn):
         cur.execute("DELETE FROM library_entries")
         cur.execute("DELETE FROM anime")
         cur.execute("DELETE FROM users")
-
-
-@pytest.fixture()
-def app_module(pg_conn, monkeypatch):
-    """Import app.main lazily (after DATABASE_URL/SESSION_SECRET_KEY are set), same
-    pattern as tests/test_streaming_availability_notify.py and tests/test_totp_2fa.py."""
-    monkeypatch.setenv("SESSION_SECRET_KEY", "test-key")
-    import app.main as m
-
-    return m
 
 
 def _insert_user(pg_conn, user_id, digest_last_seen_at=None):
@@ -355,13 +320,6 @@ def test_impersonation_skips_digest_entirely(pg_conn, app_module):
 
 
 # ── End-to-end via a real login + TestClient ────────────────────────────────────
-
-@pytest.fixture()
-def client(app_module):
-    from starlette.testclient import TestClient
-
-    with TestClient(app_module.app) as c:
-        yield c
 
 
 def test_digest_shows_once_per_session_via_real_login(pg_conn, app_module, client):
