@@ -142,7 +142,7 @@ def test_date_filter_shows_only_that_days_entries(pg_conn, app_module, client):
     assert "Target Day Show" in resp.text
     assert "Other Day Show" not in resp.text
     # Reuses the same list-item card markup as the plain List view.
-    assert 'class="upcoming-item"' in resp.text
+    assert 'class="list-row upcoming-item"' in resp.text
     assert 'class="upcoming-list"' in resp.text
 
 

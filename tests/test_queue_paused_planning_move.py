@@ -91,11 +91,11 @@ def app_client(monkeypatch):
 def _item_html(body: str, anime_id: int) -> str:
     """Slice out just one queue card's <li>...</li> block for isolated
     assertions, so a button belonging to a different card can't produce a false
-    pass. Cards are <li class="queue-item" ... data-anime-id="{id}" ...>."""
+    pass. Cards are <li class="list-row queue-item" ... data-anime-id="{id}" ...>."""
     marker = f'data-anime-id="{anime_id}"'
     start = body.index(marker)
-    item_start = body.rindex('<li class="queue-item"', 0, start)
-    next_item = body.find('<li class="queue-item"', start)
+    item_start = body.rindex('<li class="list-row queue-item"', 0, start)
+    next_item = body.find('<li class="list-row queue-item"', start)
     end = next_item if next_item != -1 else body.index('</ol>', start)
     return body[item_start:end]
 
