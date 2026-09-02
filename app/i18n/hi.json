@@ -645,6 +645,7 @@
   "lib_add_anime_close_label": "बंद करें",
   "lib_add_anime_search_placeholder": "AniList पर शीर्षक से खोजें…",
   "lib_avg_score_title": "AniList औसत",
+  "lib_more_details_title": "अधिक विवरण",
   "lib_airing_badge_title": "एपिसोड {ep} {label} प्रसारित होगा",
   "lib_airing_badge_text": "▶ एप {ep} {label}",
   "lib_stale_tag": "निष्क्रिय",
