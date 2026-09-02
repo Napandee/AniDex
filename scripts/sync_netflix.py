@@ -67,8 +67,9 @@ import httpx
 from dotenv import load_dotenv
 
 from anilist_sync_common import (
-    db_connect, determine_full_pull_watermark, emit_sync_result, enqueue_outbox_update,
-    find_anilist_id, is_plausible_match, load_title_search_cache, load_user_list_from_db,
+    classify_fetch_error, db_connect, determine_full_pull_watermark, emit_sync_error,
+    emit_sync_result, enqueue_outbox_update, find_anilist_id, is_plausible_match,
+    load_title_search_cache, load_user_list_from_db,
     make_logger, mark_walk_complete_if_reached_end, resolve_or_create_user_list_entry,
     save_title_search_cache_entry, seed_search_cache,
     set_walk_complete,  # noqa: F401 — re-exported for import_netflix_csv.py's nf.set_walk_complete() call
@@ -545,6 +546,10 @@ def main():
         raw_items, reached_true_end = client.fetch_since(watermark)
     except Exception as e:
         log(f"ERROR: Netflix fetch failed: {e}")
+        error_type = classify_fetch_error(e)
+        if error_type:
+            log(f"  classified as: {error_type}")
+            emit_sync_error(error_type)
         if conn:
             conn.close()
         sys.exit(1)

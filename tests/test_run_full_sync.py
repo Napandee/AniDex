@@ -21,8 +21,9 @@ import pytest
 import run_full_sync as rfs
 
 
-def _result(ok, entries_updated=None, entries_fetched=None, full_pull=None):
-    return {"ok": ok, "entries_updated": entries_updated, "entries_fetched": entries_fetched, "full_pull": full_pull}
+def _result(ok, entries_updated=None, entries_fetched=None, full_pull=None, error_type=None):
+    return {"ok": ok, "entries_updated": entries_updated, "entries_fetched": entries_fetched,
+            "full_pull": full_pull, "error_type": error_type}
 
 
 def _capture(monkeypatch, *, cr_ok=True, netflix_ok=True, anilist_ok=True, plex_ok=True,
@@ -94,6 +95,39 @@ def _statuses(steps):
     return {s["service"]: s["status"] for s in steps}
 
 
+def test_run_parses_sync_error_line_from_real_subprocess_output(monkeypatch):
+    # Issue #477 — run() is the real subprocess-output parser (unlike the tests
+    # above, which monkeypatch run() itself away); this proves it actually extracts
+    # error_type from a genuine SYNC_ERROR: line the way it already does for
+    # SYNC_RESULT:, closing the loop between a provider script's emit_sync_error()
+    # call and _do_netflix()/_do_primevideo()'s distinct-message branch.
+    class FakeCompletedProcess:
+        returncode = 1
+        stdout = 'some log output\nSYNC_ERROR: {"error_type": "cookie_expired"}\n'
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeCompletedProcess())
+
+    result = rfs.run(["python3", "sync_netflix.py"])
+
+    assert result["ok"] is False
+    assert result["error_type"] == "cookie_expired"
+
+
+def test_run_error_type_none_when_no_sync_error_line(monkeypatch):
+    class FakeCompletedProcess:
+        returncode = 1
+        stdout = "some log output, no classification\n"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: FakeCompletedProcess())
+
+    result = rfs.run(["python3", "sync_netflix.py"])
+
+    assert result["ok"] is False
+    assert result["error_type"] is None
+
+
 def test_all_steps_configured_and_ok(monkeypatch):
     calls, finish_calls, start_log_calls = _capture(monkeypatch)
 
@@ -123,6 +157,55 @@ def test_netflix_failure_does_not_block_anilist_pull(monkeypatch):
     statuses = _statuses(result["steps"])
     assert statuses["netflix"] == "error"
     assert statuses["anilist_postgres"] == "ok"
+
+
+def test_netflix_cookie_expiry_gets_distinct_error_message(monkeypatch):
+    # Issue #477 — a classified cookie/session expiry gets a distinctly-worded,
+    # actionable error_msg instead of the generic "Netflix → AniList sync failed"
+    # wrapper text, so _notify_sync_outcome() (app/main.py) surfaces it verbatim.
+    calls, finish_calls, start_log_calls = _capture(
+        monkeypatch, netflix_result=_result(False, error_type="cookie_expired"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        rfs.main()
+
+    assert exc.value.code == 0
+    result = finish_calls[0]
+    netflix_step = next(s for s in result["steps"] if s["service"] == "netflix")
+    assert netflix_step["status"] == "error"
+    assert netflix_step["error_msg"] == "Netflix — your connection has expired. Reconnect it in Settings."
+
+
+def test_netflix_non_expiry_failure_keeps_generic_error_message(monkeypatch):
+    # A non-cookie-expiry failure (network error, unexpected response, etc.) for the
+    # same provider must still produce the existing generic failure message, unchanged.
+    calls, finish_calls, start_log_calls = _capture(monkeypatch, netflix_ok=False)
+
+    with pytest.raises(SystemExit) as exc:
+        rfs.main()
+
+    assert exc.value.code == 0
+    result = finish_calls[0]
+    netflix_step = next(s for s in result["steps"] if s["service"] == "netflix")
+    assert netflix_step["status"] == "error"
+    assert netflix_step["error_msg"] == "Netflix → AniList sync failed"
+
+
+def test_primevideo_cookie_expiry_gets_distinct_error_message(monkeypatch):
+    calls, finish_calls, start_log_calls = _capture(
+        monkeypatch, primevideo_configured=True,
+        primevideo_result=_result(False, error_type="cookie_expired"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        rfs.main()
+
+    assert exc.value.code == 0
+    result = finish_calls[0]
+    pv_step = next(s for s in result["steps"] if s["service"] == "primevideo")
+    assert pv_step["status"] == "error"
+    assert pv_step["error_msg"] == "Prime Video — your connection has expired. Reconnect it in Settings."
 
 
 def test_no_provider_credentials_skips_but_anilist_still_runs(monkeypatch):

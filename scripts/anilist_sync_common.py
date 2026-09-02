@@ -776,6 +776,39 @@ def emit_sync_result(entries_updated: int, entries_fetched: int, full_pull: bool
     )
 
 
+def classify_fetch_error(exc: Exception) -> str | None:
+    """Issue #477 — distinguishes a cookie/session-expiry failure from any other fetch
+    failure (network error, unexpected response shape, provider outage), so the
+    orchestrator/notifier can tell the user specifically to reconnect rather than a
+    generic "sync failed". Returns "cookie_expired" or None (not classified as expiry —
+    treat as a generic failure).
+
+    A 401/403 from the provider's own API is the clearest signal (Prime Video's
+    getWatchHistorySettingsPage 403s on an invalid session, confirmed live via issue
+    #352). Netflix's Falcor API doesn't reliably surface a 401/403 the same way — an
+    expired session instead fails earlier, in _resolve_build_id() finding no
+    BUILD_IDENTIFIER in the (login-redirected) page it fetches — so a RuntimeError whose
+    message already says "invalid/expired" (that function's own wording) is treated as
+    the same signal. Deliberately conservative: anything else (timeouts, JSON decode
+    errors, unexpected schema) stays generic rather than risk telling a user to
+    reconnect a cookie that's actually still fine."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (401, 403):
+        return "cookie_expired"
+    if isinstance(exc, RuntimeError) and "invalid/expired" in str(exc):
+        return "cookie_expired"
+    return None
+
+
+def emit_sync_error(error_type: str) -> None:
+    """Issue #477 — parallel channel to emit_sync_result() (see its docstring) for a
+    FAILED run: run_full_sync.py's run() parses this exact SYNC_ERROR: prefix out of
+    captured stdout the same way it parses SYNC_RESULT:, so a step's error_msg can be
+    made provider/reason-specific instead of the generic "<Provider> → AniList sync
+    failed" wrapper text. Always emitted (unlike emit_sync_result(), DRY_RUN scripts
+    still exit 1 on a real fetch failure)."""
+    print(f"SYNC_ERROR: {json.dumps({'error_type': error_type})}", flush=True)
+
+
 def compute_fetch_watermark(state_map: dict[int, dict]) -> datetime | None:
     """The single cursor a provider's fetch_since() paginates against — the newest
     last_seen_watched_at across all series from the previous sync. Every provider's
