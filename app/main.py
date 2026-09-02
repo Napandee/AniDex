@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import html
 import io
@@ -15,6 +16,7 @@ import zipfile
 from collections import Counter
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import bcrypt
 import httpx
@@ -25,7 +27,7 @@ import qrcode.image.svg
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from authlib.integrations.starlette_client import OAuth
-from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -2508,7 +2510,12 @@ async def settings_link(request: Request, provider: str):
 
 @app.get("/auth/link-callback/{provider}")
 async def auth_link_callback(request: Request, provider: str):
-    user, denied = _require_user(request)
+    # Stays async def rather than the plain-def conversion used elsewhere in this
+    # file (#461): the OAuth token exchange below is a genuine async operation.
+    # The blocking auth lookup, identity lookup, and DB write are each pushed
+    # onto a thread via asyncio.to_thread so they still don't stall the event
+    # loop for the (much longer) duration of the OAuth round trip.
+    user, denied = await asyncio.to_thread(_require_user, request)
     if denied:
         return denied
     if provider not in AUTH_PROVIDERS:
@@ -2519,7 +2526,7 @@ async def auth_link_callback(request: Request, provider: str):
     token = await client.authorize_access_token(request)
     provider_user_id, _email, _display_name, _avatar_url = await _fetch_oauth_profile(client, provider, token)
 
-    existing = _find_user_by_provider_identity(provider, provider_user_id)
+    existing = await asyncio.to_thread(_find_user_by_provider_identity, provider, provider_user_id)
     if existing and existing["id"] != user["id"]:
         return RedirectResponse(
             url=f"/settings?link_error=That+{provider.title()}+account+is+already+"
@@ -2528,9 +2535,13 @@ async def auth_link_callback(request: Request, provider: str):
         )
     if not existing:
         if provider == "google":
-            db.execute("UPDATE users SET google_id = %s WHERE id = %s", (provider_user_id, user["id"]))
+            await asyncio.to_thread(
+                db.execute, "UPDATE users SET google_id = %s WHERE id = %s", (provider_user_id, user["id"])
+            )
         else:
-            db.execute("UPDATE users SET discord_id = %s WHERE id = %s", (provider_user_id, user["id"]))
+            await asyncio.to_thread(
+                db.execute, "UPDATE users SET discord_id = %s WHERE id = %s", (provider_user_id, user["id"])
+            )
 
     return RedirectResponse(url="/settings", status_code=303)
 
@@ -2566,7 +2577,7 @@ def settings_unlink(request: Request, provider: str):
 
 
 @app.post("/auth/logout")
-async def auth_logout(request: Request):
+def auth_logout(request: Request):
     _end_session(request)
     return RedirectResponse(url="/", status_code=303)
 
@@ -3632,7 +3643,13 @@ def recommendations(request: Request):
 
 @app.post("/recommendations/{anime_id}/dismiss")
 async def dismiss(anime_id: int, request: Request):
-    user, denied = _require_user_api(request)
+    # Stays async def rather than the plain-def conversion used elsewhere in this
+    # file (#461): the request body is only sometimes JSON (a plain, non-JS form
+    # fallback is also supported below), so it can't be declared as a typed
+    # FastAPI Body() parameter the way every unconditional-JSON-body handler is.
+    # The blocking calls (auth lookup, DB writes) are pushed onto a thread via
+    # asyncio.to_thread so they still don't stall the event loop.
+    user, denied = await asyncio.to_thread(_require_user_api, request)
     if denied:
         return denied
 
@@ -3640,13 +3657,15 @@ async def dismiss(anime_id: int, request: Request):
     if request.headers.get("content-type", "").startswith("application/json"):
         body = await request.json()
         reason = body.get("reason") or None
-        db.execute(
+        await asyncio.to_thread(
+            db.execute,
             "UPDATE recommendation_scores SET dismissed = true, dismiss_reason = %s "
             "WHERE anime_id = %s AND user_id = %s",
             (reason, anime_id, user["id"]),
         )
         return JSONResponse({"ok": True})
-    db.execute(
+    await asyncio.to_thread(
+        db.execute,
         "UPDATE recommendation_scores SET dismissed = true WHERE anime_id = %s AND user_id = %s",
         (anime_id, user["id"]),
     )
@@ -3654,7 +3673,7 @@ async def dismiss(anime_id: int, request: Request):
 
 
 @app.post("/recommendations/{anime_id}/snooze")
-async def snooze(anime_id: int, request: Request):
+def snooze(anime_id: int, request: Request):
     """Time-boxed "not now" (issue #75) — distinct from the permanent dismiss above.
     Hides the entry from the recommendations view for SNOOZE_DAYS; it resurfaces
     automatically once snoozed_until passes, and a recommender rebuild in the
@@ -3910,12 +3929,11 @@ def save_notes(
 
 
 @app.post("/api/anime/{anime_id}/notes")
-async def save_notes_api(anime_id: int, request: Request):
+def save_notes_api(anime_id: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     drop_reason_val = (body.get("drop_reason") or "").strip() or None
     notes_val = (body.get("notes") or "").strip() or None
     tags_raw = body.get("personal_tags") or ""
@@ -4120,12 +4138,11 @@ def get_episode_note_api(anime_id: int, episode_number: int, request: Request):
 
 
 @app.post("/api/anime/{anime_id}/episode-notes/{episode_number}")
-async def save_episode_note_api(anime_id: int, episode_number: int, request: Request):
+def save_episode_note_api(anime_id: int, episode_number: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     note = body.get("note")
     if note is None:
         note = ""
@@ -5799,7 +5816,7 @@ def settings_save_credentials_primevideo(
 
 
 @app.post("/api/pat/primevideo-cookie")
-async def api_pat_save_primevideo_cookie(request: Request):
+def api_pat_save_primevideo_cookie(request: Request, body: dict = Body(default={})):
     """Issue #390 — write target for a companion browser extension that keeps
     Prime Video's stored cookie fresh, so the manual copy-paste into Settings
     (settings_save_credentials_primevideo above) doesn't have to happen every
@@ -5822,7 +5839,6 @@ async def api_pat_save_primevideo_cookie(request: Request):
     if denied:
         return denied
 
-    body = await request.json()
     cookie_header = (body.get("cookie_header") or "").strip()
     if not cookie_header:
         return JSONResponse({"error": "cookie_header is required"}, status_code=400)
@@ -5832,7 +5848,7 @@ async def api_pat_save_primevideo_cookie(request: Request):
 
 
 @app.post("/settings/plex/connect")
-async def settings_plex_connect(request: Request):
+def settings_plex_connect(request: Request):
     """Issue #153 — starts a Plex OAuth PIN connect attempt. Returns the pin id
     and the plex.tv approval URL for the frontend to open in a new tab and then
     poll /settings/plex/poll/{pin_id} against; see app/plex_auth.py's module
@@ -5911,8 +5927,16 @@ async def test_credential(provider: str, request: Request):
     existing" convention) against the live service, using the exact same
     login/auth code the real sync scripts run — see app/credential_check.py's
     module docstring for why. Read-only: never writes anything, whether the
-    check passes or fails."""
-    user, denied = _require_user_api(request)
+    check passes or fails.
+
+    Stays async def rather than the plain-def conversion used elsewhere in this
+    file (#461): the JSON body is optional (try/except around request.json(),
+    falling back to {} rather than 422ing) in a way a typed FastAPI Body()
+    parameter can't reproduce. The blocking auth lookup and the credential check
+    itself (a real, potentially slow network round-trip to the live service, on
+    top of any DB reads) are pushed onto a thread via asyncio.to_thread so they
+    don't stall the event loop."""
+    user, denied = await asyncio.to_thread(_require_user_api, request)
     if denied:
         return denied
 
@@ -5928,14 +5952,16 @@ async def test_credential(provider: str, request: Request):
         submitted = (payload.get(name) or "").strip()
         return submitted or config.get(user["id"], name)
 
-    if provider == "anilist":
-        ok, detail = credential_check.check_anilist(_field("anilist_username"), _field("anilist_token"))
-    elif provider == "crunchyroll":
-        ok, detail = credential_check.check_crunchyroll(_field("cr_etp_rt"))
-    elif provider == "netflix":
-        ok, detail = credential_check.check_netflix(_field("netflix_cookie_header"), _field("netflix_profile_guid"))
-    else:
-        ok, detail = credential_check.check_primevideo(_field("primevideo_cookie_header"))
+    def _run_check():
+        if provider == "anilist":
+            return credential_check.check_anilist(_field("anilist_username"), _field("anilist_token"))
+        elif provider == "crunchyroll":
+            return credential_check.check_crunchyroll(_field("cr_etp_rt"))
+        elif provider == "netflix":
+            return credential_check.check_netflix(_field("netflix_cookie_header"), _field("netflix_profile_guid"))
+        return credential_check.check_primevideo(_field("primevideo_cookie_header"))
+
+    ok, detail = await asyncio.to_thread(_run_check)
 
     return JSONResponse({"ok": ok, "detail": detail})
 
@@ -6005,23 +6031,31 @@ async def settings_update_streaming_services(request: Request):
     that. Silently drops any submitted value not in STREAMING_SITES (a tampered
     request, or a site since removed from the allowlist) rather than erroring —
     same allowlist enforcement point as every other STREAMING_SITES filter in this
-    file, just on write instead of read."""
-    user, denied = _require_user(request)
+    file, just on write instead of read.
+
+    Stays async def rather than the plain-def conversion used elsewhere in this
+    file (#461), since the deliberate raw request.form() usage above needs an
+    await; the blocking auth lookup and DB writes are pushed onto a thread via
+    asyncio.to_thread so they still don't stall the event loop."""
+    user, denied = await asyncio.to_thread(_require_user, request)
     if denied:
         return denied
 
     form = await request.form()
     selected = sorted({s for s in form.getlist("service") if s in STREAMING_SITES})
 
-    with db.get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM user_streaming_services WHERE user_id = %s", (user["id"],))
-            for service in selected:
-                cur.execute(
-                    "INSERT INTO user_streaming_services (user_id, service) VALUES (%s, %s)",
-                    (user["id"], service),
-                )
-        conn.commit()
+    def _write_streaming_services():
+        with db.get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM user_streaming_services WHERE user_id = %s", (user["id"],))
+                for service in selected:
+                    cur.execute(
+                        "INSERT INTO user_streaming_services (user_id, service) VALUES (%s, %s)",
+                        (user["id"], service),
+                    )
+            conn.commit()
+
+    await asyncio.to_thread(_write_streaming_services)
 
     return RedirectResponse(url="/settings?saved=streaming_services", status_code=303)
 
@@ -6169,7 +6203,7 @@ def settings_save_notifications(
 
 
 @app.post("/settings/push/subscribe")
-async def settings_push_subscribe(request: Request):
+def settings_push_subscribe(request: Request, body: dict = Body(default={})):
     """Issue #377 — stores a browser's PushManager.subscribe() result so
     app/notify.py's WebPushChannel can deliver to it. JSON body (this route has no
     HTML form counterpart, unlike most POST routes here), driven entirely by
@@ -6180,7 +6214,6 @@ async def settings_push_subscribe(request: Request):
     if denied:
         return denied
 
-    body = await request.json()
     endpoint = (body.get("endpoint") or "").strip()
     keys = body.get("keys") or {}
     p256dh, auth = (keys.get("p256dh") or "").strip(), (keys.get("auth") or "").strip()
@@ -6199,12 +6232,11 @@ async def settings_push_subscribe(request: Request):
 
 
 @app.post("/settings/push/unsubscribe")
-async def settings_push_unsubscribe(request: Request):
+def settings_push_unsubscribe(request: Request, body: dict = Body(default={})):
     user, denied = _require_user(request)
     if denied:
         return denied
 
-    body = await request.json()
     endpoint = (body.get("endpoint") or "").strip()
     if endpoint:
         db.execute(
@@ -6539,7 +6571,7 @@ def settings_revoke_token(request: Request, token_id: int):
 
 
 @app.post("/api/sync")
-async def trigger_sync(request: Request, background_tasks: BackgroundTasks):
+def trigger_sync(request: Request, background_tasks: BackgroundTasks):
     user, denied = _require_user_api(request)
     if denied:
         return denied
@@ -6555,7 +6587,7 @@ async def trigger_sync(request: Request, background_tasks: BackgroundTasks):
 
 
 @app.post("/api/sync/full-resync")
-async def trigger_full_resync(request: Request, background_tasks: BackgroundTasks):
+def trigger_full_resync(request: Request, background_tasks: BackgroundTasks):
     """Issue #20 (Crunchyroll) + #21 (Netflix) — forced full re-walk of both providers'
     watch history for one run, ignoring their stored watermarks. Same single-flight
     guard as POST /api/sync since both ultimately touch the same per-user
@@ -8239,7 +8271,7 @@ def _apply_personal_notes_import(user_id: int, importable: list) -> None:
 
 
 @app.post("/api/import")
-async def import_personal_data(request: Request):
+def import_personal_data(request: Request, body: dict = Body(default={})):
     """Issue #87 — the import/restore counterpart to GET /api/export above. Reads
     the exact same JSON shape back in and upserts personal_notes for the
     requesting user. Self-service only, matching export already being
@@ -8261,7 +8293,6 @@ async def import_personal_data(request: Request):
     if denied:
         return denied
 
-    body = await request.json()
     entries = body.get("entries")
     confirm = bool(body.get("confirm", False))
     if not isinstance(entries, list):
@@ -8477,14 +8508,13 @@ def list_collections(request: Request):
 
 
 @app.post("/api/collections")
-async def create_collection(request: Request):
+def create_collection(request: Request, body: dict = Body(default={})):
     """Save the library view's current active filter/sort state as a named
     collection."""
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     name = (body.get("name") or "").strip()
     if not name:
         return JSONResponse({"error": "name required"}, status_code=400)
@@ -8518,14 +8548,13 @@ async def create_collection(request: Request):
 
 
 @app.patch("/api/collections/{collection_id}")
-async def update_collection(collection_id: int, request: Request):
+def update_collection(collection_id: int, request: Request, body: dict = Body(default={})):
     """Rename and/or re-save the filter criteria of an existing collection —
     scoped to the owning user like every other personal-layer write."""
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     sets = []
     params = []
 
@@ -8761,12 +8790,11 @@ def library(request: Request, response: Response, status: str = None):
 
 
 @app.post("/api/anime/{anime_id}/rating")
-async def set_rating(anime_id: int, request: Request):
+def set_rating(anime_id: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     stars = int(body.get("score", 0))
     if stars < 0 or stars > 5:
         return JSONResponse({"error": "score must be 0–5"}, status_code=400)
@@ -8832,12 +8860,11 @@ def _apply_rating_change(user, anime_id: int, stars: int) -> str | None:
 
 
 @app.post("/api/anime/{anime_id}/favorite")
-async def set_favorite(anime_id: int, request: Request):
+def set_favorite(anime_id: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     favorite = bool(body.get("favorite"))
 
     _set_favorite(user["id"], anime_id, favorite)
@@ -8932,12 +8959,11 @@ def _apply_status_change(user, anime_id: int, status: str) -> str | None:
 
 
 @app.post("/api/anime/{anime_id}/status")
-async def set_status(anime_id: int, request: Request):
+def set_status(anime_id: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     status = body.get("status", "").upper()
     if status not in VALID_STATUSES:
         return JSONResponse({"error": "invalid status"}, status_code=400)
@@ -8951,14 +8977,13 @@ async def set_status(anime_id: int, request: Request):
 
 
 @app.post("/api/anime/bulk-status")
-async def bulk_set_status(request: Request):
+def bulk_set_status(request: Request, body: dict = Body(default={})):
     """Local-first bulk status edit (issue #18): writes land immediately and AniList
     sync happens async via the outbox worker, unlike the single-card endpoint above."""
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     status = body.get("status", "").upper()
     anime_ids = body.get("anime_ids", [])
     if status not in VALID_STATUSES:
@@ -9048,7 +9073,7 @@ def bulk_status(request: Request):
 
 
 @app.post("/api/anime/{anime_id}/bulk-status/retry")
-async def bulk_status_retry(anime_id: int, request: Request):
+def bulk_status_retry(anime_id: int, request: Request):
     user, denied = _require_user_api(request)
     if denied:
         return denied
@@ -9069,7 +9094,7 @@ async def bulk_status_retry(anime_id: int, request: Request):
 
 
 @app.post("/api/anime/bulk-tags")
-async def bulk_add_tags(request: Request):
+def bulk_add_tags(request: Request, body: dict = Body(default={})):
     """Bulk-apply personal tags from library bulk-select mode (issue #15). Additive —
     merges into each entry's existing personal_tags rather than replacing them, and
     purely local (personal_notes only, no AniList mutation), so it commits
@@ -9078,7 +9103,6 @@ async def bulk_add_tags(request: Request):
     if denied:
         return denied
 
-    body = await request.json()
     tags_raw = body.get("tags") or ""
     anime_ids = body.get("anime_ids", [])
     tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
@@ -9269,12 +9293,11 @@ def tags_delete(request: Request, csrf_token: str = Form(...), tag: str = Form(.
 
 
 @app.post("/api/anime/{anime_id}/progress")
-async def set_progress(anime_id: int, request: Request):
+def set_progress(anime_id: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     progress = body.get("progress")
     if not isinstance(progress, int) or progress < 0:
         return JSONResponse({"error": "progress must be a non-negative integer"}, status_code=400)
@@ -9318,7 +9341,7 @@ def _apply_progress_change(user, anime_id: int, progress: int) -> str | None:
 
 
 @app.post("/api/anime/{anime_id}/delete")
-async def delete_anime(anime_id: int, request: Request):
+def delete_anime(anime_id: int, request: Request):
     user, denied = _require_user_api(request)
     if denied:
         return denied
@@ -9388,13 +9411,12 @@ async def delete_anime(anime_id: int, request: Request):
 
 
 @app.post("/api/queue/reorder")
-async def reorder_queue(request: Request):
+def reorder_queue(request: Request, body: Any = Body(default=[])):
     """Accept [{anime_id, priority}] and bulk-update personal_notes.watch_next_priority."""
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     items = body if isinstance(body, list) else []
     for item in items:
         anime_id = int(item["anime_id"])
@@ -9411,7 +9433,7 @@ async def reorder_queue(request: Request):
 
 
 @app.get("/api/search/anilist")
-async def search_anilist(request: Request, q: str = ""):
+def search_anilist(request: Request, q: str = ""):
     user, denied = _require_user_api(request)
     if denied:
         return denied
@@ -9462,12 +9484,11 @@ async def search_anilist(request: Request, q: str = ""):
 
 
 @app.post("/api/anime/{anime_id}/add")
-async def add_anime(anime_id: int, request: Request):
+def add_anime(anime_id: int, request: Request, body: dict = Body(default={})):
     user, denied = _require_user_api(request)
     if denied:
         return denied
 
-    body = await request.json()
     status = body.get("status", "PLANNING").upper()
     if status not in VALID_STATUSES:
         return JSONResponse({"error": "invalid status"}, status_code=400)
