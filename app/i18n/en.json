@@ -376,6 +376,7 @@
   "queue_notes_link_label": "Notes",
   "queue_move_planning_btn": "Move to Planning",
   "queue_empty": "Nothing in your planning or paused list.",
+  "queue_watching_empty": "Nothing in progress right now.",
   "queue_empty_cta": "Get recommendations",
   "queue_no_matches": "No matches.",
   "queue_clear_filters_btn": "Clear filters",

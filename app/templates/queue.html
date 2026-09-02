@@ -41,13 +41,20 @@
 {% if entries %}
 <ol class="queue-list" id="queue-list">
   {% for e in entries %}
-  <li class="queue-item" draggable="true" data-anime-id="{{ e.id }}"
+  {# Issue #479 — WATCHING entries are ordered by recency, not manual
+     watch_next_priority, so dragging to reorder (which persists priority via
+     /api/queue/reorder) doesn't apply here and would silently write a
+     meaningless priority onto an in-progress entry — not draggable, no drag
+     handle, for this tab only. Every other tab's markup is unchanged. #}
+  <li class="queue-item" draggable="{{ 'false' if active_status == 'WATCHING' else 'true' }}" data-anime-id="{{ e.id }}"
       data-format="{{ e.format or '' }}"
       data-episodes="{{ e.episodes or '' }}"
       data-tags="{{ (e.personal_tags or []) | join(', ') }}"
-      data-notes-back="PLANNING"
+      data-notes-back="{{ 'WATCHING' if active_status == 'WATCHING' else 'PLANNING' }}"
       title="{{ t('queue_notes_edit_title') }}">
+    {% if active_status != 'WATCHING' %}
     <span class="queue-drag-handle" title="{{ t('queue_drag_handle_title') }}">⠿</span>
+    {% endif %}
     <span class="queue-rank">{{ loop.index }}</span>
 
     {% if e.cover_image_url %}
@@ -151,9 +158,10 @@
 {# Issue #472 — same truly-empty-vs-filtered-empty split as library.html:
    nothing planned/paused is a different situation from "your filter matched
    nothing" below, and gets a CTA into finding something to watch next
-   instead of a filter-clearing action. #}
+   instead of a filter-clearing action. Issue #479 — the WATCHING tab gets
+   its own headline (this copy doesn't apply to "nothing in progress"). #}
 <div class="empty empty-truly">
-  <p class="empty-headline">{{ t('queue_empty') }}</p>
+  <p class="empty-headline">{{ t('queue_watching_empty') if active_status == 'WATCHING' else t('queue_empty') }}</p>
   <a href="/recommendations" class="empty-cta-btn">{{ t('queue_empty_cta') }}</a>
 </div>
 {% endif %}

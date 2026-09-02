@@ -376,6 +376,7 @@
   "queue_notes_link_label": "नोट्स",
   "queue_move_planning_btn": "योजना में ले जाएँ",
   "queue_empty": "आपकी योजना या रोकी गई सूची में कुछ भी नहीं है।",
+  "queue_watching_empty": "अभी कुछ भी देखा नहीं जा रहा है।",
   "queue_empty_cta": "अनुशंसाएं देखें",
   "queue_no_matches": "कोई मेल नहीं मिला।",
   "queue_clear_filters_btn": "फ़िल्टर साफ़ करें",

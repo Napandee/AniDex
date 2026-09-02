@@ -2335,6 +2335,8 @@ body.auth-page main {
 }
 .badge-planning { color: var(--pill-neutral-text); border-color: var(--pill-neutral-border); background: var(--pill-neutral-bg); }
 .badge-paused   { color: var(--pill-orange-text); border-color: var(--pill-orange-border); background: var(--pill-orange-bg); }
+/* Issue #479 — WATCHING tab reuses this same badge markup. */
+.badge-watching { color: var(--pill-info-text); border-color: var(--pill-info-border); background: var(--pill-info-bg); }
 
 /* ── Filler-status badge (issue #301, sourced from #299's filler_episode_cache) ──
    Only rendered when the next unwatched episode has a cached row -- absence means
