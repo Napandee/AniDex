@@ -645,6 +645,7 @@
   "lib_add_anime_close_label": "关闭",
   "lib_add_anime_search_placeholder": "按标题在 AniList 上搜索…",
   "lib_avg_score_title": "AniList 平均分",
+  "lib_more_details_title": "更多详情",
   "lib_airing_badge_title": "第 {ep} 集将于 {label} 播出",
   "lib_airing_badge_text": "▶ 第 {ep} 集 {label}",
   "lib_stale_tag": "已停滞",

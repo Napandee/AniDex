@@ -219,33 +219,7 @@
         {% if e.format %}
         <span class="format">{{ e.format }}</span>
         {% endif %}
-        {% if e.average_score %}
-        <span class="avg-score" title="{{ t('lib_avg_score_title') }}">{{ e.average_score }}%</span>
-        {% endif %}
       </div>
-
-      {% if e.genres %}
-      <div class="genres">
-        {% for g in e.genres[:4] %}
-        <span class="genre">{{ g }}</span>
-        {% endfor %}
-        {# Genres beyond the first 4 stay off-screen but keep the .genre class, so
-           applyLibraryFilters' free-text search (script.js) — which already reads
-           `.genre` chip text as part of what a search query matches against — sees
-           an anime's full genre list, not just what's visually shown. Needed so
-           /stats' genre-breakdown drill-down (issue #225) links to a *correctly*
-           filtered list: a genre bar's count comes from the full a.genres array,
-           and without this an anime whose only match was its 5th+ genre would
-           silently be missing from the drilled-into results. Not a new filter
-           control — the search box already matched genre text before this, this
-           just completes the data it was reading. #genre[hidden] in style.css
-           guards the native `hidden` attribute against any future .genre display
-           override. #}
-        {% for g in e.genres[4:] %}
-        <span class="genre" hidden>{{ g }}</span>
-        {% endfor %}
-      </div>
-      {% endif %}
 
       {% if e.personal_tags or e.mood_tags or e.is_stale or e.repeat_count or e.status == 'REPEATING' or e.next_airing_label %}
       <div class="genres">
@@ -274,20 +248,6 @@
       {% endif %}
 
 
-      {% if e.streaming_links %}
-      <div class="stream-links">
-        {% for lnk in e.streaming_links[:4] %}
-        <a href="{{ lnk.url }}" target="_blank" rel="noopener" class="stream-link">{{ lnk.site }}</a>
-        {% endfor %}
-      </div>
-      {% endif %}
-
-      {% if e.drop_reason %}
-      <p class="drop-note" title="{{ e.drop_reason }}">↩ {{ e.drop_reason }}</p>
-      {% elif e.notes %}
-      <p class="notes-preview" title="{{ e.notes }}">{{ e.notes }}</p>
-      {% endif %}
-
       <div class="card-footer">
         <select class="status-select" data-anime-id="{{ e.id }}" data-original="{{ e.status }}" aria-label="{{ t('lib_status_select_label', title=e.title_english or e.title_romaji) }}">
           {% for s in ['WATCHING', 'COMPLETED', 'DROPPED', 'PLANNING', 'PAUSED', 'REPEATING'] %}
@@ -297,6 +257,16 @@
         <div class="card-footer-actions">
           {% if e.status == 'WATCHING' %}
           <button class="btn-drop" data-anime-id="{{ e.id }}">{{ t('lib_drop_btn') }}</button>
+          {% endif %}
+          {% if e.genres or e.average_score or e.streaming_links or e.drop_reason or e.notes %}
+          {# Issue #470 — re-audit of the #141 disclosure precedent: genres,
+             community avg score, streaming links, and the drop/notes preview
+             are all detail-level (not glanceable-at-a-scan info like title/
+             progress/rating/status), so they move behind one shared "more
+             details" toggle instead of staying always-visible rows. Same
+             icon-button footprint and toggle mechanism as .manga-status-badge
+             above — one shared script.js handler, no new JS. #}
+          <button type="button" class="help-disclosure-btn card-detail-badge" aria-expanded="false" aria-controls="card-detail-{{ e.id }}" title="{{ t('lib_more_details_title') }}" aria-label="{{ t('lib_more_details_title') }}">⋯</button>
           {% endif %}
           {% if e.manga_adaptations %}
           {# Issue #454 — manga/light-novel "living integration" trigger, moved
@@ -327,6 +297,34 @@
             </span>
           </div>
           {% endfor %}
+        </div>
+      </div></div>
+      {% endif %}
+      {% if e.genres or e.average_score or e.streaming_links or e.drop_reason or e.notes %}
+      <div class="help-disclosure-panel card-detail-panel" id="card-detail-{{ e.id }}"><div>
+        <div class="card-detail-panel-body">
+          {% if e.genres %}
+          <div class="genres">
+            {% for g in e.genres %}
+            <span class="genre">{{ g }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if e.average_score %}
+          <p class="avg-score-detail">{{ t('lib_avg_score_title') }}: <span class="avg-score">{{ e.average_score }}%</span></p>
+          {% endif %}
+          {% if e.streaming_links %}
+          <div class="stream-links">
+            {% for lnk in e.streaming_links[:4] %}
+            <a href="{{ lnk.url }}" target="_blank" rel="noopener" class="stream-link">{{ lnk.site }}</a>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% if e.drop_reason %}
+          <p class="drop-note">↩ {{ e.drop_reason }}</p>
+          {% elif e.notes %}
+          <p class="notes-preview">{{ e.notes }}</p>
+          {% endif %}
         </div>
       </div></div>
       {% endif %}

@@ -3864,6 +3864,37 @@ a.drop-tag-chip-link:focus-visible {
 .manga-source-type { font-weight: 700; color: var(--t2); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
 .manga-source-detail { color: var(--t5); }
 
+/* ── Library card "more details" disclosure (issue #470) ─────────────────────
+   Same #141 toggle mechanism and .manga-status-badge icon-button footprint,
+   holding genres/avg-score/streaming-links/drop-or-notes-preview — all moved
+   off the always-visible card body since they're detail-level, not
+   glanceable-at-a-scan info (cover/title/progress/rating/status stay put). */
+.card-detail-badge {
+  all: unset;
+  cursor: pointer;
+  box-sizing: border-box;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.4rem;
+  line-height: 1.3;
+  background: var(--pill-info-bg);
+  border: 1px solid var(--pill-info-border);
+  border-radius: 4px;
+  color: var(--pill-info-text);
+  flex-shrink: 0;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.card-detail-badge:hover { background: var(--pill-info-bg-hover); }
+.card-detail-badge:focus-visible { outline: 2px solid var(--pill-info-text); outline-offset: 2px; }
+.card-detail-badge[aria-expanded="true"] { background: var(--pill-info-bg-hover); color: var(--pill-info-text); }
+
+.card-detail-panel { margin-top: 0.4rem; }
+.card-detail-panel-body { font-size: 0.8rem; color: var(--t5); line-height: 1.5; padding: 0.5rem 0 0.2rem; display: grid; gap: 0.5rem; }
+.card-detail-panel-body .genres,
+.card-detail-panel-body .stream-links { margin: 0; }
+.avg-score-detail { margin: 0; }
+.card-detail-panel-body .drop-note,
+.card-detail-panel-body .notes-preview { margin: 0; white-space: normal; overflow: visible; text-overflow: clip; }
+
 /* ── Rewatch ribbon (issue #330 — merged Watching/Repeating tabs) ────────────── */
 /* .card already has position:relative + overflow:hidden, so this only needs
    absolute positioning against it — no extra wrapper around the cover img. */
@@ -4505,7 +4536,9 @@ a.drop-tag-chip-link:focus-visible {
   .grid { grid-template-columns: repeat(2, 1fr); padding-bottom: 6rem; }
 
   /* ── Hide less-critical meta on tiny screens ──────────────────────────── */
-  .avg-score { display: none; }
+  /* Issue #470 — avg-score now only ever renders inside .card-detail-panel
+     (moved off the always-visible meta row), so this no longer needs to hide
+     it: the user explicitly opened the panel to see this exact detail. */
   .genre { font-size: 0.65rem; padding: 0.1rem 0.35rem; }
 
   /* ── Queue: hide drag handle to save space ────────────────────────────── */

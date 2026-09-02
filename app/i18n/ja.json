@@ -645,6 +645,7 @@
   "lib_add_anime_close_label": "閉じる",
   "lib_add_anime_search_placeholder": "AniListでタイトル検索…",
   "lib_avg_score_title": "AniList平均",
+  "lib_more_details_title": "詳細",
   "lib_airing_badge_title": "第{ep}話は{label}に放送",
   "lib_airing_badge_text": "▶ 第{ep}話 {label}",
   "lib_stale_tag": "停滞中",

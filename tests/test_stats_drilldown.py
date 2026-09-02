@@ -18,10 +18,11 @@ see the PR description):
      status, not just one — and existing single-status values are completely
      unaffected (regression coverage for the query shape change in
      app/main.py's library() route).
-  2. library.html renders *every* genre for a card, not just the first 4 shown
-     — the extra ones carry `hidden` so the free-text search the genre-chart
+  2. library.html renders *every* genre for a card — since issue #470, all of
+     them live inside the card's "more details" disclosure panel (collapsed
+     by default, not `hidden`), so the free-text search the genre-chart
      drill-down relies on (see stats.html) can match an anime whose only
-     matching genre is its 5th+, not just what's visually displayed.
+     matching genre is its 5th+, not just what's visually expanded.
   3. /stats renders the new headline drill-down links with the correct
      `/?status=...` targets, and the discoverability hint text.
 """
@@ -148,9 +149,15 @@ def test_status_all_requires_auth(client):
     assert resp.status_code in (302, 303, 401)
 
 
-# ── 2. Full genre list rendered (visible first 4 + hidden overflow) ────────────
+# ── 2. Full genre list rendered (all genres, inside the #470 detail disclosure) ─
+# Issue #470 moved genres off the always-visible card body into the "more
+# details" disclosure panel (same #141 collapse mechanism the manga badge
+# uses — content stays in the DOM, just visually collapsed until toggled, so
+# free-text search still matches every genre). The old visible-first-4/
+# hidden-overflow split no longer applies: every genre now renders the same
+# way, unconditionally, inside the panel.
 
-def test_library_card_renders_genres_beyond_first_four_as_hidden(pg_conn, app_module, client):
+def test_library_card_renders_all_genres_in_detail_panel(pg_conn, app_module, client):
     _register_and_login(client)
     uid = _user_id(pg_conn)
     genres = ["Action", "Adventure", "Comedy", "Drama", "Fantasy", "Mecha"]
@@ -158,22 +165,15 @@ def test_library_card_renders_genres_beyond_first_four_as_hidden(pg_conn, app_mo
 
     resp = client.get("/?status=WATCHING")
     assert resp.status_code == 200
-    # All six genres must appear somewhere in the card's markup...
+    # All six genres must appear in the card's markup, none hidden — they're
+    # all inside the collapsed .card-detail-panel now, not individually
+    # capped/hidden.
     for g in genres:
-        assert f'<span class="genre"' in resp.text
-        assert g in resp.text
-    # ...and the 5th/6th (beyond the visible cap) must be marked hidden so they
-    # don't show on-card but still participate in the free-text search that
-    # the /stats genre-chart drill-down (issue #225) relies on.
-    assert '<span class="genre" hidden>Fantasy</span>' in resp.text
-    assert '<span class="genre" hidden>Mecha</span>' in resp.text
-    # The first four must NOT be hidden (still visibly capped at 4, unchanged
-    # display behavior).
-    assert '<span class="genre">Action</span>' in resp.text
-    assert '<span class="genre">Drama</span>' in resp.text
+        assert f'<span class="genre">{g}</span>' in resp.text
+    assert '<span class="genre" hidden>' not in resp.text
 
 
-def test_library_card_with_four_or_fewer_genres_has_no_hidden_chips(pg_conn, app_module, client):
+def test_library_card_with_few_genres_still_renders_detail_panel(pg_conn, app_module, client):
     _register_and_login(client)
     uid = _user_id(pg_conn)
     _seed_anime(pg_conn, 1, "Few Genres Show", ["Action", "Comedy"], uid, "WATCHING")
@@ -181,6 +181,10 @@ def test_library_card_with_four_or_fewer_genres_has_no_hidden_chips(pg_conn, app
     resp = client.get("/?status=WATCHING")
     assert resp.status_code == 200
     assert '<span class="genre" hidden>' not in resp.text
+    assert '<span class="genre">Action</span>' in resp.text
+    assert '<span class="genre">Comedy</span>' in resp.text
+    # The detail-disclosure trigger must be present since genres exist.
+    assert 'card-detail-badge' in resp.text
 
 
 # ── 3. /stats renders the drill-down links and hint ─────────────────────────────

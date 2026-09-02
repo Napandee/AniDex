@@ -645,6 +645,7 @@
   "lib_add_anime_close_label": "Cerrar",
   "lib_add_anime_search_placeholder": "Buscar en AniList por título…",
   "lib_avg_score_title": "Promedio en AniList",
+  "lib_more_details_title": "Más detalles",
   "lib_airing_badge_title": "El episodio {ep} se emite {label}",
   "lib_airing_badge_text": "▶ Ep {ep} {label}",
   "lib_stale_tag": "Inactivo",

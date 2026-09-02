@@ -645,6 +645,7 @@
   "lib_add_anime_close_label": "Close",
   "lib_add_anime_search_placeholder": "Search AniList by title…",
   "lib_avg_score_title": "AniList average",
+  "lib_more_details_title": "More details",
   "lib_airing_badge_title": "Ep {ep} airs {label}",
   "lib_airing_badge_text": "▶ Ep {ep} {label}",
   "lib_stale_tag": "Stale",
