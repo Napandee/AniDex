@@ -97,6 +97,12 @@ jobs:
             --restart unless-stopped \
             -p 8889:8888 \
             --env-file ${{ vars.APPDATA_PATH }}/.env \
+            --read-only \
+            --tmpfs /tmp \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --memory=1g \
+            --pids-limit=200 \
             ghcr.io/$OWNER/anidex@${{ needs.build.outputs.digest }}
 
           # Post-deploy health check — retry for up to ~60s to allow for
@@ -146,6 +152,12 @@ jobs:
             --restart unless-stopped \
             -p 8889:8888 \
             --env-file ${{ vars.APPDATA_PATH }}/.env \
+            --read-only \
+            --tmpfs /tmp \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges \
+            --memory=1g \
+            --pids-limit=200 \
             "$PREV_DIGEST"
 
           ROLLBACK_HEALTHY=0
