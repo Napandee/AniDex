@@ -721,6 +721,8 @@
   "impersonation_banner_text": "आप {user_email} के रूप में देख रहे हैं, जिसे {admin_email} द्वारा शुरू किया गया। यह सत्र {expires_at} पर स्वतः समाप्त हो जाएगा।",
   "impersonation_stop_btn": "सत्र समाप्त करें",
 
+  "migration_drift_banner_text": "{pending} डेटाबेस माइग्रेशन इस इंस्टेंस के लागू स्कीमा से आगे हैं। अधिक स्कीमा-निर्भर कोड आने से पहले scripts/mark_migration_applied.sh चलाएँ।",
+
   "admin_invites_title": "आमंत्रण",
   "admin_invite_btn": "आमंत्रित करें",
   "admin_col_status": "स्थिति",

@@ -721,6 +721,8 @@
   "impersonation_banner_text": "You are viewing as {user_email}, started by {admin_email}. This session ends automatically at {expires_at}.",
   "impersonation_stop_btn": "End session",
 
+  "migration_drift_banner_text": "{pending} database migration(s) are ahead of this instance's applied schema. Run scripts/mark_migration_applied.sh before more schema-dependent code lands.",
+
   "admin_invites_title": "Invites",
   "admin_invite_btn": "Invite",
   "admin_col_status": "Status",

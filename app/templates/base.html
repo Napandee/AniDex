@@ -24,18 +24,18 @@
        the same per-session token every <form method="post">'s own hidden
        csrf_token field carries — see app/csrf.py and _nav_context. -->
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <!-- v=86 — bumped for #478's .search-empty flex-column + headline CSS.
+  <!-- v=87 — bumped for #474's .migration-drift-banner CSS.
        See the superseded v=51/v=54/v=56/v=57/v=58/v=59/v=60/v=61/v=62/v=63/
        v=64/v=65/v=66/v=67/v=68/v=69/v=70/v=71/v=72/v=73/v=74/v=75/v=76/v=77/
-       v=78/v=79/v=80/v=81/v=82/v=83/v=84/v=85 comments for why this needs
-       bumping on every style.css change in this repo: several parallel
+       v=78/v=79/v=80/v=81/v=82/v=83/v=84/v=85/v=86 comments for why this
+       needs bumping on every style.css change in this repo: several parallel
        branches land CSS independently and a stale cache-bust value silently
        serves an old stylesheet to a browser that already cached the
        previous version — v=57 itself only exists because #275 skipped this
        exact step.
        Re-check this against origin/main right before merging — another
-       parallel PR may have already claimed v=86. -->
-  <link rel="stylesheet" href="/static/style.css?v=86">
+       parallel PR may have already claimed v=87. -->
+  <link rel="stylesheet" href="/static/style.css?v=87">
   <script>window.I18N = {{ i18n_json|safe }};</script>
   <!-- v=33 — bumped for #472's queue "Clear filters" handler
        (clear-queue-filters-btn). See the superseded v=28/v=29/v=30/v=31/v=32
@@ -57,6 +57,20 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit" class="impersonation-stop-btn">{{ t('impersonation_stop_btn') }}</button>
     </form>
+  </div>
+  {% endif %}
+  {% if nav_migration_drift %}
+  {# Issue #474 — the runtime half of the migration/deploy coordination fix:
+     admin-only (_nav_context only computes this for an admin user), shown on
+     every page rather than only passively on Admin > Instance Health (#380),
+     so a deployed-ahead-of-schema state can't go unnoticed just because nobody
+     happened to load that one page. Never blocks the app from serving
+     requests — see #474's own Out-of-scope note against auto-applying
+     migrations or hard-blocking traffic, this is visibility only. #}
+  <div class="migration-drift-banner" role="alert">
+    <span class="migration-drift-banner-text">
+      {{ t('migration_drift_banner_text', pending=nav_migration_drift) }}
+    </span>
   </div>
   {% endif %}
   {% if nav_whats_new %}

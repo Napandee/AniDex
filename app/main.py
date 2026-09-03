@@ -2036,11 +2036,18 @@ def _nav_context(request: Request) -> dict:
     # `<` escaped so a translated string can never accidentally close the <script>
     # tag it's embedded in (see base.html's window.I18N assignment, #147).
     i18n_json = json.dumps(i18n.all_strings(locale), ensure_ascii=False).replace("<", "\\u003c")
+    # Issue #474 — admin-only, and only queried for admins (a non-admin can't act
+    # on this and shouldn't pay the extra query on every page load). Drives
+    # base.html's persistent drift banner, the runtime half of this issue's fix —
+    # #380's Instance Health card stays as the detail view, this is the "impossible
+    # to miss regardless of which page you're on" surface on top of it.
+    migration_drift = _pending_migration_count() if user and user["is_admin"] else None
     return {
         "nav_user": user,
         # Issue #230 — non-None only while the current session is an admin
         # impersonating this user; drives base.html's persistent banner.
         "nav_impersonation": impersonation,
+        "nav_migration_drift": migration_drift,
         "t": i18n.translator(locale),
         "current_language": locale,
         "nav_theme": theme,
