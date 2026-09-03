@@ -34,23 +34,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Non-blocking reminder, not a gate — issue #380. Schema migrations in this
-      # repo are a deliberate manual step (CLAUDE.md's "Schema migrations are
-      # manual" guardrail), never auto-applied by the deploy pipeline, so a merged
-      # PR that adds one can silently sit unapplied on production with nobody
-      # aware — confirmed live (2026-08-27): migrations/028_plex_sync_state.sql
-      # went unnoticed for a while this way. This can't catch or prevent that by
-      # itself (it only fires at PR time, not at merge/deploy time), but it puts
-      # the reminder in front of a reviewer at the one moment a migration file is
-      # actually new — Admin > Instance Health is the other, deploy-time half of
-      # this issue's fix (app/main.py's LATEST_MIGRATION vs migration_state).
-      - name: Flag new migration files
+      # Issue #474 — this used to be a non-blocking ::warning:: only (#380):
+      # schema migrations in this repo are a deliberate manual step (CLAUDE.md's
+      # "Schema migrations are manual" guardrail), never auto-applied by the
+      # deploy pipeline, so a merged PR that adds one can silently sit unapplied
+      # on production with nobody aware — confirmed live twice (2026-08-27:
+      # migrations/028_plex_sync_state.sql; and again with #485's migration 044,
+      # applied by hand after merge on 2026-09-03). A warning at PR time wasn't
+      # enough to stop that from happening even once it existed, so this now
+      # actually FAILS the build when a new migrations/ file lands without a
+      # LATEST_MIGRATION bump in the same diff — the authoring-time half of
+      # #474's fix. The runtime half is app/main.py's _nav_context computing
+      # nav_migration_drift (admin-only), rendered as a persistent banner on
+      # every page via base.html — Admin > Instance Health (#380) remains the
+      # detail view, this is the "can't miss it regardless of which page you're
+      # on" surface on top of it.
+      #
+      # Deliberately only checks that the LATEST_MIGRATION line changed at all,
+      # not that it changed to a specific "correct" number — matching #474's
+      # literal scope and avoiding a cleverer check's own false-positive risk.
+      # Never fires on a PR that only modifies an existing migration file's
+      # contents (--diff-filter=A only matches newly-added files) or one that
+      # doesn't touch migrations/ at all.
+      - name: Require LATEST_MIGRATION bump alongside a new migration file
         run: |
           git fetch --depth=1 origin "${{ github.event.pull_request.base.sha }}"
           new_migrations=$(git diff --diff-filter=A --name-only "${{ github.event.pull_request.base.sha }}" HEAD -- migrations/ || true)
-          if [ -n "$new_migrations" ]; then
-            echo "::warning::This PR adds a database migration — it will NOT be applied automatically on deploy (schema migrations are a manual step, see CLAUDE.md). Run it against production by hand after merging (scripts/mark_migration_applied.sh <N>, or docker exec -i <postgres-container> psql ... < migrations/00N_*.sql), and bump app/main.py's LATEST_MIGRATION to match. New file(s): $(echo "$new_migrations" | tr '\n' ' ')"
+          if [ -z "$new_migrations" ]; then
+            exit 0
           fi
+          bumped=$(git diff "${{ github.event.pull_request.base.sha }}" HEAD -- app/main.py | grep -E '^[+-]LATEST_MIGRATION = ' || true)
+          if [ -z "$bumped" ]; then
+            echo "::error::This PR adds a database migration (new file(s): $(echo "$new_migrations" | tr '\n' ' ')) but app/main.py's LATEST_MIGRATION constant wasn't changed in the same diff. Bump it to match before this can merge — Admin > Instance Health and every page's admin drift banner (#474) compare against it to detect schema/code mismatch on the live instance."
+            exit 1
+          fi
+          echo "::notice::New migration file(s) detected ($(echo "$new_migrations" | tr '\n' ' ')) and LATEST_MIGRATION was bumped in the same diff — looks correct. Remember: migrations are NOT applied automatically on deploy (schema migrations are a manual step, see CLAUDE.md). Run scripts/mark_migration_applied.sh <N> against production by hand after merging."
 
       # load: true (not push) makes the image available to `docker run` in this job,
       # without touching GHCR — this is PR validation, not the deploy path.

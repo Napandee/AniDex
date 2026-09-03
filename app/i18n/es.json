@@ -721,6 +721,8 @@
   "impersonation_banner_text": "Estás viendo como {user_email}, sesión iniciada por {admin_email}. Esta sesión finaliza automáticamente a las {expires_at}.",
   "impersonation_stop_btn": "Finalizar sesión",
 
+  "migration_drift_banner_text": "{pending} migración(es) de base de datos están por delante del esquema aplicado de esta instancia. Ejecuta scripts/mark_migration_applied.sh antes de que se implemente más código que dependa del esquema.",
+
   "admin_invites_title": "Invitaciones",
   "admin_invite_btn": "Invitar",
   "admin_col_status": "Estado",

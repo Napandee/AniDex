@@ -721,6 +721,8 @@
   "impersonation_banner_text": "現在 {user_email} として表示しています（開始者: {admin_email}）。このセッションは {expires_at} に自動的に終了します。",
   "impersonation_stop_btn": "セッションを終了",
 
+  "migration_drift_banner_text": "{pending} 件のデータベースマイグレーションがこのインスタンスに適用されたスキーマより先行しています。スキーマに依存する新しいコードが追加される前に scripts/mark_migration_applied.sh を実行してください。",
+
   "admin_invites_title": "招待",
   "admin_invite_btn": "招待する",
   "admin_col_status": "状態",

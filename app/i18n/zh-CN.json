@@ -721,6 +721,8 @@
   "impersonation_banner_text": "你正在以 {user_email} 的身份查看，此会话由 {admin_email} 发起，将于 {expires_at} 自动结束。",
   "impersonation_stop_btn": "结束会话",
 
+  "migration_drift_banner_text": "有 {pending} 个数据库迁移领先于此实例已应用的架构。请在更多依赖架构的代码上线前运行 scripts/mark_migration_applied.sh。",
+
   "admin_invites_title": "邀请",
   "admin_invite_btn": "邀请",
   "admin_col_status": "状态",

@@ -369,6 +369,28 @@ body {
   opacity: 0.85;
 }
 
+/* Issue #474 — same warning-severity treatment as .impersonation-banner
+   above (sticky, centered, impossible to miss), reused as its own class
+   rather than shared since this banner has no dismiss form. */
+.migration-drift-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 1.5rem;
+  background: var(--pill-warning-bg);
+  color: var(--pill-warning-text-strong);
+  border-bottom: 2px solid var(--pill-warning-border);
+  font-weight: 600;
+  text-align: center;
+}
+
+.migration-drift-banner-text {
+  font-size: 0.9rem;
+}
+
 /* Issue #235 — "what's new since your last visit" in-app digest banner.
    Deliberately calm/informational (pill-info tokens, not warning/danger) — this
    is a passive summary a user can ignore, not an alert; the impersonation
