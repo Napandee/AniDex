@@ -30,4 +30,15 @@ RUN useradd --no-create-home --uid 10001 appuser \
 USER appuser
 
 EXPOSE 8888
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8888", "--proxy-headers", "--forwarded-allow-ips=*"]
+# Issue #465 — scoped from "*" to the one real source of legitimate traffic.
+# Investigated live: both the Cloudflare Tunnel container and this app container
+# sit on Docker's default bridge network, so tunneled requests arrive at uvicorn
+# via the bridge gateway IP (172.17.0.1), not a container-to-container address.
+# "*" previously trusted X-Forwarded-For/X-Forwarded-Proto from ANY source,
+# meaning a LAN-adjacent device reaching the published port directly (bypassing
+# the tunnel entirely) could also spoof those headers and dodge the per-IP login
+# rate limiter (see _ip_login_attempts in app/main.py). Scoping to the real
+# gateway IP keeps trusting genuine tunneled traffic (so OAuth's redirect_uri
+# generation, the original reason this was set to "*" per issue #53, keeps
+# working) while no longer trusting headers from anyone else.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8888", "--proxy-headers", "--forwarded-allow-ips=172.17.0.1"]

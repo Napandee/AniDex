@@ -1468,6 +1468,15 @@ _IP_LOGIN_WINDOW_MINUTES = 15
 # used to bypass anything else, which is a materially different risk than the "never
 # used for access-control" caveat on _client_ip's own docstring (written for a
 # cosmetic display use, not this).
+#
+# Issue #465 — also accepted as-is: being in-memory, this resets to empty on
+# every deploy (this repo deploys on every merge to main, i.e. often), so the
+# real behavior is "N attempts per IP per uptime-window," not "N attempts per
+# IP ever." A persistent counter would need its own Postgres table for a
+# defense-in-depth layer that already has a real backstop regardless of
+# uptime or IP: the per-account DB-backed lockout (users.locked_until, 5
+# failures) in the login handler itself, which this counter sits in front of
+# but doesn't replace. Not worth the added complexity for what it would buy.
 _ip_login_attempts: dict[str, list[float]] = {}
 
 
