@@ -464,7 +464,9 @@ The `GHCR_TOKEN` referenced in the deploy job should be a GitHub PAT with
 Two more pieces round out the pipeline:
 
 - **PR validation** (`pr-validate.yml`) — builds (but doesn't push or deploy) on every
-  pull request, so a broken dependency bump fails its check before you ever merge it.
+  pull request, so a broken dependency bump fails its check before you ever merge it. A
+  PR that only touches docs/config files skips the actual build and smoke tests (nothing
+  there could break them) but still reports the same check, so it can merge normally.
 - **Dependabot** (`dependabot.yml`) — proposes weekly version bumps for `requirements.txt`
   and the base images. Postgres major-version bumps are deliberately excluded — that
   needs a real migration, not just a new tag, so it's left as a manual decision.
