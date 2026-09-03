@@ -18,5 +18,16 @@ COPY scripts/ scripts/
 ARG GIT_SHA=""
 ENV GIT_SHA=$GIT_SHA
 
+# Issue #460 — run as an unprivileged user. The app is a stateless FastAPI service
+# backed by Postgres; its only runtime filesystem write is the Netflix CSV import's
+# tempfile.NamedTemporaryFile (default tempdir, i.e. /tmp) — no write access under
+# /app itself is needed. The deploy workflow's docker run additionally passes
+# --read-only plus a --tmpfs /tmp mount to cover that one write path; PYTHONDONTWRITEBYTECODE
+# avoids CPython trying (and silently failing) to write .pyc cache files under /app.
+ENV PYTHONDONTWRITEBYTECODE=1
+RUN useradd --no-create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8888
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8888", "--proxy-headers", "--forwarded-allow-ips=*"]
