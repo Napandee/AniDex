@@ -64,9 +64,32 @@ jobs:
           OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           docker pull ghcr.io/$OWNER/anidex@${{ needs.build.outputs.digest }}
 
-      - name: Restart container
+      - name: Restart container with health check + rollback
         run: |
+          set -uo pipefail
           OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          REPO_PREFIX="ghcr.io/$OWNER/anidex@"
+
+          # Issue #473 — capture the currently-running image's digest BEFORE
+          # touching the container, so a failed health check below has a known
+          # concrete reference to roll back to. `.RepoDigests` is an IMAGE-level
+          # field, not a container-level one — inspecting the container itself
+          # only gives its local image ID (.Image), which must then be used to
+          # inspect the image for RepoDigests. An image can carry more than one
+          # RepoDigests entry (e.g. across a registry migration or manual
+          # re-tag), so filter to the one matching this repo rather than
+          # blindly taking the first entry.
+          PREV_IMG_ID=$(docker inspect --format='{{.Image}}' anidex 2>/dev/null || true)
+          PREV_DIGEST=""
+          if [ -n "$PREV_IMG_ID" ]; then
+            PREV_DIGEST=$(docker image inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "$PREV_IMG_ID" 2>/dev/null | grep "^${REPO_PREFIX}" | head -1 || true)
+          fi
+          if [ -n "$PREV_DIGEST" ]; then
+            echo "Captured previous known-good digest: $PREV_DIGEST"
+          else
+            echo "No previous anidex container/digest found (first deploy?) — no rollback target available if this deploy fails."
+          fi
+
           docker stop anidex 2>/dev/null || true
           docker rm   anidex 2>/dev/null || true
           docker run -d \
@@ -75,3 +98,57 @@ jobs:
             -p 8889:8888 \
             --env-file ${{ vars.APPDATA_PATH }}/.env \
             ghcr.io/$OWNER/anidex@${{ needs.build.outputs.digest }}
+
+          # Post-deploy health check — retry for up to ~60s to allow for
+          # normal container startup time. Use 127.0.0.1 explicitly, not
+          # localhost — a bare `localhost` can resolve to ::1 first and fail
+          # even when the container is healthy and reachable over IPv4,
+          # which would cause a false-positive rollback (confirmed locally
+          # while building this: the exact same health-check logic against
+          # `localhost` intermittently reported a healthy container as down).
+          HEALTHY=0
+          for i in $(seq 1 12); do
+            if curl -sf -o /dev/null http://127.0.0.1:8889/auth/login; then
+              HEALTHY=1
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$HEALTHY" -eq 1 ]; then
+            echo "Health check passed — deploy successful."
+            exit 0
+          fi
+
+          echo "::error::New container failed its post-deploy health check after 60s."
+
+          if [ -z "$PREV_DIGEST" ]; then
+            echo "::error::No previous digest available to roll back to — leaving the unhealthy container running for manual inspection."
+            exit 1
+          fi
+
+          echo "::error::Rolling back to previous digest: $PREV_DIGEST"
+          docker stop anidex 2>/dev/null || true
+          docker rm   anidex 2>/dev/null || true
+          docker run -d \
+            --name anidex \
+            --restart unless-stopped \
+            -p 8889:8888 \
+            --env-file ${{ vars.APPDATA_PATH }}/.env \
+            "$PREV_DIGEST"
+
+          ROLLBACK_HEALTHY=0
+          for i in $(seq 1 12); do
+            if curl -sf -o /dev/null http://127.0.0.1:8889/auth/login; then
+              ROLLBACK_HEALTHY=1
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$ROLLBACK_HEALTHY" -eq 1 ]; then
+            echo "::error::Rolled back to the previous digest successfully. Deploy FAILED — investigate the new image before retrying."
+          else
+            echo "::error::Rollback ALSO failed its health check — anidex may be down. Manual intervention required."
+          fi
+          exit 1
