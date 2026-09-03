@@ -100,15 +100,26 @@ jobs:
             ghcr.io/$OWNER/anidex@${{ needs.build.outputs.digest }}
 
           # Post-deploy health check — retry for up to ~60s to allow for
-          # normal container startup time. Use 127.0.0.1 explicitly, not
-          # localhost — a bare `localhost` can resolve to ::1 first and fail
-          # even when the container is healthy and reachable over IPv4,
-          # which would cause a false-positive rollback (confirmed locally
-          # while building this: the exact same health-check logic against
-          # `localhost` intermittently reported a healthy container as down).
+          # normal container startup time.
+          #
+          # #473-followup: this job runs INSIDE the anidex-runner container,
+          # which is on Docker's default bridge network — its own network
+          # namespace, separate from the host's. 127.0.0.1 here is the
+          # runner container's own loopback, not the Unraid host's, so it
+          # can never reach anidex's published port no matter how long you
+          # wait ("Connection refused", confirmed empirically — this is why
+          # #473's very first real deploy false-rollback'd immediately,
+          # nothing to do with startup being slow). The bridge network's
+          # gateway IP routes back to the host's published ports and is
+          # reachable from any container on that bridge; looked up
+          # dynamically (not hardcoded 172.17.0.1) via the runner's own
+          # mounted docker socket, since that's more robust if the bridge
+          # config ever changes.
+          BRIDGE_GATEWAY=$(docker network inspect bridge --format='{{(index .IPAM.Config 0).Gateway}}')
+          HEALTH_URL="http://${BRIDGE_GATEWAY}:8889/auth/login"
           HEALTHY=0
           for i in $(seq 1 12); do
-            if curl -sf -o /dev/null http://127.0.0.1:8889/auth/login; then
+            if curl -sf -o /dev/null "$HEALTH_URL"; then
               HEALTHY=1
               break
             fi
@@ -139,7 +150,7 @@ jobs:
 
           ROLLBACK_HEALTHY=0
           for i in $(seq 1 12); do
-            if curl -sf -o /dev/null http://127.0.0.1:8889/auth/login; then
+            if curl -sf -o /dev/null "$HEALTH_URL"; then
               ROLLBACK_HEALTHY=1
               break
             fi
