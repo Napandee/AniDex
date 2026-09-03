@@ -27,18 +27,26 @@ on existing recommendations is always preserved across that rebuild.
 ## 3. Account and instance data
 
 Your login, sessions, invites, notification settings, personal access tokens, and (for
-admins) the audit log and instance-wide configuration. Not derived from AniList, not
-part of the personal layer either — this is just "the account this app knows about
-you," same as any other multi-user app.
+admins) the audit log, instance-wide configuration, and periodic Data Quality
+snapshots (a compact daily record of sync-health signals, kept for a 90-day trend
+view). Not derived from AniList, not part of the personal layer either — this is just
+"the account this app knows about you," same as any other multi-user app.
 
-## 4. Episode filler-status cache
+## 4. External catalog caches
 
-Which episodes of a series are filler vs. canon, sourced from
-[AniFillerPedia](https://github.com/Napandee/AniFillerPedia) rather than AniList — kept
-separate from the AniList-sourced category above because it comes from a different
-source, though it shares the same shape: catalog-wide (not tied to any one account),
-fully rebuildable, never hand-edited. Refreshed on its own daily schedule, independent
-of your personal sync.
+Data sourced from somewhere other than AniList, kept separate from the AniList-sourced
+category above because it comes from a different source — though it all shares the same
+shape: catalog-wide (not tied to any one account), fully rebuildable, never hand-edited,
+refreshed on its own schedule independent of your personal sync. Three of these today:
+
+- **Episode filler-status** — which episodes of a series are filler vs. canon, from
+  [AniFillerPedia](https://github.com/Napandee/AniFillerPedia).
+- **Manga/light-novel adaptation status** — latest chapter/volume, licensor, and release
+  activity for a series' source material, from MangaDex and MangaUpdates.
+- **AniDB/MAL ↔ AniList id mapping** — a community-maintained lookup table
+  ([Fribb/anime-lists](https://github.com/Fribb/anime-lists)) used to match titles from
+  services (like Plex) that identify anime by AniDB or MyAnimeList id rather than
+  AniList's own.
 
 ## Where credentials live
 

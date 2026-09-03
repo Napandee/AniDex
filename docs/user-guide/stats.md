@@ -6,8 +6,10 @@ The built-in `/stats` page, no external dashboard needed:
   score distribution.
 - **Top genres and studios** — among your completed shows.
 - **Watch-activity heatmap** — a calendar view of when you actually watch, at a glance.
-- **Year in anime** — an annual wrap-up: what you watched, your standout shows, and
-  how the year compares to your overall habits.
+- **Year in anime card** (`#wrapup-card`) — a past-year wrap-up with its own year
+  picker, revealed in place on this page. For the current year's living recap as a
+  full-screen animated flow instead, see [Year in anime](year-in-anime.md) — a
+  separate page with its own entry point (the Wrapped icon in the header).
 - **Drop-pattern breakdown** — the genres, tags, and even common words in titles that
   show up most often in what you drop, drawn from your [drop reasons](personal-notes.md)
   and library data. Useful for spotting a pattern you didn't consciously notice ("I

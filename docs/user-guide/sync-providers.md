@@ -43,6 +43,11 @@ one-click manual fix and never touches your score or notes.
 (from Netflix's own "download your viewing history" export) is available as a bootstrap
 alternative to walking your full history through the API on first connect.
 
+If your saved cookie has actually expired, sync failure notifications and Sync history
+say so plainly — "Netflix — your connection has expired. Reconnect it in Settings." —
+rather than the generic "sync failed" message a different kind of failure gets, so you
+know right away it's a recapture-the-cookie fix and not something else.
+
 ## Plex
 
 Unlike the three services above, Plex uses a real, documented OAuth sign-in flow — no
@@ -78,7 +83,10 @@ per watched episode, not just a raw count.
 > the capture steps above even if you're still logged into primevideo.com everywhere
 > else. If your Prime Video sync starts failing, recapturing a fresh cookie the same
 > way is the first thing to try. This isn't a bug in AniDex — every other community
-> tool that reads this same Amazon endpoint hits the same limit. Two ways to make
+> tool that reads this same Amazon endpoint hits the same limit. When it's genuinely
+> the cookie, the failure notification says so directly — "Prime Video — your
+> connection has expired. Reconnect it in Settings." — instead of a generic sync-failed
+> message, so you don't have to guess. Two ways to make
 > this less painful than re-capturing the cookie by hand every time it dies:
 >
 > - **[Prime Video Cookie Sync browser extension](../../browser-extension/primevideo-cookie-sync/)**

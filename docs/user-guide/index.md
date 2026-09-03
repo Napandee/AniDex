@@ -14,8 +14,12 @@ This guide covers using an already-running instance.
 - [Personal notes](personal-notes.md) — drop reasons, tags, mood, rewatch notes
 - [Collections](collections.md) — saved filter shortcuts
 - [Recommendations](recommendations.md) — how scoring works, dismiss/snooze/mark-seen
-- [Queue and upcoming](queue-and-upcoming.md) — watch-next queue, airing schedule
-- [Stats](stats.md) — watch time, heatmaps, year-in-anime, drop patterns
+- [Queue and upcoming](queue-and-upcoming.md) — watch-next queue, continue watching,
+  airing schedule
+- [Stats](stats.md) — watch time, heatmaps, drop patterns
+- [Year in anime (Wrapped)](year-in-anime.md) — the animated full-screen year recap
+- [Manga / light novel tracking](manga-tracking.md) — is the source material still
+  being published
 - [Streaming coverage](streaming-coverage.md) — which service unlocks the most next-up episodes
 - [Multi-user and admin](multi-user.md) — invites, 2FA, sessions, admin panel
 - [Sync providers](sync-providers.md) — Crunchyroll, Netflix, Plex, and Prime Video progress sync
