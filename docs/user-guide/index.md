@@ -25,6 +25,8 @@ This guide covers using an already-running instance.
 - [Data model](../data-model.md) — how your data is organized, for the curious
 - [Troubleshooting](troubleshooting.md) — sync failures, wrong matches, common fixes
 - [Upgrading and migrations](../admin/upgrading.md) — for whoever runs your instance
+- [Shared/external Postgres deployment](../admin/shared-postgres.md) — running AniDex
+  against an existing Postgres instance instead of the bundled one
 
 ## The short version
 
