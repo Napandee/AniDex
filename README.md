@@ -86,7 +86,9 @@ AniList failures, so a slow or briefly-down AniList API doesn't stall the UI.
 
 - Docker and Docker Compose
 - An AniList account
-- A Postgres instance (a compose file is provided)
+- A Postgres instance, version 16+ (a compose file is provided for a dedicated bundled
+  instance — or point AniDex at an existing shared Postgres instance instead, see
+  [docs/admin/shared-postgres.md](docs/admin/shared-postgres.md))
 - Optional: Crunchyroll account, Netflix account, Plex account/server, Prime Video
   account, a notification channel (Telegram bot, Discord webhook, and/or ntfy), GitHub
   account for CI/CD
@@ -457,6 +459,12 @@ is not. `migrations/` holds numbered SQL files for upgrading an already-running
 instance; nothing in the deploy pipeline applies them, they're a deliberate manual
 step run against your live Postgres, and **Admin → Instance Health** warns you when
 one is pending. Full details: [docs/admin/upgrading.md](docs/admin/upgrading.md).
+
+Running Postgres yourself on a shared/external instance rather than the bundled
+`compose/anidex-postgres.yml` container? See
+[docs/admin/shared-postgres.md](docs/admin/shared-postgres.md) for that setup and what
+was verified to make sure nothing about AniDex assumes it owns the whole Postgres
+server.
 
 ## Social login (Google/Discord, optional)
 

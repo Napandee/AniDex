@@ -1,3 +1,10 @@
+# Optional bundled convenience, not required infrastructure — this stands up a
+# dedicated Postgres purely for AniDex's own use. If you already run a shared
+# Postgres instance for other apps, you can skip this file entirely: create a
+# dedicated database/role for AniDex inside your existing instance instead and
+# point `compose/anidex.yml`'s DATABASE_URL at it. `app/db.py` has no assumption
+# baked in about which Postgres instance/host DATABASE_URL points to. See
+# docs/admin/shared-postgres.md for the full walkthrough (issue #496).
 services:
   anidex-postgres:
     image: postgres:16-alpine
