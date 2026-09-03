@@ -17,7 +17,10 @@
 - **Crunchyroll / Netflix / Prime Video** (cookie-based): the saved session cookie
   has expired or been rotated by the provider. Recapture it the same way as initial
   setup — see [Sync providers](sync-providers.md)'s per-provider steps — and save it
-  again in Settings.
+  again in Settings. For Netflix and Prime Video specifically, an expired cookie gets
+  its own distinctly worded failure message ("your connection has expired. Reconnect
+  it in Settings.") instead of the generic sync-failed message, so you don't have to
+  guess which of the causes below actually applies.
 - **Prime Video specifically**: expect this far more often than Crunchyroll or
   Netflix. Amazon's watch-history session sits behind a shorter-lived tier than
   general browsing, so a cookie captured today can be dead again within a day even

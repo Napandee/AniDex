@@ -17,6 +17,10 @@ and a recommendation engine scored against your own taste profile.
 
 - **Library view** — your full AniList list with star ratings, episode progress, streaming
   links, filters by format/season/tag/score, and bulk status + bulk tag updates
+- **Manga/light-novel tracking** — for anime adapted from a manga or light novel, a badge
+  on the library card (with an expandable detail drawer) shows whether the source
+  material is still being published, its latest chapter/volume, and English licensor —
+  synced weekly via AniList's own relations plus MangaDex and MangaUpdates
 - **Search** — search within your own library; a separate quick-add lets you look up a
   title on AniList by name and add it straight to your list (not a full catalog browse —
   link out to AniList for that)
@@ -24,7 +28,9 @@ and a recommendation engine scored against your own taste profile.
   drop reasons) as a single file; the same file can be restored via import, e.g. onto a
   fresh instance
 - **Personal notes** — drop reasons, custom tags, freeform notes, queue priority, and
-  separate note history per rewatch, none of which AniList has a structured place for
+  separate note history per rewatch, none of which AniList has a structured place for.
+  A dedicated Tags page (`/tags`) renames, merges, or deletes a tag across every entry
+  it's applied to in one action, rather than editing each anime's notes individually
 - **Multi-user** — invite-only accounts on the same instance; local email+password login
   supports optional TOTP-based two-factor authentication, and Settings lets you view and
   revoke your own active sessions. An opt-in "also watching" indicator shows who else on
@@ -45,10 +51,12 @@ and a recommendation engine scored against your own taste profile.
 - **Upcoming episodes** — airing schedule for anything in your Watching/Planning list,
   plus a weekly Mon–Sun broadcast grid view
 - **Queue** — watch-next list ordered by recommendation score and manual priority,
-  filterable by tag and episode-count bucket
+  filterable by tag and episode-count bucket, plus a separate Watching tab (ordered by
+  most recently progressed) for a quick "what do I pick back up" view of what's already
+  in progress
 - **Stats** — watch time, completion rate, score distribution, top genres and studios, a
-  watch-activity calendar heatmap, a "year in anime" wrap-up, and a drop-pattern
-  breakdown (genres/tags/words that show up most in what you drop)
+  watch-activity calendar heatmap, a full-screen animated "year in anime" wrap-up, and a
+  drop-pattern breakdown (genres/tags/words that show up most in what you drop)
 - **Crunchyroll sync** — watch history and progress synced from Crunchyroll into AniList,
   fetched directly via a cookie-authenticated client, no third-party tool (optional)
 - **Netflix sync** — watch history synced from Netflix's own viewing-activity API into
@@ -131,14 +139,25 @@ docker run -d \
   --restart unless-stopped \
   -p 8888:8888 \
   --env-file .env \
+  --read-only \
+  --tmpfs /tmp \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
   ghcr.io/yourname/anidex:latest
 ```
+
+The image runs as an unprivileged user and only ever writes to `/tmp` (e.g. the Netflix
+CSV import's tempfile) — `--read-only` plus the `/tmp` tmpfs mount above match what the
+real deploy pipeline runs (see [CI/CD](#cicd-with-github-actions-optional) below).
+They're not required for the app to boot, just recommended.
 
 Or build locally first:
 
 ```bash
 docker build -t anidex:local .
-docker run -d --name anidex -p 8888:8888 --env-file .env anidex:local
+docker run -d --name anidex -p 8888:8888 --env-file .env \
+  --read-only --tmpfs /tmp --cap-drop=ALL --security-opt=no-new-privileges \
+  anidex:local
 ```
 
 **5. Register your account**
@@ -348,7 +367,9 @@ Configured per-user under **Settings → Notifications**. Four channels are supp
 each with its own on/off toggle so you can run any combination of them:
 
 - New episode alerts for anything in your Watching/Planning list
-- Daily sync success/failure notification
+- Daily sync success/failure notification — a cookie-based provider (Netflix, Prime
+  Video) whose session has expired gets a distinct "reconnect needed" message instead
+  of a generic failure
 - Weekly digest of upcoming episodes
 - Airing-schedule-change alerts when a tracked title's next-episode air date shifts
 - Monthly recap of the prior month's watch activity
@@ -422,7 +443,9 @@ config.
 ## CI/CD with GitHub Actions (optional)
 
 The included workflows build and push Docker images to GHCR on every push to `main`, and
-deploy to a self-hosted runner automatically.
+deploy to a self-hosted runner automatically — a post-deploy health check polls the new
+container, and automatically rolls back to the previous image digest if it doesn't come
+up healthy within about 60 seconds.
 
 To use them in your own fork:
 

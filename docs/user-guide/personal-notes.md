@@ -11,8 +11,8 @@ Open any anime's detail page to edit these fields:
   *why*, not just *that*.
 - **Custom tags** — your own labels, independent of AniList's genre/tag system. Used by
   [Collections](collections.md) and bulk-tagging. Manage every tag you've ever created
-  — rename, merge two into one, or delete — from the **Tags** page (linked from
-  Settings), rather than editing each anime's notes individually.
+  — rename, merge two into one, or delete — from the **Tags** page (its own entry in
+  the main nav bar), rather than editing each anime's notes individually.
 - **Mood tags** — a fixed picklist (comfort, hype, intense, sad, wholesome, dark, funny,
   relaxing, thought_provoking, bittersweet) for filtering by "what kind of watch is
   this," separate from freeform tags.
