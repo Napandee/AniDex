@@ -1,13 +1,18 @@
 name: Validate PR build
 
+# Issue #506 — no `paths-ignore` here on purpose (removed one that used to skip
+# compose/**, **.md, .claude/**, .github/dependabot.yml). Branch protection on
+# `main` requires the `build` check below to have passed before merging, with
+# no path-based exception on its own side — so a workflow-level paths-ignore
+# meant a docs-only PR could never produce that check at all, permanently
+# stuck `BLOCKED` (real incidents: #173, #498, #505, all needed an admin
+# bypass to merge). This workflow now always triggers and always produces a
+# `build` check; the "Detect diff scope" step below decides internally
+# whether to actually run the expensive parts, so branch protection is always
+# satisfiable through the normal flow instead of through --admin.
 on:
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'compose/**'
-      - '**.md'
-      - '.claude/**'
-      - '.github/dependabot.yml'
 
 permissions:
   contents: read
@@ -33,6 +38,33 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # Issue #506 — replaces the old workflow-level paths-ignore. Same file-pattern
+      # set as before (compose/**, **.md, .claude/**, .github/dependabot.yml) but
+      # decided here, inside the job, rather than at the trigger level, so this job
+      # (and its `build` check) always runs and always reports something — just
+      # skips the genuinely expensive steps (Docker build, Postgres smoke tests)
+      # when every changed file is one none of those steps could actually catch a
+      # regression in. A PR that mixes a code change with doc changes still gets
+      # the full run, since docs_only only becomes true when EVERY changed file
+      # matches the ignore patterns.
+      - name: Detect diff scope
+        id: scope
+        run: |
+          git fetch --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD)
+          docs_only=true
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              compose/*|*.md|.claude/*|.github/dependabot.yml) ;;
+              *) docs_only=false ;;
+            esac
+          done <<< "$changed"
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = "true" ]; then
+            echo "::notice::Every changed file ($(echo "$changed" | tr '\n' ' ')) is docs/config-only — skipping the Docker build and smoke tests below, they can't exercise anything this diff could break."
+          fi
 
       # Issue #474 — this used to be a non-blocking ::warning:: only (#380):
       # schema migrations in this repo are a deliberate manual step (CLAUDE.md's
@@ -73,6 +105,7 @@ jobs:
       # load: true (not push) makes the image available to `docker run` in this job,
       # without touching GHCR — this is PR validation, not the deploy path.
       - name: Build image (no push)
+        if: steps.scope.outputs.docs_only != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -82,6 +115,7 @@ jobs:
           tags: anidex:pr-test
 
       - name: Apply schema to test database
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           PGPASSWORD=anidex_test psql -h localhost -U anidex_test -d anidex_test -f schema.sql
 
@@ -101,6 +135,7 @@ jobs:
       # (app/main.py:688 and :746 respectively) — auth-title only exists in the
       # Jinja source, never in main.py, so this can't pass on hand-built HTML.
       - name: Smoke-test the built image
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           docker run -d --name anidex-smoke --network host \
             -e DATABASE_URL="postgresql://anidex_test:anidex_test@localhost:5432/anidex_test" \
@@ -143,6 +178,7 @@ jobs:
       # a second hashing path that could drift from the app's own bcrypt pin) so the
       # next step can log in for real.
       - name: Seed a local test user for authenticated smoke checks
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           hash=$(docker run --rm anidex:pr-test python3 -c \
             "import bcrypt; print(bcrypt.hashpw(b'ci-smoke-test-password', bcrypt.gensalt()).decode())")
@@ -158,6 +194,7 @@ jobs:
       # `settings` table (config.set_value) — no AniList call, no outbound network,
       # safe to run unattended in CI.
       - name: Smoke-test an authenticated route and a POST handler
+        if: steps.scope.outputs.docs_only != 'true'
         run: |
           cookiejar=$(mktemp)
 
