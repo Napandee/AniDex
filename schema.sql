@@ -772,12 +772,29 @@ CREATE TABLE push_subscriptions (
     UNIQUE (user_id, endpoint)
 );
 
+-- Issue #485 — periodic snapshots of the admin Data Quality tab's signals
+-- (_data_quality_signals(), issue #202), so the tab can show a trend instead
+-- of only a point-in-time read. Compact summarized shape, one row per
+-- scheduled run, pruned to a rolling window (see data_quality_snapshot job
+-- in app/main.py) rather than kept forever.
+CREATE TABLE data_quality_snapshots (
+    id                              SERIAL PRIMARY KEY,
+    snapshot_at                     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    failure_rate_overall            DOUBLE PRECISION,
+    orphaned_personal_notes_count   INTEGER NOT NULL,
+    stale_recommendations_count     INTEGER NOT NULL,
+    drift_candidates_count          INTEGER NOT NULL,
+    pending_migrations              INTEGER,
+    rate_limit_active               BOOLEAN NOT NULL
+);
+
 -- =========================================================================
 -- INDEXES
 -- =========================================================================
 
 CREATE INDEX idx_instance_backups_created_at ON instance_backups (created_at DESC);
 CREATE INDEX idx_push_subscriptions_user ON push_subscriptions (user_id);
+CREATE INDEX idx_data_quality_snapshots_snapshot_at ON data_quality_snapshots (snapshot_at);
 
 CREATE INDEX idx_library_entries_status ON library_entries(status);
 CREATE INDEX idx_library_entries_user ON library_entries(user_id);

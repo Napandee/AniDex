@@ -916,6 +916,15 @@ def _apply_schedule() -> None:
         id="health_signal_check", replace_existing=True,
         max_instances=1, misfire_grace_time=600,
     )
+    # Issue #485 — daily like filler_data_refresh/manga_data_refresh, since the
+    # underlying signals move slowly; offset from filler_data_refresh's 03:15
+    # so the two don't compete for the same minute.
+    _scheduler.add_job(
+        _snapshot_data_quality_signals,
+        CronTrigger(hour=3, minute=40, timezone="UTC"),
+        id="data_quality_snapshot", replace_existing=True,
+        max_instances=1, misfire_grace_time=3600,
+    )
     # Issue #299 — catalog-wide, not per-user, and not tied to instance_config's
     # user-facing sync-time settings (those are about each user's own AniList/CR/
     # Netflix sync). Fixed low-traffic UTC time, offset from every other job above
@@ -2590,7 +2599,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 43
+LATEST_MIGRATION = 44
 
 
 def _build_version() -> str | None:
@@ -2706,6 +2715,73 @@ def _check_health_signals() -> None:
         _instance_config_set("health_alert_last_rate_limit_observed_at", "")
 
 
+def _snapshot_data_quality_signals() -> None:
+    """Daily job (issue #485): persist one compact summary row of
+    _data_quality_signals()'s output so the admin Data Quality tab can show a
+    trend instead of only ever a single point-in-time read. Deliberately a
+    summarized subset, not the full raw structure — see migration 044's
+    comment for why. Instance-wide, matching the admin Data Quality tab's own
+    scope (not the per-user #337 companion view).
+
+    Overall failure rate is aggregated across every user's failure_history
+    (total failed / total runs across all users) rather than kept per-user,
+    since per-user-per-day granularity would multiply write volume by user
+    count for a personal/small-multi-user instance where the instance-wide
+    trend is what actually matters on a shared admin tab.
+
+    Also prunes snapshots older than DATA_QUALITY_SNAPSHOT_RETENTION_DAYS —
+    done here rather than as a separate job since it's cheap and keeps the
+    write-then-prune logic in one place.
+    """
+    signals = _data_quality_signals()
+
+    total_runs = sum(agg["total"] for agg in signals["failure_history"].values())
+    total_failed = sum(agg["failed"] for agg in signals["failure_history"].values())
+    failure_rate_overall = (total_failed / total_runs) if total_runs else None
+
+    rate_limit = _anilist_rate_limit_status()
+
+    db.execute(
+        """
+        INSERT INTO data_quality_snapshots
+            (failure_rate_overall, orphaned_personal_notes_count,
+             stale_recommendations_count, drift_candidates_count,
+             pending_migrations, rate_limit_active)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """,
+        (
+            failure_rate_overall,
+            len(signals["orphaned_personal_notes"]),
+            len(signals["stale_recommendations"]),
+            len(signals["drift_candidates"]),
+            _pending_migration_count(),
+            bool(rate_limit and rate_limit["active"]),
+        ),
+    )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=DATA_QUALITY_SNAPSHOT_RETENTION_DAYS)
+    db.execute("DELETE FROM data_quality_snapshots WHERE snapshot_at < %s", (cutoff,))
+
+
+def _data_quality_trend(limit: int = 30) -> list[dict]:
+    """Most recent snapshots, oldest first, for the admin Data Quality tab's
+    trend section. `limit` bounds the query/render cost — the tab shows a
+    simple table, not a full chart, per issue #485's own scope note against
+    building a charting/dashboard subsystem for a personal instance."""
+    rows = db.fetchall(
+        """
+        SELECT snapshot_at, failure_rate_overall, orphaned_personal_notes_count,
+               stale_recommendations_count, drift_candidates_count,
+               pending_migrations, rate_limit_active
+        FROM data_quality_snapshots
+        ORDER BY snapshot_at DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    return list(reversed(rows))
+
+
 def _instance_health() -> dict:
     """Read-only instance-health data for the admin panel (issue #86): running
     build version (if baked into the image via the Dockerfile's GIT_SHA build
@@ -2753,6 +2829,12 @@ _SYNC_PROVIDERS = ("crunchyroll", "netflix", "anilist_postgres")
 # Lookback window for the failure-rate/history section — long enough to show a real
 # pattern, short enough that a since-fixed problem ages out of view on its own.
 DATA_QUALITY_FAILURE_WINDOW_DAYS = 30
+
+# Issue #485 — how long a data_quality_snapshots row survives before the daily
+# snapshot job prunes it. 90 days gives a real multi-month trend view (the tab
+# shows a simple table of recent snapshots, not a chart — see #485's own scope
+# note) without the table growing forever on a daily cadence.
+DATA_QUALITY_SNAPSHOT_RETENTION_DAYS = 90
 
 
 def _data_quality_signals(user_id: int | None = None) -> dict:
@@ -2934,6 +3016,7 @@ def admin_page(request: Request, saved: str = ""):
 
     instance_health = _instance_health()
     data_quality = _data_quality_signals()
+    data_quality_trend = _data_quality_trend()
 
     # Sync schedule (issue #96) — moved here from Settings since it's instance-wide,
     # not per-user. Same instance_config fields _apply_schedule() reads.
@@ -3025,6 +3108,7 @@ def admin_page(request: Request, saved: str = ""):
         {
             "instance_health": instance_health,
             "data_quality": data_quality,
+            "data_quality_trend": data_quality_trend,
             "invites": invites_view,
             "users": users_view,
             "google_status": _provider_status("google"),

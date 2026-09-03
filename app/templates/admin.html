@@ -629,6 +629,47 @@
       </table>
       </div>
     </div>
+
+    {# ── Trend (issue #485) ──────────────────────────────────────────────
+       Simple table of recent data_quality_snapshots rows — deliberately not
+       a chart, this is a personal instance's admin tab, not a dashboard
+       subsystem. One row per scheduled snapshot (see data_quality_snapshot
+       job in app/main.py), oldest first so it reads top-to-bottom as a
+       timeline. #}
+    <div class="settings-section">
+      <h2 class="settings-section-title">{{ t('admin_dq_trend_title') }}</h2>
+      <p class="settings-section-desc">{{ t('admin_dq_trend_desc') }}</p>
+      <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>{{ t('admin_dq_col_date') }}</th>
+            <th>{{ t('admin_dq_col_failure_rate') }}</th>
+            <th>{{ t('admin_dq_col_orphaned_notes') }}</th>
+            <th>{{ t('admin_dq_col_stale_recs') }}</th>
+            <th>{{ t('admin_dq_col_drift_count') }}</th>
+            <th>{{ t('admin_dq_col_pending_migrations') }}</th>
+            <th>{{ t('admin_dq_col_rate_limited') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in data_quality_trend %}
+          <tr>
+            <td>{{ s.snapshot_at.strftime('%Y-%m-%d') if s.snapshot_at else '—' }}</td>
+            <td>{{ '%.1f%%' % (s.failure_rate_overall * 100) if s.failure_rate_overall is not none else '—' }}</td>
+            <td>{{ s.orphaned_personal_notes_count }}</td>
+            <td>{{ s.stale_recommendations_count }}</td>
+            <td>{{ s.drift_candidates_count }}</td>
+            <td>{{ s.pending_migrations if s.pending_migrations is not none else '—' }}</td>
+            <td>{{ t('admin_dq_yes') if s.rate_limit_active else t('admin_dq_no') }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="status-empty">{{ t('admin_dq_no_snapshots') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
   </div>
 
 </div>
