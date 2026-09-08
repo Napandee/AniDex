@@ -15,6 +15,14 @@ dist/
 .claude/settings.local.json
 CLAUDE.local.md
 
+# Private Claude context: symlink to the claude-context repo. NO TRAILING
+# SLASH -- '.claude/context/' matches a directory only, and git treats a
+# symlink as a file, so the slash form silently stops matching.
+.claude/context
+
+# Working scratch files -- never publish.
+.claude/scratch/
+
 # Compose data directories
 compose/postgres-data/
 
