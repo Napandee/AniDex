@@ -14,7 +14,9 @@ Format — all four fields, every time:
     **Recurred:** yes/no
 
 `Recurred:` is the field that earns its place. A first slip is noise; the same
-failure twice is what justifies a hook rather than a note.
+failure twice is what justifies a hook rather than a note. If a fault happens
+again, edit the existing entry's `Recurred:` to yes and add the date — do not
+append a second entry.
 
 No credentials, IPs or hostnames here — this file is about process and stays
 public-safe. A fault needing private detail records the shape here and points at

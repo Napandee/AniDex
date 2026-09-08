@@ -4,7 +4,7 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/guard-git.sh", "args": ["--public"] }
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git.sh", "args": ["--public"] }
         ]
       }
     ],

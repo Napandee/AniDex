@@ -7,9 +7,22 @@ HOOK="$(dirname "$0")/guard-git.sh"
 pass=0; fail=0
 
 check() { # check <expect: deny|allow> <args> <command>
-  local expect="$1" args="$2" cmd="$3" out verdict
+  local expect="$1" args="$2" cmd="$3" out rc verdict
   out=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' \
         "$(printf '%s' "$cmd" | jq -Rs .)" | bash "$HOOK" $args)
+  rc=$?
+  # A guard that crashed (or was replaced by `exit 1`, or anything else
+  # non-zero) is NOT "allowed" — it's unknown, and a PreToolUse hook exiting
+  # non-zero-with-stderr can outright BLOCK the tool call. Treating a crash
+  # as a pass here is how a guard replaced by a bare `exit 1` scored
+  # passed=17 and one that crashed on stderr scored passed=20 (2026-09-08
+  # review, Important 1) — every `allow` assertion was passing against a
+  # guard that did nothing. check_failopen() below already got this right;
+  # this brings check() in line with it.
+  if [ "$rc" -ne 0 ]; then
+    fail=$((fail+1)); printf '  FAIL  want=%s got=CRASH(rc=%s)  %s\n' "$expect" "$rc" "$cmd"
+    return
+  fi
   # Parse the actual field, not a whitespace-shaped guess at it — grepping for
   # a literal '"permissionDecision":"deny"' substring silently depends on the
   # guard's JSON being compact with no space after the colon (2026-09-08
@@ -121,6 +134,34 @@ check deny  ""       '/usr/bin/git push --force origin main'
 
 echo "-- a quoted string that merely mentions git is not an invocation (round 3) --"
 check allow ""       'echo "git add -A is dangerous"'
+
+echo "-- round 4: force-push suppression must not be reachable from a later command (Critical 1) --"
+check deny  ""       'git push --force origin main && git push --force-with-lease origin dev'
+check deny  ""       'git push --force origin main; echo "should have used --force-with-lease"'
+check deny  ""       'git push --force origin main # prefer --force-with-lease'
+check deny  ""       'git push --force origin main
+echo --force-with-lease'
+
+echo "-- round 4: bulk-add must scan every token, not just the first (Critical 2) --"
+check deny  --public 'git add -- .'
+check deny  --public 'git add ./'
+check deny  --public 'git add :/'
+check deny  --public 'git add -v -A'
+check deny  --public 'git add -u -A'
+check deny  --public 'git add --verbose -A'
+check deny  --public 'git add \
+-A'
+
+echo "-- round 4: near-misses that must keep working after the sentinel/scan-all fix --"
+check allow ""       'git push --force-with-lease origin main'
+check allow --public 'git add file.txt; ls -A'
+check allow ""       'git push origin main; rm -f /tmp/x'
+check allow --public 'git add -p'
+check allow --public 'git add .gitignore'
+
+echo "-- round 4: 'git stage' is git's own synonym for 'add' (Minor 1) --"
+check deny  --public 'git stage -A'
+check deny  ""       'git stage .claude/context/x'
 
 echo "-- malformed/empty input: fails open, loudly, never blocks --"
 check_failopen "malformed JSON"          'not json at all'
