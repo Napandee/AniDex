@@ -165,7 +165,12 @@ check allow --public 'git add \
 echo "-- near-misses after the rewrite: most still allow; one now over-denies by design (accepted) --"
 check allow ""       'git push --force-with-lease origin main'
 check allow --public 'git add file.txt; ls -A'
-check deny  ""       'git push origin main; rm -f /tmp/x' # accepted over-denial: R2 is a raw substring check with no concept of "this -f belongs to a different command in the chain" — the command contains 'git', the word 'push', and a bounded '-f' (from 'rm -f'), so it denies even though the actual git push has no force flag. Split into two tool calls, or run 'rm -f' separately, to avoid this.
+# 2026-09-09: was flipped to `deny` in the previous round and documented as
+# the accepted over-denial of whole-string matching. R2 is now evaluated per
+# command-segment, so the `-f` of an unrelated `rm` no longer reaches the push.
+# Flipped back deliberately -- leaving it as `deny` would contradict the three
+# identically-shaped allow-cases added below.
+check allow ""       'git push origin main; rm -f /tmp/x' # accepted over-denial: R2 is a raw substring check with no concept of "this -f belongs to a different command in the chain" — the command contains 'git', the word 'push', and a bounded '-f' (from 'rm -f'), so it denies even though the actual git push has no force flag. Split into two tool calls, or run 'rm -f' separately, to avoid this.
 check allow --public 'git add -p'
 check allow --public 'git add .gitignore'
 
@@ -184,6 +189,45 @@ echo "-- malformed/empty input: fails open, loudly, never blocks --"
 check_failopen "malformed JSON"          'not json at all'
 check_failopen "empty stdin"             ''
 check_failopen "valid JSON, no command"  '{"tool_name":"Bash","tool_input":{}}'
+
+# --- 2026-09-09: false positives observed in real use ------------------------
+# Seven self-blocks in one day while building and documenting this guard. Five
+# are fixed below; the two that remain are noted at the end. Each case names
+# the block it came from so a future change that reintroduces one is obvious.
+
+echo "-- A: 'add' that is not 'git add' (block 1) --"
+# `worktree add`, `remote add` and `submodule add` are the only git
+# subcommands taking a bare `add`. R1 matched the word `add` anywhere, so a
+# worktree command naming a private path was denied.
+check allow "" 'git worktree add /tmp/wt .claude/context'
+check allow "" 'git remote add upstream https://example.invalid/r.git'
+check allow "" 'git submodule add https://example.invalid/s.git vendor/s'
+# ...but a real staging of a private path in the same command must still deny.
+check deny  "" 'git worktree add /tmp/wt main && git add .claude/context/x'
+
+echo "-- B: -f belonging to a different command in the chain (blocks 6, 7) --"
+# R2 searched the whole string, so any `-f` bundle anywhere tripped it when
+# `git push` also appeared. `git push && rm -rf` is ordinary cleanup.
+check allow "" 'git push origin main && rm -rf /tmp/scratch'
+check allow "" 'git push -q origin HEAD; rm -rf /tmp/x'
+check allow "" 'git push origin main | grep -f patterns.txt'
+# The real forms must still deny, including a second push later in the chain
+# that the old whole-string match could miss.
+check deny  "" 'git push --force origin main'
+check deny  "" 'git push -f origin main'
+check deny  "" 'git push -uf origin main'
+check deny  "" 'git push origin a; git push -f origin b'
+check deny  "" 'rm -rf /tmp/x && git push --force origin main'
+
+echo "-- C: describing the command in a message argument (blocks 4, 5) --"
+# A commit message or PR body that documents what the guard matches was
+# itself denied — this guard blocked the pull request introducing it.
+check allow "" 'git commit -m "guard denies git add -A and .claude/context staging"'
+check allow "" 'git commit --message "explain why .claude/scratch is ignored"'
+check allow "" 'gh pr create --title "add guard" --body "denies git push --force"'
+# Neutralising the message argument must not disarm the rest of the command.
+check deny  "" 'git commit -m "routine" && git add .claude/context/x'
+check deny  "" 'git commit -m "cleanup" && git push --force origin main'
 
 echo
 echo "passed=$pass failed=$fail"
