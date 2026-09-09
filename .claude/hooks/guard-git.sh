@@ -69,28 +69,65 @@ deny() {
   exit 0
 }
 
+# --- matching-only normalisation (2026-09-09) --------------------------------
+# Seven self-blocks in one day while building and documenting this guard led
+# here. These transformations build $match_cmd, used by R1 and R2 below; $cmd
+# itself is untouched. Each targets one observed false positive and nothing
+# wider — see docs/FAULTS.md entries 12 and 13.
+#
+# (a) `worktree add`, `remote add` and `submodule add` are the only git
+#     subcommands taking a bare `add`. R1 matched the word `add` anywhere, so
+#     `git worktree add /tmp/wt <private-path>` was denied. Renaming the verb
+#     in those three phrases removes the false match while leaving any real
+#     staging in the same command fully visible to R1.
+match_cmd=$(printf '%s' "$cmd" | sed -E 's/(worktree|remote|submodule)([[:space:]]+)add/\1\2ADD_SUBCMD/g')
+
+# (b) The argument of a message flag is prose, not a command. A commit message
+#     or PR body describing what this guard matches was itself denied — this
+#     guard blocked the pull request that introduced it. Deliberately scoped to
+#     message flags: stripping ALL quoted spans would let a quoted private path
+#     through and reopen R1.
+match_cmd=$(printf '%s' "$match_cmd" | sed -E \
+  -e 's/(-m|--message|--body|--title)([[:space:]]+)"[^"]*"/\1\2MSGARG/g' \
+  -e "s/(-m|--message|--body|--title)([[:space:]]+)'[^']*'/\1\2MSGARG/g")
+
 # --- R1 — private paths (all repos) -----------------------------------------
 # Never stage the private context tier or scratch files. Deny when the
 # command mentions git, mentions add/stage as a word, and references one of
 # the private path prefixes.
-if printf '%s' "$cmd" | grep -Eq 'git' \
-   && printf '%s' "$cmd" | grep -Eqw 'add|stage' \
-   && printf '%s' "$cmd" | grep -Eq '\.claude/(context|scratch)'; then
-  deny "Blocked: command references git, add/stage, and .claude/context or .claude/scratch. These are gitignored on purpose — context is a symlink to the private claude-context repo, scratch is working files. Committing them published private files to a public repo twice on 2026-09-08 (docs/FAULTS.md). Stage the specific files you meant instead."
+if printf '%s' "$match_cmd" | grep -Eq 'git' \
+   && printf '%s' "$match_cmd" | grep -Eqw 'add|stage' \
+   && printf '%s' "$match_cmd" | grep -Eq '\.claude/(context|scratch)'; then
+  deny "Blocked: command references git, add/stage, and .claude/context or .claude/scratch. These are gitignored on purpose — context is a symlink to the private claude-context repo, scratch is working files. Committing them published private files to a public repo twice on 2026-09-08 (docs/FAULTS.md). Stage the specific files you meant instead. If you are only DESCRIBING these commands (a doc, a heredoc, a test probe), write the file with an editor tool rather than a shell heredoc — this guard matches command text and cannot tell description from execution."
 fi
 
 # --- R2 — bare force-push (all repos) ---------------------------------------
 # --force-with-lease is the safe form and must keep passing. `--force([^-]|$)`
-# already excludes it on its own, because --force-with-lease has a `-`
-# immediately after --force — no separate suppression check is needed or
+# already excludes it on its own — no separate suppression check is needed or
 # wanted. A prior round's redundant "does the command also mention
-# --force-with-lease somewhere" suppression check is exactly what caused a
-# recorded Critical fault: a LATER, unrelated mention of --force-with-lease
-# (a chained safe push, a trailing comment) disarmed the rule for an earlier
-# bare --force. Not adding that check back fixes that fault for free.
-if printf '%s' "$cmd" | grep -Eq 'git' \
-   && printf '%s' "$cmd" | grep -Eqw 'push' \
-   && printf '%s' "$cmd" | grep -Eq -- '--force([^-]|$)|(^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$)'; then
+# --force-with-lease somewhere" check is exactly what caused a recorded
+# Critical: a LATER mention (a chained safe push, a trailing comment) disarmed
+# the rule for an earlier bare --force.
+#
+# 2026-09-09: evaluated PER COMMAND-SEGMENT rather than over the whole string.
+# Splitting on ; & | means an unrelated `rm -rf` in a chain no longer trips a
+# git push elsewhere in it (`git push origin main && rm -rf /tmp/x` was denied
+# — ordinary cleanup). It is also STRICTER: a second push later in a chain is
+# now caught, which the whole-string match could miss. Deliberately splits on
+# ; & | and newlines ONLY — no sentinel byte, no comment handling; those two
+# produced the last two Criticals.
+force_hit=0
+while IFS= read -r seg; do
+  printf '%s' "$seg" | grep -Eq 'git' || continue
+  printf '%s' "$seg" | grep -Eqw 'push' || continue
+  if printf '%s' "$seg" | grep -Eq -- '--force([^-]|$)|(^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$)'; then
+    force_hit=1
+    break
+  fi
+done <<SEGMENTS
+$(printf '%s' "$match_cmd" | tr ';&|' '\n')
+SEGMENTS
+if [ "$force_hit" -eq 1 ]; then
   deny "Blocked: bare 'git push --force' (or a -f/-uf/-fu... short-flag bundle) overwrites the remote unconditionally. Use --force-with-lease, which refuses if the remote moved since you fetched. If you genuinely need a bare force (a history rewrite), run it yourself outside the agent."
 fi
 
