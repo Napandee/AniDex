@@ -24,6 +24,20 @@ the private tier.
 
 ---
 
+## 2026-09-09 — five guard versions passed their own tests while wide open
+
+**What:** a git-safety hook shipped five times (17/17, 26/26, 35/35, 47/47,
+65/65 green) each time carrying a complete bypass: `git -C` for all rules;
+every other global option; every line after the first; `git add -- .` and
+force-suppression from a later command; a `#` in an argument and a reachable
+sentinel byte.
+**Why:** each fix added parsing to close the last gap, and the added parsing
+created the next one. Precision on raw command text costs more than it buys.
+**Guard:** the guard was narrowed to three regex checks with no tokenizer.
+Bulk-add is now an anchored whole-string match only — it catches the recorded
+fault and misses chained forms, deliberately.
+**Recurred:** yes — five times in one implementation.
+
 ## 2026-09-08 — checked: not exposed to the AniList outage that blocked a sibling repo
 
 **What:** checked whether AniDex carries the same live-third-party-API test
