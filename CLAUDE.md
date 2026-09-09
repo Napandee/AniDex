@@ -104,5 +104,7 @@ Read these when the task calls for them — they are not loaded by default.
 - `docs/dev/data-sources.md` — before changing an import or sync path.
 - `docs/dev/deploy.md` — when changing how AniDex ships.
 - `docs/dev/scope.md` — the full in/out-of-scope boundary.
+- `docs/FAULTS.md` — what has gone wrong here before, and the guard each
+  fault produced.
 - `docs/` — user-facing documentation (`user-guide/`, `admin/`, `mcp.md`).
   Different audience: keep developer detail in `docs/dev/`.
