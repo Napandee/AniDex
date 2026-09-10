@@ -230,5 +230,57 @@ check deny  "" 'git commit -m "routine" && git add .claude/context/x'
 check deny  "" 'git commit -m "cleanup" && git push --force origin main'
 
 echo
+echo "-- D: hook WIRING (does settings.json actually invoke this script?) --"
+# Every check above pipes JSON straight into guard-git.sh, so they prove the
+# SCRIPT works and nothing about whether the HOOK runs. That gap is not
+# theoretical: on 2026-09-10 this suite reported 93/93 green while the guard
+# denied nothing at all in a live session, because settings.json named the
+# script with an unbraced $CLAUDE_PROJECT_DIR (issue #515). "Green tests, dead
+# guard" is the same shape as the fault this whole file exists for.
+SETTINGS="$(dirname "$0")/../settings.json"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+wire() { # wire <description> <0=ok, non-0=fail>
+  if [ "$2" -eq 0 ]; then pass=$((pass+1)); printf '  ok    %s\n' "$1"
+  else fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; fi
+}
+
+if [ ! -f "$SETTINGS" ]; then
+  wire "settings.json exists at $SETTINGS" 1
+else
+  hook_json=$(jq -c '.hooks.PreToolUse[]? | select(.matcher=="Bash")
+                     | .hooks[]? | select(.type=="command")' "$SETTINGS" | head -1)
+  [ -n "$hook_json" ]
+  wire "settings.json declares a PreToolUse/Bash command hook" $?
+
+  if [ -n "$hook_json" ]; then
+    cmd_field=$(printf '%s' "$hook_json" | jq -r '.command // ""')
+    has_args=$(printf '%s' "$hook_json" | jq -r 'if (.args|type)=="array" then "yes" else "no" end')
+
+    # THE #515 CHECK. Supplying `args` switches the hook to exec form: the
+    # command is spawned directly with NO shell, so only ${BRACED} placeholders
+    # are substituted and a bare $VAR is never expanded — the path fails to
+    # resolve, the spawn fails, and every command is silently allowed. A dead
+    # guard is indistinguishable from a permissive one.
+    if [ "$has_args" = "yes" ]; then
+      if printf '%s' "$cmd_field" | grep -Eq '\$[A-Za-z_]'; then
+        wire "exec form (args present) must not use an unbraced \$VAR in command" 1
+      else
+        wire "exec form (args present) must not use an unbraced \$VAR in command" 0
+      fi
+    fi
+
+    resolved=${cmd_field//\$\{CLAUDE_PROJECT_DIR\}/$REPO_ROOT}
+    resolved=${resolved//\$CLAUDE_PROJECT_DIR/$REPO_ROOT}
+    [ -x "$resolved" ]
+    wire "configured hook path resolves to an executable file" $?
+
+    # This repo is public, so R3 (bulk add) must be armed. Losing the flag
+    # silently downgrades the guard rather than breaking it.
+    printf '%s' "$hook_json" | jq -e '(.args // []) | index("--public")' >/dev/null 2>&1
+    wire "--public is passed, so the bulk-add rule (R3) is armed" $?
+  fi
+fi
+
+echo
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
