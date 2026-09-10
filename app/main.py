@@ -2615,7 +2615,7 @@ GITHUB_REPO_URL = "https://github.com/Napandee/AniDex"
 # on Admin > Instance Health; see that table's comment in schema.sql/migration 035
 # for the real incident (migration 028 silently unapplied on prod) this exists to
 # catch going forward.
-LATEST_MIGRATION = 44
+LATEST_MIGRATION = 45
 
 
 def _build_version() -> str | None:
@@ -3538,7 +3538,15 @@ def _fetch_visible_recommendations(user_id: int) -> list[dict]:
                 rs.reason,
                 rs.source,
                 (le.id IS NOT NULL) AS from_planning,
-                ROW_NUMBER() OVER (PARTITION BY rs.source ORDER BY rs.score DESC) AS rn
+                -- Issue #186 — order by the diversity re-rank, falling back to raw
+                -- score. NULLS LAST matters: diversity_rank is NULL on every row
+                -- until the recommender next runs (migration 045 adds the column
+                -- empty), so this deploys with behaviour identical to the old
+                -- `ORDER BY rs.score DESC` and only changes once ranks exist.
+                ROW_NUMBER() OVER (
+                    PARTITION BY rs.source
+                    ORDER BY rs.diversity_rank ASC NULLS LAST, rs.score DESC
+                ) AS rn
             FROM recommendation_scores rs
             JOIN anime a ON a.id = rs.anime_id
             LEFT JOIN library_entries le
@@ -3548,7 +3556,11 @@ def _fetch_visible_recommendations(user_id: int) -> list[dict]:
               AND rs.user_id = %s
         ) ranked
         WHERE rn <= 100
-        ORDER BY source, rec_score DESC
+        -- Order by `rn`, not rec_score: rn already encodes the diversity ordering
+        -- chosen above. Sorting by rec_score here would re-sort the selected rows
+        -- straight back into score order and make the re-rank invisible — it would
+        -- change WHICH 100 rows appear but not the order they appear in.
+        ORDER BY source, rn
         """,
         (user_id,),
     )
