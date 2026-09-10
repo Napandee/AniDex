@@ -140,7 +140,15 @@ jobs:
           echo "::error::New container failed its post-deploy health check after 60s."
 
           if [ -z "$PREV_DIGEST" ]; then
-            echo "::error::No previous digest available to roll back to — leaving the unhealthy container running for manual inspection."
+            # Stop, but deliberately do NOT remove, the unhealthy container (#509). It
+            # was started with --restart unless-stopped, so leaving it up means an
+            # endless restart loop whenever the process actually EXITS rather than
+            # merely failing its HTTP check — a bad config, a failed migration, a
+            # missing env var, an import error on a new dependency. `docker stop`
+            # takes it out of that loop; `docker logs anidex` still works on a stopped
+            # container, so it remains available for inspection exactly as before.
+            echo "::error::No previous digest available to roll back to — stopping the unhealthy container. It is kept (stopped) for inspection: docker logs anidex"
+            docker stop anidex 2>/dev/null || true
             exit 1
           fi
 
@@ -172,6 +180,12 @@ jobs:
           if [ "$ROLLBACK_HEALTHY" -eq 1 ]; then
             echo "::error::Rolled back to the previous digest successfully. Deploy FAILED — investigate the new image before retrying."
           else
-            echo "::error::Rollback ALSO failed its health check — anidex may be down. Manual intervention required."
+            # Same reasoning as the no-rollback-target path above (#509): the
+            # rolled-back container is under --restart unless-stopped too, so if its
+            # process exits it thrashes just as hard. The site is already down either
+            # way — a looping container makes the logs harder to read, not easier.
+            # Stopped, not removed, so `docker logs anidex` still tells the story.
+            echo "::error::Rollback ALSO failed its health check — anidex is down and has been stopped. Manual intervention required. Logs: docker logs anidex"
+            docker stop anidex 2>/dev/null || true
           fi
           exit 1
