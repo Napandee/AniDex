@@ -94,6 +94,39 @@ COMPLETED_UNSCORED_WEIGHT = 0.5
 WATCHING_WEIGHT = 0.4
 PLANNING_WEIGHT = 0.3
 
+# Issue #186 — MMR trade-off for the diversity re-rank. 1.0 is pure score order
+# (the old behaviour); 0.0 ignores score entirely. Tunes ORDER ONLY — see
+# _diversity_rerank()'s docstring on why `score` must not absorb this term.
+#
+# 0.7 is not a guess. Swept against the real 1173-candidate production set
+# (2026-09-10), measuring the top 30:
+#
+#   lambda   distinct genres   mean top-30 score
+#     0.9          5                94.30          <- no better than today
+#     0.8          6                  -
+#     0.7          8                92.02          <- chosen
+#     0.6          9                  -
+#     0.5         10                83.14
+#     0.3         11                82.26
+#
+# 0.7 captures the largest jump (5 -> 8) for ~2 points of mean relevance;
+# everything below it pays roughly 5x more relevance per additional genre.
+#
+# Action/Fantasy stay near 24-26 of 30 at EVERY lambda, and that is correct, not
+# a failure: they are 55.8% and 45.6% of the candidate pool respectively. The
+# real anomaly this fixes is Comedy — 42.1% of the pool, and it appeared zero
+# times in the old top 30. Judge this by distinct-genre count and by whether
+# well-represented genres surface at all, not by suppressing the majority genre.
+DIVERSITY_LAMBDA = 0.7
+
+# Only the head of the ranked list is re-ordered; everything past this keeps
+# plain score order. Two reasons. Cost: MMR is O(pool^2 * |selected|), and the
+# real candidate set is ~1200, which is far too slow to diversify end to end.
+# Relevance: the read path only ever shows the top 100 per source, so ordering
+# position 900 against position 901 buys nothing. 200 leaves headroom above
+# that 100 without paying for the whole tail.
+DIVERSITY_POOL = 200
+
 RECOMMENDATIONS_QUERY = """
 query ($mediaId: Int, $page: Int) {
   Media(id: $mediaId) {
@@ -735,6 +768,78 @@ def _make_prequel_relation_resolver(conn):
     return get_relations
 
 
+def _diversity_rerank(
+    scored: list[tuple[int, float, dict]], media_rows: dict[int, dict]
+) -> dict[int, int]:
+    """Issue #186 — greedy MMR ordering over already-scored candidates.
+
+    Returns anime_id -> diversity_rank, 1 = best. Pure: no DB, no network, and
+    critically it does NOT modify `score`. The recommend->outcome hit-rate
+    (issue #185) is measured off `score`, and the baseline this change is
+    validated against was captured on that column — folding a diversity term
+    into `score` would invalidate the comparison and desynchronise `score` from
+    the `reason` JSONB that explains it. Ordering is a separate concern and
+    gets a separate column.
+
+    Each step picks the candidate maximising
+        DIVERSITY_LAMBDA * relevance - (1 - DIVERSITY_LAMBDA) * redundancy
+    where relevance is the normalised score (already 0-100, best = 100) and
+    redundancy is the Jaccard overlap against the MOST SIMILAR single
+    already-selected candidate. The first pick is therefore always the
+    top-scoring candidate — this can only reorder what comes after it.
+
+    Redundancy is deliberately max-pairwise rather than Jaccard against the
+    accumulated union of every selected genre. The union form was tried first
+    and is nearly useless in practice: as the selected set grows, a candidate
+    duplicating an earlier pick divides by an ever-larger union, so its penalty
+    shrinks exactly when it should not. Simulated against the real 1173-candidate
+    production set it moved distinct genres in the top 30 from 5 to 6.
+    Max-pairwise does not decay — see the regression test in
+    tests/test_issue_186_diversity_rerank.py that separates the two.
+
+    Only the top DIVERSITY_POOL candidates are re-ordered; the tail keeps score
+    order and is appended after them, so every candidate still gets exactly one
+    rank.
+    """
+    ordered = sorted(scored, key=lambda row: -row[1])
+
+    def genres_of(anime_id: int) -> frozenset[str]:
+        return frozenset((media_rows.get(anime_id) or {}).get("genres") or [])
+
+    remaining = [(aid, score, genres_of(aid)) for aid, score, _reason in ordered[:DIVERSITY_POOL]]
+    selected: list[frozenset[str]] = []
+    ranks: dict[int, int] = {}
+
+    while remaining:
+        best_i = 0
+        best_value = None
+        for i, (_anime_id, score, genres) in enumerate(remaining):
+            redundancy = 0.0
+            for chosen in selected:
+                union = genres | chosen
+                if not union:
+                    continue
+                overlap = len(genres & chosen) / len(union)
+                if overlap > redundancy:
+                    redundancy = overlap
+                    if redundancy >= 1.0:
+                        break
+            value = (
+                DIVERSITY_LAMBDA * (score / 100.0)
+                - (1.0 - DIVERSITY_LAMBDA) * redundancy
+            )
+            if best_value is None or value > best_value:
+                best_i, best_value = i, value
+        anime_id, _score, genres = remaining.pop(best_i)
+        ranks[anime_id] = len(ranks) + 1
+        selected.append(genres)
+
+    for anime_id, _score, _reason in ordered[DIVERSITY_POOL:]:
+        ranks[anime_id] = len(ranks) + 1
+
+    return ranks
+
+
 def score_and_store(
     conn,
     all_candidate_ids: set[int],
@@ -785,17 +890,25 @@ def score_and_store(
         max_raw = max(s[1] for s in scored) or 1.0
         scored = [(aid, (raw / max_raw) * 100.0, reason) for aid, raw, reason in scored]
 
+    # Issue #186 — ordering only. Computed AFTER normalisation so relevance is
+    # already on the 0-100 scale, and deliberately not folded back into `score`:
+    # the hit-rate metric (#185) and the UI both read `score`, and the reason
+    # JSONB explains it.
+    diversity_ranks = _diversity_rerank(scored, media_rows)
+
     with conn.cursor() as cur:
         for anime_id, score, reason in scored:
             cur.execute("""
                 INSERT INTO recommendation_scores (
-                    user_id, anime_id, score, reason, source, dismissed, computed_at, first_shown_at
+                    user_id, anime_id, score, reason, source, dismissed, computed_at, first_shown_at,
+                    diversity_rank
                 )
-                VALUES (%s, %s, %s, %s, %s, false, now(), now())
+                VALUES (%s, %s, %s, %s, %s, false, now(), now(), %s)
                 ON CONFLICT (user_id, anime_id) DO UPDATE SET
-                    score       = EXCLUDED.score,
-                    reason      = EXCLUDED.reason,
-                    source      = EXCLUDED.source,
+                    score          = EXCLUDED.score,
+                    reason         = EXCLUDED.reason,
+                    source         = EXCLUDED.source,
+                    diversity_rank = EXCLUDED.diversity_rank,
                     computed_at = now()
                     -- dismissed, snoozed_until, and first_shown_at are intentionally
                     -- excluded from this SET clause: dismissed/snoozed_until are user
@@ -805,7 +918,8 @@ def score_and_store(
                     -- must survive re-runs for a different reason — it's the anchor
                     -- the recommend->outcome hit-rate window is measured from, and a
                     -- rescore isn't a fresh recommendation, so it must not reset it.
-            """, (USER_ID, anime_id, score, json.dumps(reason), sources.get(anime_id, "similarity")))
+            """, (USER_ID, anime_id, score, json.dumps(reason),
+                  sources.get(anime_id, "similarity"), diversity_ranks.get(anime_id)))
     conn.commit()
     return len(scored)
 

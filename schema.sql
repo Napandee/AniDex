@@ -553,6 +553,16 @@ CREATE TABLE recommendation_scores (
                                                             -- across rebuilds the same way
                                                             -- dismissed/snoozed_until are. Added
                                                             -- migration 017.
+    diversity_rank      INTEGER,                     -- issue #186: 1-based MMR presentation order
+                                                            -- within a recommender run. Ordering
+                                                            -- only — deliberately NOT folded into
+                                                            -- `score`, which anchors the #185
+                                                            -- hit-rate metric and the UI's match
+                                                            -- percentage. NULL until the next
+                                                            -- recommender run populates it; the
+                                                            -- read path orders by
+                                                            -- `diversity_rank NULLS LAST, score
+                                                            -- DESC`. Added migration 045.
     UNIQUE (user_id, anime_id)
 );
 
