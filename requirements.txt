@@ -7,7 +7,7 @@ python-dotenv==1.2.3
 python-multipart==0.0.32
 httpx==0.28.1
 apscheduler==3.11.3
-authlib==1.7.2
+authlib==1.8.0
 itsdangerous==2.2.0
 bcrypt==5.0.0
 cryptography==50.0.1
