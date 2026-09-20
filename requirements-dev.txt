@@ -6,4 +6,4 @@ pytest==9.1.1
 # transitively via mcp's own httpx2 dependency, but declaring it here means the
 # test file doesn't silently break with ImportError if mcp ever drops/renames it
 # or gets swapped for a different MCP client lib — issue #412.
-httpx2==2.12.0
+httpx2==2.13.0
