@@ -35,8 +35,50 @@ sentinel byte.
 created the next one. Precision on raw command text costs more than it buys.
 **Guard:** the guard was narrowed to three regex checks with no tokenizer.
 Bulk-add is now an anchored whole-string match only — it catches the recorded
-fault and misses chained forms, deliberately.
-**Recurred:** yes — five times in one implementation.
+fault and misses chained forms, deliberately. Since 2026-09-10, section D of
+`test-guard-git.sh` also asserts against `settings.json` itself — hook
+declared, no unbraced `$VAR` under exec form, path resolves to an executable,
+`--public` present — because the script being correct proves nothing about
+whether the hook runs.
+**Recurred:** yes — five times in one implementation, then a sixth time one
+level up on 2026-09-10 (#515): the script was correct and its suite was 93/93
+green, but `settings.json` named it with an unbraced `$CLAUDE_PROJECT_DIR`
+under exec form (`args` present means no shell, so nothing expanded it). The
+hook never spawned and every command was allowed. Same shape — green tests,
+dead guard — which is why the wiring assertion above exists.
+
+## 2026-09-08 — bulk `git add` published private files to a public repo
+
+**What:** in a sibling repo running this same estate-wide guard, `git add -A`
+staged `.claude/context` (a symlink to the private claude-context repo) and
+`.claude/scratch/` into a public repo — twice in one session, the second time
+after the first had been found and fixed.
+**Why:** the second branch was cut from the default branch, which did not yet
+carry the `.gitignore` entries; they existed only on the feature branch.
+`git add -A` then swept in whatever was untracked.
+**Guard:** `PreToolUse` deny on bulk `git add` in public repos
+(`guard-git.sh --public`, rule R3), and a deny on any staging that names
+`.claude/context` or `.claude/scratch` regardless of form (rule R1). Both
+messages cite this entry. Primary record: `AniFillerPedia/docs/FAULTS.md`,
+same date and title.
+**Recurred:** yes — twice on 2026-09-08. That recurrence is why this is a
+hook and not a note, and why the guard was installed here with `--public`
+before this repo had ever hit it.
+
+## 2026-09-08 — a gitignore rule silently stopped matching a symlink
+
+**What:** `.gitignore` carried `.claude/context/`. Replacing the real
+directory with a symlink made the rule stop matching, leaving the link
+trackable in a public repo.
+**Why:** a trailing slash matches a **directory**; git treats a symlink as a
+file. The rule was correct for the layout it was written against and wrong
+for the layout that replaced it, with no warning from git.
+**Guard:** this repo's `.gitignore` writes the pattern without a trailing
+slash (`.claude/context`) and says why inline; `guard-git.sh` rule R1 denies
+staging that path regardless of what `.gitignore` does. Primary record:
+`AniFillerPedia/docs/FAULTS.md`, same date and title.
+**Recurred:** no — but found twice in the same session, once in `.gitignore`
+and once in a verifier making the same assumption.
 
 ## 2026-09-08 — checked: not exposed to the AniList outage that blocked a sibling repo
 
