@@ -94,6 +94,32 @@ COMPLETED_UNSCORED_WEIGHT = 0.5
 WATCHING_WEIGHT = 0.4
 PLANNING_WEIGHT = 0.3
 
+# Issue #192 — repeat_count as a taste signal, added on top of the COMPLETED
+# weight above. Measured 2026-09-10: 77% of scored COMPLETED entries (94/122)
+# score 5/5, so `score / 5` parks them all at an identical 1.0 and the profile
+# cannot tell any of them apart. Every one of the 20 entries with
+# repeat_count >= 2 scored 5/5 — rewatching is a real preference signal, and
+# one of very few independent ones that discriminates inside that band.
+#
+# Bounded deliberately. The bonus scales linearly to REWATCH_BONUS_MAX at
+# REWATCH_CAP rewatches and is flat beyond it: all but one library entry sit
+# at <= 3, and the lone rc=6 (Sword Art Online) must not be allowed to
+# dominate the profile on its own. 0.25 is enough to reorder inside the
+# 1.0 band (a rewatched 5 lands at 1.25) without letting a rewatched 3
+# (0.6 + 0.25 = 0.85) overtake a never-rewatched 5 (1.0) — score still wins
+# across bands; rewatch only breaks ties within one.
+REWATCH_BONUS_MAX = 0.25
+REWATCH_CAP = 3
+
+
+def _rewatch_bonus(repeat_count) -> float:
+    """Issue #192 — additive weight for a COMPLETED entry's rewatches.
+    None/0 -> 0.0; capped so one heavily-rewatched title can't swamp the
+    profile. Pure, so it is trivially testable and the shape is in one place."""
+    if not repeat_count or repeat_count <= 0:
+        return 0.0
+    return REWATCH_BONUS_MAX * min(int(repeat_count), REWATCH_CAP) / REWATCH_CAP
+
 # Issue #186 — MMR trade-off for the diversity re-rank. 1.0 is pure score order
 # (the old behaviour); 0.0 ignores score entirely. Tunes ORDER ONLY — see
 # _diversity_rerank()'s docstring on why `score` must not absorb this term.
@@ -231,15 +257,18 @@ def build_taste_profile(conn) -> dict:
     """
     Build weighted genre / tag / studio vectors from the user's library.
 
-    COMPLETED entries are weighted by normalised score (score/5).
-    Unscored completed entries get a neutral 0.5 weight so they still
-    contribute even while scoring is in progress.
+    COMPLETED entries are weighted by normalised score (score/5), plus a
+    bounded rewatch bonus (issue #192, see _rewatch_bonus()). Unscored
+    completed entries get a neutral 0.5 weight so they still contribute even
+    while scoring is in progress — also plus the rewatch bonus, since an
+    entry someone went back to three times is not a neutral signal however
+    unscored it is.
     WATCHING and PLANNING contribute at fixed weights to keep the profile
     broad — the user declared interest in these even without a rating.
     """
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("""
-            SELECT a.genres, a.tags, a.studios, le.status, le.score
+            SELECT a.genres, a.tags, a.studios, le.status, le.score, le.repeat_count
             FROM library_entries le
             JOIN anime a ON a.id = le.anime_id
             WHERE le.status IN ('COMPLETED', 'WATCHING', 'PLANNING') AND le.user_id = %s
@@ -256,6 +285,7 @@ def build_taste_profile(conn) -> dict:
 
         if status == "COMPLETED":
             weight = float(score) / 5.0 if score else COMPLETED_UNSCORED_WEIGHT
+            weight += _rewatch_bonus(row.get("repeat_count"))
         elif status == "WATCHING":
             weight = WATCHING_WEIGHT
         else:  # PLANNING
