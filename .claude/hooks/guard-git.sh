@@ -73,7 +73,11 @@ deny() {
 # Seven self-blocks in one day while building and documenting this guard led
 # here. These transformations build $match_cmd, used by R1 and R2 below; $cmd
 # itself is untouched. Each targets one observed false positive and nothing
-# wider — see docs/FAULTS.md entries 12 and 13.
+# wider. The seven blocks and their causes are tabulated in PR #514's body;
+# the fault they belong to is docs/FAULTS.md "five guard versions passed their
+# own tests while wide open". (Referenced by title, not number — FAULTS.md
+# entries are not numbered, and an earlier "entries 12 and 13" here pointed at
+# nothing.)
 #
 # (a) `worktree add`, `remote add` and `submodule add` are the only git
 #     subcommands taking a bare `add`. R1 matched the word `add` anywhere, so
