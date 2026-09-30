@@ -585,6 +585,12 @@ class _FakeScoreCursor:
         q = query.strip()
         if q.startswith("SELECT id, genres, tags, studios, relations"):
             self._result = self.conn.anime_rows
+        elif q.startswith("SELECT rs.anime_id"):
+            # Issue #529 — score_and_store() now also reads rows from earlier
+            # runs so it can rank them alongside this run's candidates. These
+            # fixtures model an empty recommendation_scores table, which is what
+            # they always implicitly assumed, so there is nothing carried over.
+            self._result = []
         elif q.startswith("INSERT INTO recommendation_scores"):
             self.conn.inserted.append({"query": q, "params": params})
         else:
