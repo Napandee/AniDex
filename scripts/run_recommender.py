@@ -894,7 +894,51 @@ def score_and_store(
     # already on the 0-100 scale, and deliberately not folded back into `score`:
     # the hit-rate metric (#185) and the UI both read `score`, and the reason
     # JSONB explains it.
-    diversity_ranks = _diversity_rerank(scored, media_rows)
+    #
+    # Issue #529 — rank EVERY live row together, not just this run's candidates.
+    # Each run only rescores the candidates it discovered, so rows found by an
+    # earlier run kept their old score and never got a rank; with the read path's
+    # `diversity_rank ASC NULLS LAST`, that buried all of them behind every ranked
+    # row regardless of score. On the live instance that was 606 unranked rows,
+    # 605 of which outscored the worst ranked row, including one at a perfect
+    # 100.00 sitting at position 641.
+    #
+    # Carried-over rows join the ranking with their STORED score — stale relative
+    # to the current taste profile, but the best estimate available, and strictly
+    # better than being sorted to the back. Only their `diversity_rank` is written
+    # below; score/reason/source are left exactly as the run that produced them
+    # set them.
+    #
+    # Score-banding alternatives were measured against the real 1246 rows and
+    # rejected: every band width collapsed the top 30 back to 5 distinct genres,
+    # because #186's promoted candidates sit ACROSS bands rather than within one.
+    # Ranking everything together instead RAISED it from 7 to 8, since the MMR
+    # pool grows from 640 candidates to 1246.
+    scored_ids = [aid for aid, _score, _reason in scored]
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("""
+            SELECT rs.anime_id, rs.score, a.genres
+            FROM recommendation_scores rs
+            JOIN anime a ON a.id = rs.anime_id
+            WHERE rs.user_id = %s
+              AND NOT rs.dismissed
+              AND NOT (rs.anime_id = ANY(%s))
+        """, (USER_ID, scored_ids))
+        carried_rows = [dict(row) for row in cur.fetchall()]
+
+    # Snoozed rows are deliberately included: a snooze expires, and excluding them
+    # here would reintroduce exactly this bug for every row that comes back.
+    # Dismissed rows are excluded — they are filtered on read, so ranking them
+    # would let them consume diversity slots the user will never see.
+    rank_media = dict(media_rows)
+    for row in carried_rows:
+        rank_media.setdefault(row["anime_id"], {
+            "genres": row["genres"] or [], "tags": [], "studios": [],
+        })
+    diversity_ranks = _diversity_rerank(
+        list(scored) + [(row["anime_id"], float(row["score"]), {}) for row in carried_rows],
+        rank_media,
+    )
 
     with conn.cursor() as cur:
         for anime_id, score, reason in scored:
@@ -920,6 +964,13 @@ def score_and_store(
                     -- rescore isn't a fresh recommendation, so it must not reset it.
             """, (USER_ID, anime_id, score, json.dumps(reason),
                   sources.get(anime_id, "similarity"), diversity_ranks.get(anime_id)))
+        # Issue #529 — carried-over rows get their new rank and nothing else.
+        for row in carried_rows:
+            cur.execute(
+                "UPDATE recommendation_scores SET diversity_rank = %s "
+                "WHERE user_id = %s AND anime_id = %s",
+                (diversity_ranks.get(row["anime_id"]), USER_ID, row["anime_id"]),
+            )
     conn.commit()
     return len(scored)
 
