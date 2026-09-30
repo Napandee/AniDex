@@ -281,14 +281,110 @@ def _serialize_row(row: dict) -> dict:
 # avoid blocking the event loop.
 
 
-async def list_library_entries(status: str | None = None, limit: int = 500) -> list[dict]:
+# Issue #533 — date filters, ordering and projection for list_library_entries.
+#
+# Every one of these maps to a column that already exists; none of them needs new
+# data. They are here because the data being present is not the same as it being
+# reachable: asked "what series did I watch last week?", the connector had to pull
+# the whole library, sort it client-side, and still answer with a guess, because
+# there was no date filter, ordering was alphabetical, and anilist_updated_at was
+# not even in the payload.
+#
+# `order_by` and `fields` are whitelisted against these maps rather than
+# interpolated — they reach an f-string, so an un-validated value would be SQL
+# injection. The maps are the whitelist; nothing outside them can reach the query.
+_LIBRARY_DATE_FILTERS = {
+    # param name    -> (column, comparison)
+    "updated_since":  ("le.anilist_updated_at", ">="),
+    "updated_before": ("le.anilist_updated_at", "<"),
+    "finished_after":  ("le.finish_date", ">="),
+    "finished_before": ("le.finish_date", "<"),
+    "started_after":  ("le.start_date", ">="),
+    "started_before": ("le.start_date", "<"),
+}
+
+_LIBRARY_ORDER_COLUMNS = {
+    "title": "a.title_romaji",
+    "updated": "le.anilist_updated_at",
+    "finished": "le.finish_date",
+    "started": "le.start_date",
+    "score": "le.score",
+    "progress": "le.progress",
+}
+
+# The full payload shape, and simultaneously the `fields` whitelist.
+_LIBRARY_FIELDS = (
+    "anime_id", "title_romaji", "title_english", "format", "episodes",
+    "season", "season_year", "average_score", "status", "my_score",
+    "progress", "repeat_count", "start_date", "finish_date",
+    "anilist_updated_at", "personal_tags", "mood_tags",
+)
+
+
+async def list_library_entries(
+    status: str | None = None,
+    limit: int = 500,
+    updated_since: str | None = None,
+    updated_before: str | None = None,
+    finished_after: str | None = None,
+    finished_before: str | None = None,
+    started_after: str | None = None,
+    started_before: str | None = None,
+    order_by: str = "title",
+    order: str = "asc",
+    fields: list[str] | None = None,
+) -> list[dict]:
     """List entries in the authenticated user's AniList library: title, status,
-    progress, score, and personal tags. Optionally filter to one status (WATCHING,
-    COMPLETED, DROPPED, PLANNING, PAUSED, REPEATING). Scoped to the token's owning
-    user's own library only."""
+    progress, score, personal tags, and when the entry last changed. Scoped to the
+    token's owning user's own library only.
+
+    Filters (all optional, dates as YYYY-MM-DD):
+      status           one of WATCHING, COMPLETED, DROPPED, PLANNING, PAUSED, REPEATING
+      updated_since /  filter on anilist_updated_at, which changes on every progress
+      updated_before   update. This is the one to use for "what did I watch recently" —
+                       it reports which series MOVED. It records when a sync pushed
+                       progress to AniList, not when an episode was watched, and it
+                       cannot tell you how many episodes: there is no per-episode
+                       history in this app.
+      finished_after / filter on finish_date — "what did I finish in June"
+      finished_before
+      started_after /  filter on start_date
+      started_before
+
+    order_by: title (default) | updated | finished | started | score | progress
+    order:    asc (default) | desc
+    fields:   optional list to return only some columns, e.g.
+              ["title_english", "finish_date", "progress"]. Omit for all of them.
+              Narrowing this matters: the unfiltered COMPLETED list is ~40 kB and
+              can be truncated in transit, while a projected date-filtered query
+              answering the same question is a few hundred bytes.
+    """
     user = _require_user()
     limit = max(1, min(limit, 1000))
     status_filter = status.strip().upper() if status else None
+
+    order_key = (order_by or "title").strip().lower()
+    if order_key not in _LIBRARY_ORDER_COLUMNS:
+        raise ToolError(
+            f"order_by must be one of {', '.join(sorted(_LIBRARY_ORDER_COLUMNS))}; got {order_by!r}"
+        )
+    direction = "DESC" if (order or "asc").strip().lower() == "desc" else "ASC"
+
+    if fields is not None:
+        unknown = [f for f in fields if f not in _LIBRARY_FIELDS]
+        if unknown:
+            raise ToolError(
+                f"unknown field(s) {', '.join(unknown)}; valid fields are "
+                f"{', '.join(_LIBRARY_FIELDS)}"
+            )
+        if not fields:
+            raise ToolError("fields must name at least one column, or be omitted entirely")
+
+    supplied_dates = {
+        "updated_since": updated_since, "updated_before": updated_before,
+        "finished_after": finished_after, "finished_before": finished_before,
+        "started_after": started_after, "started_before": started_before,
+    }
 
     def _query():
         where = "le.user_id = %s"
@@ -296,27 +392,40 @@ async def list_library_entries(status: str | None = None, limit: int = 500) -> l
         if status_filter:
             where += " AND le.status = %s"
             params.append(status_filter)
+        for name, value in supplied_dates.items():
+            if not value:
+                continue
+            column, comparison = _LIBRARY_DATE_FILTERS[name]
+            where += f" AND {column} {comparison} %s"
+            params.append(value)
         params.append(limit)
+        # NULLS LAST so that ordering by a sparsely-populated date column (a
+        # PLANNING entry has no finish_date) puts real dates first instead of
+        # burying them behind every null.
         return db.fetchall(
             f"""
             SELECT a.id AS anime_id, a.title_romaji, a.title_english, a.format,
                    a.episodes, a.season, a.season_year, a.average_score,
                    le.status, le.score AS my_score, le.progress, le.repeat_count,
-                   le.start_date, le.finish_date,
+                   le.start_date, le.finish_date, le.anilist_updated_at,
                    COALESCE(pn.personal_tags, '[]'::jsonb) AS personal_tags,
                    COALESCE(pn.mood_tags, '[]'::jsonb) AS mood_tags
             FROM library_entries le
             JOIN anime a ON a.id = le.anime_id
             LEFT JOIN personal_notes pn ON pn.anime_id = a.id AND pn.user_id = le.user_id
             WHERE {where}
-            ORDER BY a.title_romaji
+            ORDER BY {_LIBRARY_ORDER_COLUMNS[order_key]} {direction} NULLS LAST
             LIMIT %s
             """,
             tuple(params),
         )
 
     rows = await run_in_threadpool(_query)
-    return [_serialize_row(r) for r in rows]
+    serialized = [_serialize_row(r) for r in rows]
+    if fields is None:
+        return serialized
+    wanted = set(fields)
+    return [{k: v for k, v in row.items() if k in wanted} for row in serialized]
 
 
 async def list_personal_notes(anime_id: int | None = None) -> list[dict]:

@@ -24,10 +24,35 @@ to read or write another user's data, even on a multi-user instance.
 
 ## Read tools (either scope)
 
-### `list_library_entries(status=None, limit=500)`
+### `list_library_entries(status=None, limit=500, …filters, order_by, order, fields)`
 
-Your library: title, status, progress, score, personal tags. Optionally filter to one
-status (`WATCHING`, `COMPLETED`, `DROPPED`, `PLANNING`, `PAUSED`, `REPEATING`).
+Your library: title, status, progress, score, personal tags, and `anilist_updated_at` —
+when the entry last changed.
+
+**Filters** (all optional, dates as `YYYY-MM-DD`):
+
+| parameter | filters on | use it for |
+|---|---|---|
+| `status` | entry status | one of `WATCHING`, `COMPLETED`, `DROPPED`, `PLANNING`, `PAUSED`, `REPEATING` |
+| `updated_since` / `updated_before` | `anilist_updated_at` | *"what did I watch recently"* — which series **moved** |
+| `finished_after` / `finished_before` | `finish_date` | *"what did I finish in June"* |
+| `started_after` / `started_before` | `start_date` | *"what did I pick up in spring"* |
+
+**`order_by`**: `title` (default), `updated`, `finished`, `started`, `score`, `progress`.
+**`order`**: `asc` (default) or `desc`. Nulls always sort last, so ordering by a sparse
+date column puts real dates first.
+
+**`fields`**: return only the columns you need, e.g.
+`["title_english", "finish_date", "progress"]`. Omit for all of them. This matters more
+than it looks — the unfiltered `COMPLETED` list is about **40 kB** and can be truncated
+in transit, while the same question asked with a date filter and a projection is a
+couple of hundred bytes.
+
+> **What this can and cannot tell you.** `anilist_updated_at` changes on every progress
+> update, so it answers *which series you watched* in a window. It records when a sync
+> pushed progress to AniList, not when you watched an episode — a lagging sync
+> under-reports. And AniDex stores no per-episode history at all, so it can never tell
+> you *how many episodes* you watched, or which ones. See issue #532.
 
 ### `list_personal_notes(anime_id=None)`
 

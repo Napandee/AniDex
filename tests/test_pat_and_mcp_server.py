@@ -780,6 +780,165 @@ def test_mcp_read_tools_still_work_with_a_read_only_token(live_app, mcp_two_user
     assert [row["anime_id"] for row in result] == [101]
 
 
+# ── Issue #533: date filtering, ordering, projection on the read tools ───────
+# Motivating failure: asked "what anime series did I watch last week?", the
+# connector returned 22 "still in progress" candidates and said outright that it
+# was "a guess from progress numbers, not a record of what you watched" — because
+# list_library_entries had no date filter, ordered alphabetically, and did not
+# return anilist_updated_at at all. The field that answers the question was
+# populated on 258/259 live rows and simply unreachable through MCP.
+#
+# These tests are read-only. The explicit-ids guardrail below applies to WRITE
+# tools; a date filter on a read tool is not covered by it and does not weaken it.
+
+
+@pytest.fixture()
+def mcp_dated_library(live_app):
+    """Three entries with distinguishable start/finish/updated dates, so each
+    filter can be asserted independently rather than all at once."""
+    _base_url, m = live_app
+    m.db.execute(
+        "TRUNCATE personal_access_tokens, personal_notes, recommendation_scores, "
+        "library_entries, anime, users RESTART IDENTITY CASCADE"
+    )
+    m.db.execute(
+        "INSERT INTO users (id, auth_provider, auth_provider_id, email, password_hash, is_active) "
+        "VALUES (1, 'local', 'alice@example.com', 'alice@example.com', 'x', true)"
+    )
+    m.db.execute(
+        "INSERT INTO anime (id, title_romaji, format, episodes, duration, genres, average_score) VALUES "
+        "(201, 'Zeta Moved Recently', 'TV', 12, 24, '[\"Action\"]', 80), "
+        "(202, 'Alpha Finished In June', 'TV', 13, 24, '[\"Romance\"]', 70), "
+        "(203, 'Mid Finished In May', 'TV', 24, 24, '[\"Drama\"]', 60)"
+    )
+    m.db.execute(
+        "INSERT INTO library_entries "
+        "(user_id, anime_id, status, score, progress, start_date, finish_date, anilist_updated_at) VALUES "
+        "(1, 201, 'REPEATING',  5.0,  1, '2026-09-20', NULL,         '2026-09-28T10:00:00Z'), "
+        "(1, 202, 'COMPLETED',  4.0, 13, '2026-05-15', '2026-06-14', '2026-06-14T10:00:00Z'), "
+        "(1, 203, 'COMPLETED',  3.0, 24, '2026-04-01', '2026-05-02', '2026-05-02T10:00:00Z')"
+    )
+    _tid, token = pat.create_token(1, "dated-test-client")
+    return token
+
+
+def test_list_library_entries_filters_by_updated_since(live_app, mcp_dated_library):
+    """THE #533 question. "What did I watch last week" must return the one entry
+    whose progress actually moved, not every in-progress candidate."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call(
+        base_url, mcp_dated_library, "list_library_entries",
+        {"updated_since": "2026-09-25"},
+    ))
+
+    assert [row["anime_id"] for row in result] == [201]
+
+
+# The tests below cover the remaining #533 acceptance criteria. They passed on
+# first run against the implementation above — they are regression guards on
+# behaviour just written, not TDD-driven, with the exception of the two
+# validation tests, which assert that a bad parameter is REJECTED rather than
+# silently ignored (the pre-#533 behaviour for an unknown argument was to accept
+# it and return the whole library, which is how a typo becomes a 40 kB answer).
+
+
+def test_list_library_entries_filters_by_finish_date_window(live_app, mcp_dated_library):
+    """"What did I finish in June" in a single call, rather than fetching
+    everything and filtering client-side."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call(
+        base_url, mcp_dated_library, "list_library_entries",
+        {"finished_after": "2026-06-01", "finished_before": "2026-07-01"},
+    ))
+
+    assert [row["anime_id"] for row in result] == [202]
+
+
+def test_list_library_entries_orders_by_most_recently_updated(live_app, mcp_dated_library):
+    """Ordering must be selectable. Alphabetical-only is why "most recent"
+    previously required pulling the whole library."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call(
+        base_url, mcp_dated_library, "list_library_entries",
+        {"order_by": "updated", "order": "desc"},
+    ))
+
+    assert [row["anime_id"] for row in result] == [201, 202, 203]
+
+
+def test_list_library_entries_projects_only_requested_fields(live_app, mcp_dated_library):
+    """The payload fix: 17 columns per row by default, exactly what was asked for
+    when `fields` is given."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call(
+        base_url, mcp_dated_library, "list_library_entries",
+        {"fields": ["title_english", "finish_date"], "status": "COMPLETED"},
+    ))
+
+    assert all(set(row) == {"title_english", "finish_date"} for row in result)
+
+
+def test_list_library_entries_exposes_anilist_updated_at(live_app, mcp_dated_library):
+    """The field that answers "what moved" must actually be in the payload — it
+    was populated on 258/259 live rows and absent from the tool's output."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call(base_url, mcp_dated_library, "list_library_entries"))
+
+    assert all("anilist_updated_at" in row for row in result)
+
+
+def test_list_library_entries_default_call_is_unchanged(live_app, mcp_dated_library):
+    """Backwards compatibility: no new parameters means the same rows in the same
+    (alphabetical) order as before #533. Title order here is Alpha/Mid/Zeta, which
+    is deliberately NOT id order, so a regression to insertion order would fail."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call(base_url, mcp_dated_library, "list_library_entries"))
+
+    assert [row["anime_id"] for row in result] == [202, 203, 201]
+
+
+def test_list_library_entries_rejects_an_unknown_order_by(live_app, mcp_dated_library):
+    """order_by reaches an f-string in the query. Anything outside the whitelist
+    must be refused, not interpolated — this is the SQL-injection guard."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call_expect_error(
+        base_url, mcp_dated_library, "list_library_entries",
+        {"order_by": "le.score; DROP TABLE library_entries"},
+    ))
+
+    assert result.is_error is True
+    assert "order_by must be one of" in str(result.content)
+
+
+def test_list_library_entries_rejects_an_unknown_field(live_app, mcp_dated_library):
+    """A mistyped field name must fail loudly rather than being ignored, which
+    would silently return the full 17-column payload the caller was avoiding."""
+    import asyncio
+    base_url, _m = live_app
+
+    result = asyncio.run(_mcp_call_expect_error(
+        base_url, mcp_dated_library, "list_library_entries",
+        {"fields": ["title_english", "nonexistent_column"]},
+    ))
+
+    assert result.is_error is True
+    assert "unknown field" in str(result.content)
+
+
 # ── Structural guarantee: every write tool's schema requires explicit ids ───
 # Acceptance criterion from issue #208 / CLAUDE.md's MCP guardrail: "write tools
 # must require explicit ID lists — never wildcard or filter-based bulk writes."
