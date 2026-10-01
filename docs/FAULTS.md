@@ -24,6 +24,39 @@ the private tier.
 
 ---
 
+## 2026-09-23 — a NULL-handling choice was reasoned about at deploy time but not in steady state
+
+**What:** #186 added a `diversity_rank` column and ordered the recommendations
+page by `diversity_rank ASC NULLS LAST, score DESC`. The recommender only
+rescores the candidates each run discovers, so rows found by an *earlier* run
+never received a rank. `NULLS LAST` then sorted every one of them behind every
+ranked row. Live for a week before anyone looked: 640 ranked, 606 unranked, and
+605 of the unranked outscored the *worst* ranked row — including one scoring a
+perfect 100.00, sorted to position 641 on a page that shows 100 per source, and
+therefore invisible.
+**Why:** `NULLS LAST` was chosen deliberately and for a good reason — it made
+the migration and the code deploy separable, because with every row NULL the
+ordering was unchanged and the release was a no-op until the recommender next
+ran. That reasoning was correct *about the deploy* and was never extended to the
+state the system settles into, where half the rows stay NULL permanently. The
+property was checked at t=0 and not at t=steady.
+**Guard:** none mechanical — judgement, plus a question worth asking out loud.
+When a fix turns on how missing data sorts or compares, state what the data
+looks like **after the system has been running a while**, not just at the moment
+of release. "Everything is NULL today so nothing changes" is a statement about
+the deploy, not about the design. The specific fix (#529) was to rank every live
+row each run rather than only the current candidate set.
+**Recurred:** no.
+
+Worth recording separately: the fix first proposed on the issue — banding the
+score and ranking within each band — was measured against the real 1246 rows
+before being built, and would have fixed this by *undoing* #186, collapsing the
+top 30 from 7 distinct genres back to 5. Every band width tested did this,
+because #186's promoted candidates sit across bands rather than within one.
+Ranking everything together instead raised it to 8. The habit that caught it is
+the same one in the 2026-08-13 entry below: measure the fix against real data
+before building it, not after.
+
 ## 2026-09-09 — five guard versions passed their own tests while wide open
 
 **What:** a git-safety hook shipped five times (17/17, 26/26, 35/35, 47/47,
