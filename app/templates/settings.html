@@ -462,6 +462,7 @@
   <div class="settings-about">
     <p class="settings-about-text">
       {{ t('settings_about_version_label') }}
+      {% if app_version != 'dev' %}<strong>v{{ app_version }}</strong>{% endif %}
       {% if build_version %}
       <a href="{{ build_commit_url }}" target="_blank" rel="noopener noreferrer"><code>{{ build_version }}</code></a>
       {% else %}

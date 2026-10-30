@@ -2628,6 +2628,12 @@ def _build_version() -> str | None:
     return git_sha[:12] if git_sha else None
 
 
+def app_version() -> str:
+    """The release version baked into the image via the Dockerfile's VERSION build
+    arg (env APP_VERSION), or "dev" for any non-release build."""
+    return os.environ.get("APP_VERSION", "").strip() or "dev"
+
+
 def _pending_migration_count() -> int | None:
     """Issue #380 — how far migration_state.highest_applied_migration trails
     LATEST_MIGRATION, i.e. how many migration files the deployed code expects
@@ -2809,6 +2815,7 @@ def _instance_health() -> dict:
 
     return {
         "build_version": _build_version(),
+        "version": app_version(),
         "db_size": db_size_row["size"] if db_size_row else None,
         "row_counts": {
             "library_entries": db.fetchone("SELECT COUNT(*) AS n FROM library_entries")["n"],
@@ -5649,6 +5656,7 @@ def settings_page(
             "language_labels": i18n.LOCALE_LABELS,
             "last_synced": last_synced,
             "build_version": build_version,
+            "app_version": app_version(),
             "build_commit_url": f"{GITHUB_REPO_URL}/commit/{build_version}" if build_version else None,
             "library_health": library_health,
             "account": {
