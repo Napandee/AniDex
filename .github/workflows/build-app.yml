@@ -1,7 +1,7 @@
 name: Build anidex
 
-# Builds and pushes ghcr.io/<owner>/anidex:latest. There is no deploy job: the
-# maintainer's cluster runs image automation that picks up the new digest.
+# Builds and pushes ghcr.io/<owner>/anidex:<sha> only. :latest and the semver
+# tags move only in release.yml, so merging to main does not deploy anything.
 
 on:
   push:
@@ -47,7 +47,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: ghcr.io/${{ env.OWNER }}/anidex:latest
+          tags: ghcr.io/${{ env.OWNER }}/anidex:${{ github.sha }}
           build-args: |
             GIT_SHA=${{ github.sha }}
 

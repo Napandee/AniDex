@@ -1,0 +1,124 @@
+name: Release
+
+# Deliberate release: computes the next semver from the v* tags, builds once,
+# scans with Trivy (fails on fixable HIGH/CRITICAL), pushes the semver image
+# tags, tags the commit and creates the GitHub release. This is the only path
+# that moves :latest (build-app.yml pushes :<sha> only).
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        required: true
+        options: [patch, minor, major]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      digest: ${{ steps.push.outputs.digest }}
+
+    steps:
+      - name: Refuse unless running on main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases run from main only (got ${GITHUB_REF})"
+          exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          git fetch --tags --force origin
+          version=$(python3 scripts/release/next_version.py "$BUMP")
+          {
+            echo "version=${version}"
+            echo "minor=${version%.*}"
+            echo "major=${version%%.*}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing v${version}"
+
+      - name: Refuse if the tag already exists on the remote
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists on the remote"
+            exit 1
+          fi
+
+      - name: Set lowercase owner
+        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build (load for scanning)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          push: false
+          tags: anidex:scan
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Trivy scan (fails on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: anidex:scan
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      - name: Push release image
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ghcr.io/${{ env.OWNER }}/anidex:${{ steps.version.outputs.version }}
+            ghcr.io/${{ env.OWNER }}/anidex:${{ steps.version.outputs.minor }}
+            ghcr.io/${{ env.OWNER }}/anidex:${{ steps.version.outputs.major }}
+            ghcr.io/${{ env.OWNER }}/anidex:latest
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Tag and create the GitHub release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag "v${VERSION}"
+          git push origin "refs/tags/v${VERSION}"
+          gh release create "v${VERSION}" --generate-notes --title "v${VERSION}" --verify-tag
