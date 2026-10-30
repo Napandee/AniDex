@@ -1,0 +1,116 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const SRC = fs.readFileSync(path.join(here, "../../demo/shim/demo-shim.js"), "utf8");
+
+const FIXTURES = {
+  "api/library?status=WATCHING": { status: 200, body: { items: ["a"] } },
+  "api/library": { status: 200, body: { items: [] } },
+};
+
+// Minimal DOM: enough for the banner and the click handler.
+function makeDocument() {
+  const all = [];
+  const listeners = {};
+  const body = {
+    children: [],
+    insertBefore(el) { this.children.unshift(el); all.push(el); },
+    prepend(el) { this.insertBefore(el); },
+    appendChild(el) { this.children.push(el); all.push(el); },
+  };
+  return {
+    body,
+    readyState: "complete",
+    createElement(tag) { return { tag, id: "", style: {}, textContent: "" }; },
+    getElementById(id) { return all.find((e) => e.id === id) || null; },
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    listeners,
+  };
+}
+
+function load({ fixtures = FIXTURES, base = "/AniDex/", times = 1 } = {}) {
+  const realCalls = [];
+  const document = makeDocument();
+  const sandbox = {
+    Response, URL, Request, JSON, Promise, Object,
+    document,
+    location: { href: "https://example.github.io/AniDex/library/", assign() {} },
+    fetch() { realCalls.push(arguments); throw new Error("demo must never reach a real server"); },
+  };
+  sandbox.window = sandbox;
+  sandbox.ANIDEX_DEMO = { base, fixtures };
+  vm.createContext(sandbox);
+  for (let i = 0; i < times; i++) vm.runInContext(SRC, sandbox);
+  return { sandbox, document, realCalls };
+}
+
+test("known GET returns fixture status and body", async () => {
+  const { sandbox } = load();
+  const r = await sandbox.window.fetch("/AniDex/api/library");
+  assert.ok(r instanceof Response);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("content-type"), /application\/json/);
+  assert.deepEqual(await r.json(), { items: [] });
+});
+
+test("GET key includes query string", async () => {
+  const { sandbox } = load();
+  const a = await sandbox.window.fetch("/AniDex/api/library?status=WATCHING");
+  assert.deepEqual(await a.json(), { items: ["a"] });
+  const b = await sandbox.window.fetch("api/library?status=WATCHING");
+  assert.deepEqual(await b.json(), { items: ["a"] });
+  const c = await sandbox.window.fetch(new Request("https://example.github.io/AniDex/api/library?status=WATCHING"));
+  assert.deepEqual(await c.json(), { items: ["a"] });
+  const d = await sandbox.window.fetch("/AniDex/api/library?status=DROPPED");
+  assert.equal(d.status, 404);
+});
+
+test("unknown GET resolves to 404 response, not a throw", async () => {
+  const { sandbox, realCalls } = load();
+  const r = await sandbox.window.fetch("/AniDex/api/nope");
+  assert.equal(r.status, 404);
+  assert.deepEqual(await r.json(), { detail: "Not available in the demo" });
+  assert.equal(realCalls.length, 0);
+});
+
+test("POST/PUT/PATCH/DELETE return ok nothing-saved", async () => {
+  const { sandbox, realCalls } = load();
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    const r = await sandbox.window.fetch("/AniDex/api/library", { method });
+    assert.equal(r.status, 200, method);
+    assert.deepEqual(await r.json(), { ok: true, detail: "Demo: nothing is saved" });
+  }
+  const viaRequest = await sandbox.window.fetch(
+    new Request("https://example.github.io/AniDex/api/x", { method: "POST", body: "{}" }));
+  assert.deepEqual(await viaRequest.json(), { ok: true, detail: "Demo: nothing is saved" });
+  assert.equal(realCalls.length, 0);
+});
+
+test("non-/api requests pass to real fetch", () => {
+  const { sandbox, realCalls } = load();
+  assert.throws(() => sandbox.window.fetch("/AniDex/static/app.css"), /demo must never reach a real server/);
+  assert.equal(realCalls.length, 1);
+});
+
+test("banner is inserted once", () => {
+  const { document } = load({ times: 2 });
+  const banners = document.body.children.filter((e) => e.textContent === "Demo — made-up data, nothing is saved");
+  assert.equal(banners.length, 1);
+});
+
+test("click on data-demo-missing link goes to not-in-demo.html", () => {
+  const { document, sandbox } = load();
+  let prevented = false;
+  const link = { getAttribute: (n) => (n === "data-demo-missing" ? "" : null), hasAttribute: (n) => n === "data-demo-missing" };
+  const target = { closest: (sel) => (sel.includes("data-demo-missing") ? link : null) };
+  let assigned;
+  sandbox.location.assign = (u) => { assigned = u; };
+  for (const fn of document.listeners.click) fn({ target, preventDefault() { prevented = true; } });
+  assert.ok(prevented);
+  assert.equal(assigned, "/AniDex/not-in-demo.html");
+});
