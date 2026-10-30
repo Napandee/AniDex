@@ -9,9 +9,9 @@ name: Demo
 # release.yml, which publishes the same `demo-site` artifact to Pages. When
 # called, it builds the caller's commit (github.sha), which is the released one.
 #
-# Engine: ubuntu-latest ships both podman and docker; ENGINE=docker pins docker,
-# and DEMO_COMPOSE=0 makes build.sh use the plain-command stack, the same path a
-# local podman run takes. Playwright browsers come from the pinned image.
+# Engine: ubuntu-latest ships both podman and docker; ENGINE=docker pins docker.
+# build.sh runs the same plain-command sealed stack with either engine.
+# Playwright browsers come from the pinned image.
 
 on:
   pull_request:
@@ -38,7 +38,6 @@ jobs:
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       ENGINE: docker
-      DEMO_COMPOSE: "0"
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

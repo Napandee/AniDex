@@ -3,8 +3,8 @@
 
 demo/covers/<anime_id>.svg: the title's initials on a colour picked from a hash of
 the id. Deterministic (same seed, same bytes), no fonts or images from anywhere
-else. The demo serves them at /static/demo-covers/<id>.svg (demo/compose.yml
-mounts this folder there).
+else. The demo serves them at /static/demo-covers/<id>.svg (demo/build.sh's
+record stack mounts this folder there).
 
     python3 demo/make_covers.py [seed.sql] [out_dir]
 """

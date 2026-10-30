@@ -1,7 +1,7 @@
 // Records the AniDex static demo from the real app (record, then replay).
 //
-// Runs inside the sealed record stack (demo/compose.yml or demo/build.sh's podman
-// fallback): the app, its Postgres and this recorder share a network with no
+// Runs inside the sealed record stack (demo/build.sh, podman or docker):
+// the app, its Postgres and this recorder share a network with no
 // egress. It registers the demo user (first account: admin), applies demo/seed.sql
 // bound to that user, logs in, visits every page in demo/demo.config.json, and
 // writes a static site:

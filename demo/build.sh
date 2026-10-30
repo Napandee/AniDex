@@ -6,16 +6,16 @@
 #   3. image    the app image from the repo Dockerfile, plus app and Postgres
 #               images with libfaketime, so the stack's clock starts at the
 #               pinned "now" in demo/demo.config.json (same data every rebuild)
-#   4. record   the sealed stack in demo/compose.yml: db + app + recorder on an
-#               internal network with no egress; the recorder writes _site/
+#   4. record   the sealed stack: db + app + recorder containers on an internal
+#               network with no egress and no published port; the recorder
+#               writes _site/
 # Steps 1-3 need the network; step 4 has none. Everything runs in containers.
 #
 # Local runs gate themselves through the test chain's heavy.sh (one large slot);
-# where heavy.sh is absent (CI) this runs directly. Uses `<engine> compose` when the
-# engine has a compose provider, else the same stack with plain podman/docker
-# commands; DEMO_COMPOSE=0 forces the plain commands (CI sets it, so CI's docker
-# takes the same path as a local podman). Exits non-zero on any recorder error.
-# Logs: demo/.build/.
+# where heavy.sh is absent (CI) this runs directly. The stack is plain podman or
+# docker commands (ENGINE picks one; default podman if present): one definition of
+# the sealed stack, the same locally and on CI. Exits non-zero on any recorder
+# error. Logs: demo/.build/.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -64,51 +64,45 @@ printf '%s\n' "FROM $PG_IMAGE" \
   | $ENGINE build -q -t "$DB_FT_IMAGE" -f - "$LOGS" >/dev/null
 
 say "record (sealed network)"
+# One internal network: no container can reach anything outside it, and no port
+# is published. The app runs with every outbound integration off (ANILIST_MOCK=1,
+# ANIDEX_DISABLE_SCHEDULER=1); if it still calls out, the call fails here and the
+# recorder fails on any failed request.
 status=0
-if [ "${DEMO_COMPOSE:-}" != 0 ] && $ENGINE compose version >/dev/null 2>&1; then
-  export ANIDEX_DEMO_APP_IMAGE="$APP_FT_IMAGE" ANIDEX_DEMO_DB_IMAGE="$DB_FT_IMAGE" DEMO_FAKETIME
-  compose() { $ENGINE compose -f demo/compose.yml -p anidex-demo "$@"; }
-  compose down -v --remove-orphans >/dev/null 2>&1 || true
-  record compose up --no-build --abort-on-container-exit --exit-code-from recorder recorder
-  compose logs anidex >"$LOGS/app.log" 2>&1 || true
-  compose down -v --remove-orphans >/dev/null 2>&1 || true
-else
-  # Same stack as demo/compose.yml, for engines without a compose provider.
-  P=anidex-demo-$$
-  NET=$P-net
-  DB_ENV="-e POSTGRES_DB=anidex_demo -e POSTGRES_USER=anidex_demo -e POSTGRES_PASSWORD=demo-only-not-a-secret"
-  DB_URL=postgresql://anidex_demo:demo-only-not-a-secret@db:5432/anidex_demo
-  FT_ENV="-e LD_PRELOAD=/usr/local/lib/faketime.so -e DONT_FAKE_MONOTONIC=1"
-  cleanup() {
-    $ENGINE logs "$P-app" >"$LOGS/app.log" 2>&1 || true
-    $ENGINE rm -f "$P-recorder" "$P-app" "$P-db" >/dev/null 2>&1 || true
-    $ENGINE network rm "$NET" >/dev/null 2>&1 || true
-  }
-  trap cleanup EXIT
-  trap 'cleanup; exit 130' INT TERM
-  $ENGINE network create --internal "$NET" >/dev/null
-  # shellcheck disable=SC2086
-  $ENGINE run -d --name "$P-db" --network "$NET" --network-alias db $DB_ENV $FT_ENV -e FAKETIME="$DEMO_FAKETIME" \
-    -v "$ROOT/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z" "$DB_FT_IMAGE" >/dev/null
-  i=0
-  # TCP, not the Unix socket: the entrypoint's temporary init server (socket only)
-  # answers while schema.sql is still loading; TCP opens only on the final server.
-  until $ENGINE exec "$P-db" pg_isready -q -h 127.0.0.1 -U anidex_demo -d anidex_demo 2>/dev/null; do
-    i=$((i + 1)); [ "$i" -gt 60 ] && { echo "ERROR db not ready"; exit 1; }; sleep 1
-  done
-  # shellcheck disable=SC2086
-  $ENGINE run -d --name "$P-app" --network "$NET" --network-alias anidex $FT_ENV -e FAKETIME="$DEMO_FAKETIME" \
-    -e DATABASE_URL="$DB_URL" \
-    -e SESSION_SECRET_KEY=demo-only-not-for-real-use \
-    -e SETTINGS_ENCRYPTION_KEY=8CgnHDlfBgM3RQ9L0M_tjLWCtET3Cv8YdauDtn0bkfc= \
-    -e TZ=UTC -e ANILIST_MOCK=1 -e ANIDEX_DISABLE_SCHEDULER=1 -e HEAVY_CORES="${HEAVY_CORES:-}" \
-    -v "$ROOT/demo/covers:/app/app/static/demo-covers:ro,z" \
-    "$APP_FT_IMAGE" sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} uvicorn app.main:app --host 0.0.0.0 --port 8888' >/dev/null
-  record $ENGINE run --rm --name "$P-recorder" --network "$NET" -w /work \
-    -e APP_URL=http://anidex:8888 -e DATABASE_URL="$DB_URL" -e OUT=/work/_site -e HEAVY_CORES="${HEAVY_CORES:-}" \
-    -v "$ROOT:/work:z" "$PW_IMAGE" \
-    sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} node demo/record.mjs'
-fi
+P=anidex-demo-$$
+NET=$P-net
+DB_ENV="-e POSTGRES_DB=anidex_demo -e POSTGRES_USER=anidex_demo -e POSTGRES_PASSWORD=demo-only-not-a-secret"
+DB_URL=postgresql://anidex_demo:demo-only-not-a-secret@db:5432/anidex_demo
+FT_ENV="-e LD_PRELOAD=/usr/local/lib/faketime.so -e DONT_FAKE_MONOTONIC=1"
+cleanup() {
+  $ENGINE logs "$P-app" >"$LOGS/app.log" 2>&1 || true
+  $ENGINE rm -f "$P-recorder" "$P-app" "$P-db" >/dev/null 2>&1 || true
+  $ENGINE network rm "$NET" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT TERM
+$ENGINE network create --internal "$NET" >/dev/null
+# shellcheck disable=SC2086
+$ENGINE run -d --name "$P-db" --network "$NET" --network-alias db $DB_ENV $FT_ENV -e FAKETIME="$DEMO_FAKETIME" \
+  -v "$ROOT/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z" "$DB_FT_IMAGE" >/dev/null
+i=0
+# TCP, not the Unix socket: the entrypoint's temporary init server (socket only)
+# answers while schema.sql is still loading; TCP opens only on the final server.
+until $ENGINE exec "$P-db" pg_isready -q -h 127.0.0.1 -U anidex_demo -d anidex_demo 2>/dev/null; do
+  i=$((i + 1)); [ "$i" -gt 60 ] && { echo "ERROR db not ready"; exit 1; }; sleep 1
+done
+# shellcheck disable=SC2086
+$ENGINE run -d --name "$P-app" --network "$NET" --network-alias anidex $FT_ENV -e FAKETIME="$DEMO_FAKETIME" \
+  -e DATABASE_URL="$DB_URL" \
+  -e SESSION_SECRET_KEY=demo-only-not-for-real-use \
+  -e SETTINGS_ENCRYPTION_KEY=8CgnHDlfBgM3RQ9L0M_tjLWCtET3Cv8YdauDtn0bkfc= \
+  -e TZ=UTC -e ANILIST_MOCK=1 -e ANIDEX_DISABLE_SCHEDULER=1 -e HEAVY_CORES="${HEAVY_CORES:-}" \
+  -v "$ROOT/demo/covers:/app/app/static/demo-covers:ro,z" \
+  "$APP_FT_IMAGE" sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} uvicorn app.main:app --host 0.0.0.0 --port 8888' >/dev/null
+record $ENGINE run --rm --name "$P-recorder" --network "$NET" -w /work \
+  -e APP_URL=http://anidex:8888 -e DATABASE_URL="$DB_URL" -e OUT=/work/_site -e HEAVY_CORES="${HEAVY_CORES:-}" \
+  -v "$ROOT:/work:z" "$PW_IMAGE" \
+  sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} node demo/record.mjs'
 
 if [ "$status" -ne 0 ] || grep -q '^ERROR' "$LOGS/record.log"; then
   echo "demo build FAILED (see $LOGS/record.log, $LOGS/app.log)" >&2

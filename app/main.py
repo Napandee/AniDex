@@ -1644,7 +1644,7 @@ def _clear_totp_setup_state(user_id: int) -> None:
 
 def _scheduler_disabled() -> bool:
     """ANIDEX_DISABLE_SCHEDULER=1 skips every scheduled job (sync, recommender,
-    backups, notifications). Only the demo record stack (demo/compose.yml) sets it:
+    backups, notifications). Only the demo record stack (demo/build.sh) sets it:
     its network has no egress, so the jobs could only fail there. Read at call
     time, not import time, so tests can toggle it. Default off."""
     return os.environ.get("ANIDEX_DISABLE_SCHEDULER") == "1"
