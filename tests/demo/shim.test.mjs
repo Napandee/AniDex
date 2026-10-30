@@ -114,3 +114,29 @@ test("click on data-demo-missing link goes to not-in-demo.html", () => {
   assert.ok(prevented);
   assert.equal(assigned, "/AniDex/not-in-demo.html");
 });
+
+test("root-absolute /api GET (script.js call shape) is answered from fixtures", async () => {
+  const { sandbox, realCalls } = load();
+  const r = await sandbox.window.fetch("/api/library?status=WATCHING");
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { items: ["a"] });
+  assert.equal(realCalls.length, 0);
+});
+
+test("root-absolute unknown /api GET is 404 and never reaches real fetch", async () => {
+  const { sandbox, realCalls } = load();
+  const r = await sandbox.window.fetch("/api/nope");
+  assert.equal(r.status, 404);
+  assert.deepEqual(await r.json(), { detail: "Not available in the demo" });
+  assert.equal(realCalls.length, 0);
+});
+
+test("base without trailing slash still answers /api from fixtures", async () => {
+  const { sandbox, realCalls } = load({ base: "/AniDex" });
+  const r = await sandbox.window.fetch("/api/library");
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { items: [] });
+  const r2 = await sandbox.window.fetch("/AniDex/api/library");
+  assert.equal(r2.status, 200);
+  assert.equal(realCalls.length, 0);
+});

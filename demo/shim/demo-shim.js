@@ -6,6 +6,7 @@
   var win = typeof window !== "undefined" ? window : globalThis;
   var cfg = win.ANIDEX_DEMO || {};
   var base = cfg.base || "/";
+  if (base.charAt(base.length - 1) !== "/") base += "/"; // "/AniDex" must not prefix-match "/AniDexfoo/"
   var fixtures = cfg.fixtures || {};
   var BANNER_ID = "anidex-demo-banner";
   var BANNER_TEXT = "Demo — made-up data, nothing is saved";
@@ -19,7 +20,7 @@
 
   // Key = path relative to base, plus query string verbatim.
   function keyFor(rawUrl) {
-    // Bare relative URLs ("api/x") are taken relative to base, not the page.
+    // Bare relative URLs ("api/x") resolve against base ON PURPOSE (unlike browsers): keeps /api calls fail-closed.
     var rel = !/^([a-z][a-z0-9+.-]*:|\/)/i.test(rawUrl);
     var u = new URL(rawUrl, rel ? new URL(base, win.location.href).href : win.location.href);
     var p = u.pathname;
