@@ -3,6 +3,7 @@
 # Runs a demo browser job in the Playwright image, with no network:
 #   demo/run.sh check [siteDir]                     site check (demo/check.mjs)
 #   demo/run.sh audit [siteDir] [--update-baseline] layout audit (demo/audit.mjs)
+#   demo/run.sh capture [siteDir] [outDir]          release screenshots (demo/capture.mjs; outDir defaults to shots)
 #   demo/run.sh test                                node --test 'tests/demo/*.test.mjs'
 # siteDir defaults to _site (built by demo/build.sh, which also installs
 # demo/node_modules). Local runs gate themselves through the test chain's
@@ -29,8 +30,12 @@ case "$job" in
   check|audit)
     case "${1:-}" in ""|--*) set -- _site "$@" ;; esac
     set -- node "demo/$job.mjs" "$@" ;;
+  capture)
+    [ $# -ge 1 ] || set -- _site
+    [ $# -ge 2 ] || set -- "$1" shots
+    set -- node demo/capture.mjs "$@" ;;
   test) set -- node --test 'tests/demo/*.test.mjs' ;;
-  *) echo "usage: demo/run.sh check|audit|test [siteDir] [--update-baseline]" >&2; exit 2 ;;
+  *) echo "usage: demo/run.sh check|audit|capture|test [siteDir] [--update-baseline]" >&2; exit 2 ;;
 esac
 
 exec $ENGINE run --rm --network none -v "$ROOT:/work:z" -w /work \
