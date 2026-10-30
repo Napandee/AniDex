@@ -34,15 +34,26 @@
     win.__anidexDemoShim = true;
     var realFetch = win.fetch;
 
+    // A live response always arrives after the deferred app scripts have run; an
+    // instant answer to a fetch made while the page is still parsing would beat
+    // them (e.g. stats.html calling script.js's t() before it exists).
+    function answer(status, body) {
+      var d = win.document;
+      if (!d || d.readyState !== "loading") return Promise.resolve(json(status, body));
+      return new Promise(function (resolve) {
+        d.addEventListener("DOMContentLoaded", function () { resolve(json(status, body)); });
+      });
+    }
+
     win.fetch = function (input, init) {
       var rawUrl = typeof input === "string" ? input : input && input.url !== undefined ? input.url : String(input);
       var method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
       var key = keyFor(rawUrl);
       if (key.indexOf("api/") !== 0) return realFetch.apply(win, arguments);
-      if (method !== "GET") return Promise.resolve(json(200, { ok: true, detail: "Demo: nothing is saved" }));
+      if (method !== "GET") return answer(200, { ok: true, detail: "Demo: nothing is saved" });
       var hit = Object.prototype.hasOwnProperty.call(fixtures, key) ? fixtures[key] : null;
-      if (hit) return Promise.resolve(json(hit.status, hit.body));
-      return Promise.resolve(json(404, { detail: "Not available in the demo" }));
+      if (hit) return answer(hit.status, hit.body);
+      return answer(404, { detail: "Not available in the demo" });
     };
 
     var doc = win.document;

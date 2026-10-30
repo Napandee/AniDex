@@ -140,3 +140,20 @@ test("base without trailing slash still answers /api from fixtures", async () =>
   assert.equal(r2.status, 200);
   assert.equal(realCalls.length, 0);
 });
+
+test("answers made while the page is still loading wait for DOMContentLoaded", async () => {
+  // Deferred app scripts (script.js defines t()) run before DOMContentLoaded; an
+  // inline script's fetch callback must not beat them, as it never does live.
+  const { sandbox, document } = load();
+  document.readyState = "loading";
+  let done = false;
+  const p = sandbox.window.fetch("/AniDex/api/library").then((r) => { done = true; return r; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(done, false);
+  document.readyState = "interactive";
+  for (const fn of document.listeners.DOMContentLoaded || []) fn();
+  const r = await p;
+  assert.equal(r.status, 200);
+  const nonGet = sandbox.window.fetch("/AniDex/api/library", { method: "POST" });
+  assert.equal((await nonGet).status, 200);
+});

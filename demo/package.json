@@ -1,0 +1,11 @@
+{
+  "name": "anidex-demo",
+  "private": true,
+  "description": "Records the AniDex static demo (demo/build.sh). Runs in mcr.microsoft.com/playwright:v1.64.1-noble.",
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "chart.js": "4.6.1",
+    "pg": "8.23.1",
+    "playwright": "1.64.1"
+  }
+}

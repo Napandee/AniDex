@@ -1642,12 +1642,23 @@ def _clear_totp_setup_state(user_id: int) -> None:
     _totp_setup_state.pop(user_id, None)
 
 
+def _scheduler_disabled() -> bool:
+    """ANIDEX_DISABLE_SCHEDULER=1 skips every scheduled job (sync, recommender,
+    backups, notifications). Only the demo record stack (demo/compose.yml) sets it:
+    its network has no egress, so the jobs could only fail there. Read at call
+    time, not import time, so tests can toggle it. Default off."""
+    return os.environ.get("ANIDEX_DISABLE_SCHEDULER") == "1"
+
+
 @app.on_event("startup")
 def startup() -> None:
-    _apply_schedule()
-    _scheduler.start()
+    if _scheduler_disabled():
+        log.info("APScheduler disabled by ANIDEX_DISABLE_SCHEDULER=1")
+    else:
+        _apply_schedule()
+        _scheduler.start()
+        log.info("APScheduler started")
     outbox.start_worker()
-    log.info("APScheduler started")
 
 
 @app.on_event("startup")
@@ -1663,7 +1674,8 @@ async def startup_mcp() -> None:
 @app.on_event("shutdown")
 def shutdown() -> None:
     outbox.stop_worker()
-    _scheduler.shutdown(wait=False)
+    if _scheduler.running:
+        _scheduler.shutdown(wait=False)
     db.close_pool()
     log.info("APScheduler stopped")
 
