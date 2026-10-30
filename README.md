@@ -1,6 +1,26 @@
+<div align="center">
+
+<img src="app/static/favicon.svg" alt="AniDex logo" width="96" height="96">
+
 # AniDex
 
 *Your anime tracker to watch them all.*
+
+A self-hosted anime tracker, built on AniList, with your own notes, tags and recommendations.
+
+[![CI](https://github.com/Napandee/AniDex/actions/workflows/pr-validate.yml/badge.svg)](https://github.com/Napandee/AniDex/actions/workflows/pr-validate.yml)
+[![Release](https://img.shields.io/github/v/release/Napandee/AniDex)](https://github.com/Napandee/AniDex/releases/latest)
+[![Live demo](https://img.shields.io/badge/live%20demo-online-brightgreen)](https://napandee.github.io/AniDex/)
+[![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
+![Status: stable](https://img.shields.io/badge/status-stable-brightgreen)
+
+[Live demo](https://napandee.github.io/AniDex/) · [Quick start](#quick-start) · [Features](#features) · [Docs](docs/user-guide/index.md)
+
+[![AniDex library view](https://github.com/Napandee/AniDex/releases/latest/download/anidex-hero.jpg)](https://napandee.github.io/AniDex/)
+
+**Try it before you install it:** the live demo is the real interface on made-up data. Nothing you do there is saved.
+
+</div>
 
 A self-hosted anime tracking, rating, and recommendation app built on top of AniList.
 
