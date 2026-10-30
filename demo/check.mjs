@@ -14,9 +14,11 @@ import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 import { startServer, siteBase, sitePages, pageUrl } from "./serve.mjs";
 
+// Fixed time zone and locale, so dates render the same on every machine.
+const SAME = { timezoneId: "UTC", locale: "en-US" };
 export const VIEWPORTS = {
-  desktop: { viewport: { width: 1440, height: 900 } },
-  phone: { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true },
+  desktop: { ...SAME, viewport: { width: 1440, height: 900 } },
+  phone: { ...SAME, viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true },
 };
 
 export function launch() {

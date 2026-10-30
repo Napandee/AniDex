@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "../../demo/serve.mjs";
-import { auditPage, compareBaseline, sortFindings, launch } from "../../demo/audit.mjs";
+import { auditPage, compareBaseline, sortFindings, toBaseline, launch } from "../../demo/audit.mjs";
 import { checkPage } from "../../demo/check.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +68,18 @@ test("a missing page is a page-load finding, not a crash", async () => {
 
 // ── Baseline ───────────────────────────────────────────────────────────────
 
+test("the real demo banner covers no fixed header control, at either viewport", async () => {
+  const site = await startServer(makeSite(), "/AniDex/");
+  try {
+    for (const vp of ["desktop", "phone"]) {
+      const found = await auditPage(browser, site.url + "header/", vp);
+      assert.deepEqual(found, [], `${vp}: ${JSON.stringify(found)}`);
+    }
+  } finally {
+    await site.close();
+  }
+});
+
 test("a finding in the baseline does not fail; a new one does", () => {
   const known = { page: "/", viewport: "phone", rule: "small-text", selector: "main > p.tiny" };
   const fresh = { page: "/queue", viewport: "desktop", rule: "overflow", selector: "div.wide" };
@@ -76,6 +88,18 @@ test("a finding in the baseline does not fail; a new one does", () => {
   assert.deepEqual(r.fresh.map((f) => f.page), ["/queue"]);
   assert.deepEqual(r.fixed, [gone]);
   assert.deepEqual(compareBaseline([known], [known]).fresh, []);
+});
+
+test("load failures are never baselined and always fail", () => {
+  const hard = [
+    { page: "/", viewport: "desktop", rule: "page-error", selector: "x is not defined" },
+    { page: "/", viewport: "desktop", rule: "failed-request", selector: "/AniDex/static/a.js" },
+    { page: "/q", viewport: "phone", rule: "page-load", selector: "html" },
+  ];
+  const soft = { page: "/", viewport: "phone", rule: "overflow", selector: "div.wide" };
+  assert.deepEqual(toBaseline([...hard, soft]), [soft]);
+  // Even hand-added to the baseline, they still count as new.
+  assert.equal(compareBaseline([...hard, soft], [...hard, soft]).fresh.length, 3);
 });
 
 test("sortFindings is stable and keeps only the baseline keys", () => {
@@ -111,6 +135,13 @@ function makeSite() {
   put("later/index.html",
     `<!DOCTYPE html><html><head><meta charset="utf-8">${head}</head><body>` +
     `<button onclick="fetch('/api/nope')">Open</button><script>fetch('/api/ok');</script></body></html>`);
+  // App-like header: icon buttons fixed at the top right, as AniDex's .account-fabs.
+  put("header/index.html",
+    `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${head}` +
+    `<style>body{margin:0;font:16px sans-serif} .fabs{position:fixed;top:1.1rem;right:1rem;z-index:100;display:flex;gap:.4rem}` +
+    `.fabs a{display:block;width:2rem;height:2rem;background:#ccc} nav{padding:1rem}</style></head>` +
+    `<body><nav><a href="#a">AniDex</a><div class="fabs"><a href="#s">S</a><a href="#o">O</a></div></nav>` +
+    `<p style="height:3000px">Content</p></body></html>`);
   put("broken/index.html",
     `<!DOCTYPE html><html><head><meta charset="utf-8">${head}<script src="/AniDex/static/missing.js"></script></head>` +
     `<body><script>undefinedFunction();</script></body></html>`);
@@ -144,9 +175,15 @@ test("server: base path, static assets, 404.html fallback, directory redirect", 
     const outside = await fetch(site.origin + "/static/style.css");
     assert.equal(outside.status, 404);
 
-    const escape = await fetch(site.origin + "/AniDex/%2e%2e/%2e%2e/etc/passwd");
-    assert.equal(escape.status, 404);
-    assert.doesNotMatch(await escape.text(), /root:/);
+    for (const bad of ["/AniDex/%2e%2e/%2e%2e/etc/passwd", "/AniDex/..%2f..%2f..%2fetc%2fpasswd"]) {
+      const escape = await fetch(site.origin + bad);
+      assert.equal(escape.status, 404, bad);
+      assert.doesNotMatch(await escape.text(), /root:/, bad);
+    }
+
+    const head = await fetch(site.origin + "/AniDex/static/style.css", { method: "HEAD" });
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), "");
   } finally {
     await site.close();
   }

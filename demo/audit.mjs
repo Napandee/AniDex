@@ -12,7 +12,8 @@
 //                      another element, so a tap there hits the other element
 //                      (under a fixed full-screen view, such as a dialog, is fine)
 // Findings already in demo/audit-baseline.json are reported but do not fail; any
-// other finding fails the run. Full-page screenshots go to audit-shots/.
+// other finding fails the run. page-load, page-error and failed-request are never
+// written to the baseline and always fail. Full-page screenshots go to audit-shots/.
 //
 //   node demo/audit.mjs <siteDir> [--update-baseline]   (local: demo/run.sh audit _site)
 
@@ -167,9 +168,20 @@ export function sortFindings(findings) {
   });
 }
 
-/** { fresh: findings not in the baseline, fixed: baseline entries not found }. */
+// A page that does not load cleanly is never accepted, baseline or not.
+const HARD = new Set(["page-load", "page-error", "failed-request"]);
+
+/** The baseline to write for <findings>: sorted, keys only, load failures left out. */
+export function toBaseline(findings) {
+  return sortFindings(findings.filter((f) => !HARD.has(f.rule)));
+}
+
+/**
+ * { fresh: findings that fail the run (not in the baseline, or a load failure),
+ *   fixed: baseline entries no longer found }.
+ */
 export function compareBaseline(findings, baseline) {
-  const known = new Set(baseline.map(key));
+  const known = new Set(baseline.filter((b) => !HARD.has(b.rule)).map(key));
   const now = new Set(findings.map(key));
   return {
     fresh: findings.filter((f) => !known.has(key(f))),
@@ -212,9 +224,11 @@ async function main(siteDir, update) {
     `${sortFindings(fresh).length} new, ${fixed.length} gone; screenshots in ${path.relative(process.cwd(), shots) || "."}`);
 
   if (update) {
-    fs.writeFileSync(BASELINE, JSON.stringify(sortFindings(findings), null, 1) + "\n");
+    fs.writeFileSync(BASELINE, JSON.stringify(toBaseline(findings), null, 1) + "\n");
     console.log(`baseline written: ${path.relative(process.cwd(), BASELINE)}`);
-    return 0;
+    const hard = findings.filter((f) => HARD.has(f.rule));
+    if (hard.length) console.log(`FAIL ${hard.length} load failures (page-load, page-error, failed-request) are never baselined`);
+    return hard.length ? 1 : 0;
   }
   return fresh.length ? 1 : 0;
 }

@@ -17,10 +17,15 @@ networks:
     internal: true
 
 services:
+  # Both images are the stock ones plus libfaketime (built by demo/build.sh): the
+  # clock starts at the pinned "now" in demo.config.json (DEMO_FAKETIME).
   db:
-    image: postgres:16-alpine
+    image: ${ANIDEX_DEMO_DB_IMAGE:-anidex-demo-db-faketime:local}
     networks: [demo]
     environment:
+      LD_PRELOAD: /usr/local/lib/faketime.so
+      DONT_FAKE_MONOTONIC: "1"
+      FAKETIME: ${DEMO_FAKETIME:?run through demo/build.sh}
       POSTGRES_DB: anidex_demo
       POSTGRES_USER: anidex_demo
       POSTGRES_PASSWORD: demo-only-not-a-secret
@@ -37,15 +42,15 @@ services:
       retries: 30
 
   anidex:
-    image: ${ANIDEX_DEMO_APP_IMAGE:-anidex-demo-app:local}
-    build:
-      context: ..
-      dockerfile: Dockerfile
+    image: ${ANIDEX_DEMO_APP_IMAGE:-anidex-demo-app-faketime:local}
     networks: [demo]
     depends_on:
       db:
         condition: service_healthy
     environment:
+      LD_PRELOAD: /usr/local/lib/faketime.so
+      DONT_FAKE_MONOTONIC: "1"
+      FAKETIME: ${DEMO_FAKETIME:?run through demo/build.sh}
       DATABASE_URL: postgresql://anidex_demo:demo-only-not-a-secret@db:5432/anidex_demo
       # Dev-only values, as in compose/dev.yml: the stack is thrown away after each run.
       SESSION_SECRET_KEY: demo-only-not-for-real-use

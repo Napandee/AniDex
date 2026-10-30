@@ -33,17 +33,17 @@ function makeDocument() {
   };
 }
 
-function load({ fixtures = FIXTURES, base = "/AniDex/", times = 1 } = {}) {
+function load({ fixtures = FIXTURES, base = "/AniDex/", times = 1, now } = {}) {
   const realCalls = [];
   const document = makeDocument();
   const sandbox = {
-    Response, URL, Request, JSON, Promise, Object,
+    Response, URL, Request, JSON, Promise, Object, Date,
     document,
     location: { href: "https://example.github.io/AniDex/library/", assign() {} },
     fetch() { realCalls.push(arguments); throw new Error("demo must never reach a real server"); },
   };
   sandbox.window = sandbox;
-  sandbox.ANIDEX_DEMO = { base, fixtures };
+  sandbox.ANIDEX_DEMO = now ? { base, fixtures, now } : { base, fixtures };
   vm.createContext(sandbox);
   for (let i = 0; i < times; i++) vm.runInContext(SRC, sandbox);
   return { sandbox, document, realCalls };
@@ -101,6 +101,33 @@ test("banner is inserted once", () => {
   const { document } = load({ times: 2 });
   const banners = document.body.children.filter((e) => e.textContent === "Demo — made-up data, nothing is saved");
   assert.equal(banners.length, 1);
+});
+
+test("banner takes space in normal flow: not sticky or fixed, no z-index", () => {
+  const { document } = load();
+  const b = document.body.children.find((e) => e.id === "anidex-demo-banner");
+  assert.ok(b);
+  assert.doesNotMatch(b.style.cssText, /position|z-index/);
+});
+
+test("with ANIDEX_DEMO.now the page's clock starts at the demo date", () => {
+  const { sandbox } = load({ now: "2026-10-15T12:00:00Z" });
+  const D = sandbox.window.Date;
+  const start = Date.parse("2026-10-15T12:00:00Z");
+  assert.ok(Math.abs(D.now() - start) < 5000, String(new Date(D.now())));
+  assert.ok(Math.abs(new D().getTime() - start) < 5000);
+  assert.equal(new D().getUTCFullYear(), 2026);
+  assert.ok(new D() instanceof Date);
+  assert.equal(new D("2020-01-02T00:00:00Z").toISOString(), "2020-01-02T00:00:00.000Z");
+  assert.equal(new D(2020, 0, 2).getFullYear(), 2020);
+  assert.equal(D.UTC(2020, 0, 1), Date.UTC(2020, 0, 1));
+  assert.equal(D.parse("2020-01-01T00:00:00Z"), Date.parse("2020-01-01T00:00:00Z"));
+  assert.match(D(), /2026/);
+});
+
+test("without ANIDEX_DEMO.now the clock is left alone", () => {
+  const { sandbox } = load();
+  assert.equal(sandbox.window.Date, Date);
 });
 
 test("click on data-demo-missing link goes to not-in-demo.html", () => {

@@ -68,12 +68,15 @@ export function pageUrl(page) {
 
 function handler(root, base) {
   const notFound = path.join(root, "404.html");
-  const send = (res, status, file, headers = {}) => {
-    res.writeHead(status, { "content-type": contentType(file), "cache-control": "no-store", ...headers });
-    fs.createReadStream(file).pipe(res);
+  const send = (req, res, status, file) => {
+    res.writeHead(status, { "content-type": contentType(file), "cache-control": "no-store" });
+    if (req.method === "HEAD") return res.end();
+    fs.createReadStream(file)
+      .on("error", () => res.destroy())
+      .pipe(res);
   };
-  const miss = (res) => {
-    if (fs.existsSync(notFound)) return send(res, 404, notFound);
+  const miss = (req, res) => {
+    if (fs.existsSync(notFound)) return send(req, res, 404, notFound);
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
     res.end("404 Not Found\n");
   };
@@ -86,21 +89,21 @@ function handler(root, base) {
     try {
       pathname = decodeURIComponent(new URL(req.url, "http://x").pathname);
     } catch {
-      return miss(res);
+      return miss(req, res);
     }
     if (pathname + "/" === base) {
       res.writeHead(301, { location: base });
       return res.end();
     }
-    if (!pathname.startsWith(base)) return miss(res);
+    if (!pathname.startsWith(base)) return miss(req, res);
     const rel = pathname.slice(base.length);
     const file = path.resolve(root, rel);
-    if (file !== root && !file.startsWith(root + path.sep)) return miss(res);
+    if (file !== root && !file.startsWith(root + path.sep)) return miss(req, res);
     let stat;
     try {
       stat = fs.statSync(file);
     } catch {
-      return miss(res);
+      return miss(req, res);
     }
     if (stat.isDirectory()) {
       if (!pathname.endsWith("/")) {
@@ -108,9 +111,9 @@ function handler(root, base) {
         return res.end();
       }
       const index = path.join(file, "index.html");
-      return fs.existsSync(index) ? send(res, 200, index) : miss(res);
+      return fs.existsSync(index) ? send(req, res, 200, index) : miss(req, res);
     }
-    return send(res, 200, file);
+    return send(req, res, 200, file);
   };
 }
 

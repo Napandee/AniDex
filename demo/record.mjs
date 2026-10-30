@@ -132,7 +132,7 @@ export function rewriteHtml(html, opts) {
   out = out.replace(/(["'(])\/static\//g, `$1${prefix}static/`);
 
   // Config + shim go first in <head>, before any app script runs.
-  const cfg = JSON.stringify({ base: opts.base, fixtures: opts.fixtures || {} }).replace(/</g, "\\u003c");
+  const cfg = JSON.stringify({ base: opts.base, fixtures: opts.fixtures || {}, ...(opts.now ? { now: opts.now } : {}) }).replace(/</g, "\\u003c");
   const inject =
     `<script>window.ANIDEX_DEMO = ${cfg};</script>` +
     `<script src="${prefix}demo-shim.js"></script>`;
@@ -216,7 +216,21 @@ async function main() {
   // The app's hostname is "anidex", not "app": .app is an HSTS-preloaded TLD, so
   // Chromium would force https on http://app:8888 and fail the TLS handshake.
   const browser = await chromium.launch();
-  const context = await browser.newContext({ serviceWorkers: "block" });
+  const context = await browser.newContext({ serviceWorkers: "block", timezoneId: "UTC", locale: "en-US" });
+  // The demo's "today" is pinned (config.now): build.sh starts the app and its
+  // database under libfaketime at that instant, and the browser uses it too, so a
+  // rebuild in another month records the same data and the same pages.
+  if (config.now) {
+    await context.clock.setFixedTime(new Date(config.now));
+    const db = new pg.Client({ connectionString: dbUrl });
+    await db.connect();
+    const { rows } = await db.query("SELECT current_date::text AS d");
+    await db.end();
+    const appDate = new Date((await fetch(appUrl + "/")).headers.get("date") || 0);
+    const want = config.now.slice(0, 10);
+    if (rows[0].d !== want) error(`database clock is ${rows[0].d}, not the pinned ${want}`);
+    if (appDate.toISOString().slice(0, 10) !== want) error(`app clock is ${appDate.toISOString()}, not the pinned ${want}`);
+  }
   // Third-party scripts are answered from pinned local copies (demo/package.json),
   // both while recording (no egress here) and in the published site.
   const vendor = config.vendor || {};
@@ -325,6 +339,7 @@ async function main() {
     missing: config.missing,
     ignoreQuery: config.ignoreQuery || [],
     fixtures: baseFixtures,
+    now: config.now,
     vendor: Object.fromEntries(Object.entries(vendor).map(([url, v]) => [url, v.to])),
   };
   for (const p of recorded) {

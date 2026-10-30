@@ -1,5 +1,6 @@
 {
   "base": "/AniDex/",
+  "now": "2026-10-15T12:00:00Z",
   "user": {
     "email": "demo@example.invalid",
     "password": "made-up-demo-password-1"

@@ -1,6 +1,8 @@
 /* AniDex demo shim: replays recorded /api/* responses; never calls the real
  * fetch for /api/*. Classic script. Expects window.ANIDEX_DEMO =
- * { base: "/AniDex/", fixtures: { "api/x?q=1": { status, body } } }. */
+ * { base: "/AniDex/", fixtures: { "api/x?q=1": { status, body } }, now: "<ISO>" }.
+ * With `now`, the page's clock starts at the date the demo was recorded at, so
+ * dates the page computes (and the /api queries built from them) match the data. */
 (function () {
   "use strict";
   var win = typeof window !== "undefined" ? window : globalThis;
@@ -29,9 +31,28 @@
     return p + u.search;
   }
 
+  // Date, but starting at <now> and ticking from there.
+  function pinClock(now) {
+    var RealDate = win.Date;
+    var offset = RealDate.parse(now) - RealDate.now();
+    if (isNaN(offset)) return;
+    function DemoDate() {
+      var a = arguments;
+      if (!(this instanceof DemoDate)) return new RealDate(RealDate.now() + offset).toString();
+      if (!a.length) return new RealDate(RealDate.now() + offset);
+      return new (Function.prototype.bind.apply(RealDate, [null].concat(Array.prototype.slice.call(a))))();
+    }
+    DemoDate.prototype = RealDate.prototype;
+    DemoDate.now = function () { return RealDate.now() + offset; };
+    DemoDate.parse = RealDate.parse;
+    DemoDate.UTC = RealDate.UTC;
+    win.Date = DemoDate;
+  }
+
   function install() {
     if (win.__anidexDemoShim) return;
     win.__anidexDemoShim = true;
+    if (cfg.now) pinClock(cfg.now);
     var realFetch = win.fetch;
 
     // A live response always arrives after the deferred app scripts have run; an
@@ -73,11 +94,45 @@
       b.id = BANNER_ID;
       b.setAttribute && b.setAttribute("role", "status");
       b.textContent = BANNER_TEXT;
-      b.style.cssText = "position:sticky;top:0;z-index:2147483647;background:#fde68a;" +
-        "color:#1f2937;text-align:center;font:600 14px/1.4 system-ui,sans-serif;padding:6px 12px";
+      // In normal flow at the top of the page: it pushes the page down and covers
+      // nothing. Elements the page fixes at the top are moved below it (makeRoom).
+      b.style.cssText = "background:#fde68a;color:#1f2937;text-align:center;" +
+        "font:600 14px/1.4 system-ui,sans-serif;padding:6px 12px";
       if (doc.body.insertBefore && doc.body.firstChild !== undefined) doc.body.insertBefore(b, doc.body.firstChild);
       else doc.body.insertBefore(b);
+      makeRoom(b);
     }
+
+    // Fixed elements anchored at the top of the screen (a header's icon buttons)
+    // would sit over the banner: shift them down by the part of the banner still
+    // on screen. Full-height fixed views (dialogs, full-screen pages) are left as
+    // they are; they cover the banner instead.
+    function makeRoom(b) {
+      if (!win.getComputedStyle || !doc.body.getElementsByTagName || !win.addEventListener) return;
+      var moved = [];
+      function update() {
+        var off = Math.max(0, (b.offsetHeight || 0) - (win.scrollY || 0));
+        for (var i = 0; i < moved.length; i++) moved[i].style.translate = off ? "0 " + off + "px" : "";
+      }
+      function measure() {
+        for (var i = 0; i < moved.length; i++) moved[i].style.translate = "";
+        moved = [];
+        var h = b.offsetHeight || 0, vh = win.innerHeight || 0;
+        var all = doc.body.getElementsByTagName("*");
+        for (var j = 0; j < all.length; j++) {
+          var e = all[j];
+          if (e === b || win.getComputedStyle(e).position !== "fixed") continue;
+          var r = e.getBoundingClientRect();
+          if (r.height > 0 && r.top < h && r.height < vh / 2) moved.push(e);
+        }
+        update();
+      }
+      if (doc.readyState === "complete") measure();
+      else win.addEventListener("load", measure);
+      win.addEventListener("resize", measure);
+      win.addEventListener("scroll", update, { passive: true });
+    }
+
     if (doc.body) banner();
     else doc.addEventListener("DOMContentLoaded", banner);
   }

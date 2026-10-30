@@ -94,6 +94,9 @@ test("injects ANIDEX_DEMO before the shim, both before the app script", () => {
   const parsed = JSON.parse(m[1]);
   assert.equal(parsed.base, "/AniDex/");
   assert.deepEqual(parsed.fixtures["api/sync/status"].body, { running: false });
+  assert.equal(parsed.now, undefined);
+  const pinned = JSON.parse(rewriteHtml(PAGE, { ...OPTS, now: "2026-10-15T12:00:00Z" }).match(/window\.ANIDEX_DEMO = (.*?);<\/script>/s)[1]);
+  assert.equal(pinned.now, "2026-10-15T12:00:00Z");
 });
 
 test("forms go to the not-in-demo page", () => {
