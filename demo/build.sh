@@ -66,18 +66,18 @@ else
     $ENGINE rm -f "$P-recorder" "$P-app" "$P-db" >/dev/null 2>&1 || true
     $ENGINE network rm "$NET" >/dev/null 2>&1 || true
   }
-  trap cleanup EXIT INT TERM
+  trap cleanup EXIT
+  trap 'cleanup; exit 130' INT TERM
   $ENGINE network create --internal "$NET" >/dev/null
   # shellcheck disable=SC2086
   $ENGINE run -d --name "$P-db" --network "$NET" --network-alias db $DB_ENV \
     -v "$ROOT/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z" "$PG_IMAGE" >/dev/null
   i=0
-  until $ENGINE exec "$P-db" pg_isready -q -U anidex_demo -d anidex_demo 2>/dev/null; do
+  # TCP, not the Unix socket: the entrypoint's temporary init server (socket only)
+  # answers while schema.sql is still loading; TCP opens only on the final server.
+  until $ENGINE exec "$P-db" pg_isready -q -h 127.0.0.1 -U anidex_demo -d anidex_demo 2>/dev/null; do
     i=$((i + 1)); [ "$i" -gt 60 ] && { echo "ERROR db not ready"; exit 1; }; sleep 1
   done
-  # initdb restarts the server once after loading schema.sql; wait for the final one.
-  sleep 2
-  until $ENGINE exec "$P-db" pg_isready -q -U anidex_demo -d anidex_demo 2>/dev/null; do sleep 1; done
   $ENGINE run -d --name "$P-app" --network "$NET" --network-alias anidex \
     -e DATABASE_URL="$DB_URL" \
     -e SESSION_SECRET_KEY=demo-only-not-for-real-use \

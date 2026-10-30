@@ -29,7 +29,9 @@ services:
       # same as compose/dev.yml and pr-validate.yml.
       - ../schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro,z
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U anidex_demo -d anidex_demo"]
+      # TCP: the init-time server listens on the Unix socket only, so this
+      # passes only once schema.sql has loaded and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U anidex_demo -d anidex_demo"]
       interval: 2s
       timeout: 3s
       retries: 30

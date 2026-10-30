@@ -136,7 +136,11 @@ export function rewriteHtml(html, opts) {
   const inject =
     `<script>window.ANIDEX_DEMO = ${cfg};</script>` +
     `<script src="${prefix}demo-shim.js"></script>`;
-  out = out.replace(/<head\b[^>]*>/i, (h) => h + inject);
+  // The config is large; keep <meta charset> ahead of it, inside the browser's
+  // 1024-byte charset prescan window.
+  const charset = /<meta\s+charset=["']?[^"'\s>]+["']?\s*\/?>/i;
+  if (charset.test(out)) out = out.replace(charset, (m) => m + inject);
+  else out = out.replace(/<head\b[^>]*>/i, (h) => h + '<meta charset="utf-8">' + inject);
   return out;
 }
 

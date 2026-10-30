@@ -149,3 +149,17 @@ test("third-party scripts are served from the demo; listed external links are mi
   assert.match(out, /<a href="\.\.\/not-in-demo\.html" data-demo-missing[^>]*>AniList</);
   assert.match(out, /<a href="https:\/\/example\.invalid\/ok">Other</);
 });
+
+test("charset meta stays inside the 1024-byte prescan window", () => {
+  const big = { "api/stats": { status: 200, body: { pad: "x".repeat(40000) } } };
+  const withCharset = '<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>AniDex</title>\n</head><body>é</body></html>';
+  const out = rewriteHtml(withCharset, { ...OPTS, fixtures: big });
+  const at = out.search(/<meta charset=/i);
+  assert.ok(at >= 0 && Buffer.byteLength(out.slice(0, at)) < 1024, `charset at ${at}`);
+  assert.ok(out.indexOf("window.ANIDEX_DEMO") > at);
+  assert.equal(out.match(/<meta charset=/gi).length, 1);
+
+  const without = rewriteHtml("<html><head><title>x</title></head><body></body></html>", { ...OPTS, fixtures: big });
+  const at2 = without.search(/<meta charset="utf-8">/);
+  assert.ok(at2 >= 0 && at2 < without.indexOf("window.ANIDEX_DEMO") && at2 < 1024);
+});
