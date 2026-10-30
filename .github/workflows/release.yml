@@ -3,7 +3,10 @@ name: Release
 # Deliberate release: computes the next semver from the v* tags, builds once,
 # scans with Trivy (fails on fixable HIGH/CRITICAL), pushes the semver image
 # tags, tags the commit and creates the GitHub release. This is the only path
-# that moves :latest (build-app.yml pushes :<sha> only).
+# that moves :latest (build-app.yml pushes :<sha> only). After publish: `demo`
+# builds and checks the static demo of the same commit (demo.yml), `screenshots`
+# attaches anidex-{hero,desktop,mobile}.jpg to the release, and `pages` deploys
+# the demo to GitHub Pages (Pages source must be "GitHub Actions").
 
 on:
   workflow_dispatch:
@@ -122,3 +125,71 @@ jobs:
           git tag "v${VERSION}"
           git push origin "refs/tags/v${VERSION}"
           gh release create "v${VERSION}" --generate-notes --title "v${VERSION}" --verify-tag
+
+  # The static demo of the released commit: demo.yml builds it from github.sha
+  # (the commit publish just tagged), runs its tests, site check and layout audit,
+  # and uploads `demo-site`.
+  demo:
+    needs: publish
+    permissions:
+      contents: read
+    uses: ./.github/workflows/demo.yml
+
+  screenshots:
+    needs: [publish, demo]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      ENGINE: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download demo-site
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo-site
+          path: _site
+
+      # Same install as demo/build.sh: browsers come from the pinned image.
+      - name: Install demo dependencies
+        run: |
+          docker run --rm -v "$PWD/demo:/w" -w /w -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+            mcr.microsoft.com/playwright:v1.64.1-noble npm ci --no-audit --no-fund --loglevel=error
+
+      - name: Capture screenshots
+        run: sh demo/run.sh capture _site shots
+
+      - name: Attach screenshots to the release
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "v${VERSION}" shots/anidex-hero.jpg shots/anidex-desktop.jpg shots/anidex-mobile.jpg --clobber
+
+  pages:
+    needs: demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Download demo-site
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: demo-site
+          path: _site
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

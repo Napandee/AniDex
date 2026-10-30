@@ -13,7 +13,9 @@
 # Local runs gate themselves through the test chain's heavy.sh (one large slot);
 # where heavy.sh is absent (CI) this runs directly. Uses `<engine> compose` when the
 # engine has a compose provider, else the same stack with plain podman/docker
-# commands. Exits non-zero on any recorder error. Logs: demo/.build/.
+# commands; DEMO_COMPOSE=0 forces the plain commands (CI sets it, so CI's docker
+# takes the same path as a local podman). Exits non-zero on any recorder error.
+# Logs: demo/.build/.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -63,7 +65,7 @@ printf '%s\n' "FROM $PG_IMAGE" \
 
 say "record (sealed network)"
 status=0
-if $ENGINE compose version >/dev/null 2>&1; then
+if [ "${DEMO_COMPOSE:-}" != 0 ] && $ENGINE compose version >/dev/null 2>&1; then
   export ANIDEX_DEMO_APP_IMAGE="$APP_FT_IMAGE" ANIDEX_DEMO_DB_IMAGE="$DB_FT_IMAGE" DEMO_FAKETIME
   compose() { $ENGINE compose -f demo/compose.yml -p anidex-demo "$@"; }
   compose down -v --remove-orphans >/dev/null 2>&1 || true
