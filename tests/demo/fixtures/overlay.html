@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.4 sans-serif; }
+  #stage { position: fixed; inset: 0; z-index: 5; background: #222; color: #fff; }
+  #stage .zone { position: absolute; top: 0; bottom: 0; left: 0; width: 50%; }
+</style>
+</head>
+<body>
+<header><a href="#home">Home</a> <button type="button">Menu</button></header>
+<div id="stage"><div class="zone"></div><p>A full-screen view drawn over the page on purpose.</p></div>
+</body>
+</html>
