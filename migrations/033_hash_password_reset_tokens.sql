@@ -30,7 +30,7 @@
 -- additive. Back up first and get explicit confirmation before running this against
 -- production. Do not merge the PR containing this migration without immediately
 -- running it against the live database in the same coordinated step — this repo's
--- release pipeline deploys app code but does not auto-apply
+-- deploy pipeline auto-deploys app code on merge to main but does not auto-apply
 -- schema migrations, and issue #358's app-code half of this fix (reading/writing
 -- token_hash instead of token) will error on every password-reset call until this
 -- migration has run.
