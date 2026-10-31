@@ -8,9 +8,9 @@
 
 A self-hosted anime tracker, built on AniList, with your own notes, tags and recommendations.
 
-[![CI](https://github.com/Napandee/AniDex/actions/workflows/pr-validate.yml/badge.svg)](https://github.com/Napandee/AniDex/actions/workflows/pr-validate.yml)
+[![CI](https://github.com/Napandee/AniDex/actions/workflows/build-app.yml/badge.svg?branch=main)](https://github.com/Napandee/AniDex/actions/workflows/build-app.yml)
 [![Release](https://img.shields.io/github/v/release/Napandee/AniDex)](https://github.com/Napandee/AniDex/releases/latest)
-[![Live demo](https://img.shields.io/badge/live%20demo-online-brightgreen)](https://napandee.github.io/AniDex/)
+[![Live demo](https://img.shields.io/badge/live%20demo-GitHub%20Pages-blue)](https://napandee.github.io/AniDex/)
 [![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 ![Status: stable](https://img.shields.io/badge/status-stable-brightgreen)
 
@@ -462,10 +462,8 @@ config.
 
 ## CI/CD with GitHub Actions (optional)
 
-The included workflows build and push Docker images to GHCR on every push to `main`, and
-deploy to a self-hosted runner automatically — a post-deploy health check polls the new
-container, and automatically rolls back to the previous image digest if it doesn't come
-up healthy within about 60 seconds.
+Merging to `main` builds the app image and pushes it to GHCR as `ghcr.io/napandee/anidex:<sha>`
+(`build-app.yml`). Nothing is deployed by a merge.
 
 To use them in your own fork:
 
@@ -475,11 +473,27 @@ To use them in your own fork:
 3. Add a [self-hosted GitHub Actions runner](https://docs.github.com/en/actions/hosting-your-own-runners)
    on your server with the labels `self-hosted` and `unraid` (or edit the workflow to
    match your own labels)
-4. Push to `main` — the build job runs on GitHub's hosted runners, the deploy job runs on
-   yours
+4. Push to `main` — the build job runs on GitHub's hosted runners and pushes the `<sha>`
+   image
 
-The `GHCR_TOKEN` referenced in the deploy job should be a GitHub PAT with
-`read:packages` scope, stored in your `APPDATA_PATH/.env` file.
+The `GHCR_TOKEN` should be a GitHub PAT with `read:packages` scope, stored in your
+`APPDATA_PATH/.env` file, for pulling the image onto your host.
+
+### Releases
+
+A deploy happens only when someone runs the **Release** workflow (`release.yml`, started
+by hand with a `patch`, `minor` or `major` bump). It:
+
+1. computes the next `vX.Y.Z` from the existing tags;
+2. builds the image and gates it with Trivy (fixable HIGH/CRITICAL findings fail it);
+3. pushes `:X.Y.Z`, `:X.Y`, `:X` and `:latest`, with an SBOM and provenance;
+4. tags the commit and creates the GitHub release with generated notes;
+5. builds the fake-data demo, attaches `anidex-hero.jpg`, `anidex-desktop.jpg` and
+   `anidex-mobile.jpg` to the release, and publishes the demo to
+   [GitHub Pages](https://napandee.github.io/AniDex/).
+
+The maintainer's cluster picks up the released image through Flux image automation. The
+demo pipeline lives in `demo/` (`demo/build.sh`, `demo/run.sh test|check|audit|capture`).
 
 Two more pieces round out the pipeline:
 
@@ -499,9 +513,9 @@ this one's a GitHub Actions secret for repo maintainers).
 
 ## Upgrading
 
-Deploying new code is automatic (see CI/CD above) — applying a database schema change
-is not. `migrations/` holds numbered SQL files for upgrading an already-running
-instance; nothing in the deploy pipeline applies them, they're a deliberate manual
+New code reaches a running instance when a release is published (see
+[Releases](#releases)) — applying a database schema change is not automatic. `migrations/` holds numbered SQL files for upgrading an already-running
+instance; nothing in the release pipeline applies them, they're a deliberate manual
 step run against your live Postgres, and **Admin → Instance Health** warns you when
 one is pending. Full details: [docs/admin/upgrading.md](docs/admin/upgrading.md).
 
@@ -578,7 +592,7 @@ launch. Credentials stored in Settings are saved to the `settings` table in Post
 | Database | Postgres 16 |
 | Container | Docker |
 | Scheduler | APScheduler (built into the app container) |
-| CI/CD | GitHub Actions → GHCR → self-hosted runner |
+| CI/CD | GitHub Actions → GHCR; releases by hand |
 
 ## License
 

@@ -7,6 +7,8 @@ name: Release
 # builds and checks the static demo of the same commit (demo.yml), `screenshots`
 # attaches anidex-{hero,desktop,mobile}.jpg to the release, and `pages` deploys
 # the demo to GitHub Pages (Pages source must be "GitHub Actions").
+# Note: :latest moves before the tag and release are created; if those steps
+# fail, recovery is manual.
 
 on:
   workflow_dispatch:
@@ -43,6 +45,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      - name: Refuse if HEAD already carries a release tag
+        run: |
+          existing=$(git tag --points-at HEAD --list 'v*')
+          if [ -n "$existing" ]; then
+            echo "::error::HEAD already carries ${existing}; use 'Re-run failed jobs' on that release run instead of starting a new one"
+            exit 1
+          fi
 
       - name: Compute version
         id: version

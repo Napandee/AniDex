@@ -1470,7 +1470,7 @@ _IP_LOGIN_WINDOW_MINUTES = 15
 # cosmetic display use, not this).
 #
 # Issue #465 — also accepted as-is: being in-memory, this resets to empty on
-# every deploy (this repo deploys on every merge to main, i.e. often), so the
+# every deploy (deploys follow each release, so this resets whenever a new image is rolled out), so the
 # real behavior is "N attempts per IP per uptime-window," not "N attempts per
 # IP ever." A persistent counter would need its own Postgres table for a
 # defense-in-depth layer that already has a real backstop regardless of
