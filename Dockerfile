@@ -3,7 +3,11 @@ FROM python:3.14-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip is only needed to install requirements; removing it drops its vendored
+# urllib3, msgpack and pkg_resources copies, which Trivy flags (HIGH/CRITICAL)
+# and which nothing uses at runtime.
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y pip
 
 COPY app/ app/
 COPY scripts/ scripts/
