@@ -1470,7 +1470,7 @@ _IP_LOGIN_WINDOW_MINUTES = 15
 # cosmetic display use, not this).
 #
 # Issue #465 — also accepted as-is: being in-memory, this resets to empty on
-# every deploy (this repo deploys on every merge to main, i.e. often), so the
+# every deploy (deploys follow each release, so this resets whenever a new image is rolled out), so the
 # real behavior is "N attempts per IP per uptime-window," not "N attempts per
 # IP ever." A persistent counter would need its own Postgres table for a
 # defense-in-depth layer that already has a real backstop regardless of
@@ -1642,12 +1642,23 @@ def _clear_totp_setup_state(user_id: int) -> None:
     _totp_setup_state.pop(user_id, None)
 
 
+def _scheduler_disabled() -> bool:
+    """ANIDEX_DISABLE_SCHEDULER=1 skips every scheduled job (sync, recommender,
+    backups, notifications). Only the demo record stack (demo/build.sh) sets it:
+    its network has no egress, so the jobs could only fail there. Read at call
+    time, not import time, so tests can toggle it. Default off."""
+    return os.environ.get("ANIDEX_DISABLE_SCHEDULER") == "1"
+
+
 @app.on_event("startup")
 def startup() -> None:
-    _apply_schedule()
-    _scheduler.start()
+    if _scheduler_disabled():
+        log.info("APScheduler disabled by ANIDEX_DISABLE_SCHEDULER=1")
+    else:
+        _apply_schedule()
+        _scheduler.start()
+        log.info("APScheduler started")
     outbox.start_worker()
-    log.info("APScheduler started")
 
 
 @app.on_event("startup")
@@ -1663,7 +1674,8 @@ async def startup_mcp() -> None:
 @app.on_event("shutdown")
 def shutdown() -> None:
     outbox.stop_worker()
-    _scheduler.shutdown(wait=False)
+    if _scheduler.running:
+        _scheduler.shutdown(wait=False)
     db.close_pool()
     log.info("APScheduler stopped")
 
@@ -2628,6 +2640,12 @@ def _build_version() -> str | None:
     return git_sha[:12] if git_sha else None
 
 
+def app_version() -> str:
+    """The release version baked into the image via the Dockerfile's VERSION build
+    arg (env APP_VERSION), or "dev" for any non-release build."""
+    return os.environ.get("APP_VERSION", "").strip() or "dev"
+
+
 def _pending_migration_count() -> int | None:
     """Issue #380 — how far migration_state.highest_applied_migration trails
     LATEST_MIGRATION, i.e. how many migration files the deployed code expects
@@ -2809,6 +2827,7 @@ def _instance_health() -> dict:
 
     return {
         "build_version": _build_version(),
+        "version": app_version(),
         "db_size": db_size_row["size"] if db_size_row else None,
         "row_counts": {
             "library_entries": db.fetchone("SELECT COUNT(*) AS n FROM library_entries")["n"],
@@ -5649,6 +5668,7 @@ def settings_page(
             "language_labels": i18n.LOCALE_LABELS,
             "last_synced": last_synced,
             "build_version": build_version,
+            "app_version": app_version(),
             "build_commit_url": f"{GITHUB_REPO_URL}/commit/{build_version}" if build_version else None,
             "library_health": library_health,
             "account": {

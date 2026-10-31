@@ -18,6 +18,11 @@ COPY scripts/ scripts/
 ARG GIT_SHA=""
 ENV GIT_SHA=$GIT_SHA
 
+# Release version (e.g. 1.0.0), passed by the release workflow. Empty on non-release
+# builds, which the app reports as "dev".
+ARG VERSION=""
+ENV APP_VERSION=$VERSION
+
 # Issue #460 — run as an unprivileged user. The app is a stateless FastAPI service
 # backed by Postgres; its only runtime filesystem write is the Netflix CSV import's
 # tempfile.NamedTemporaryFile (default tempdir, i.e. /tmp) — no write access under

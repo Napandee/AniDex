@@ -1,24 +1,26 @@
 # Deploy
 
-How a merge reaches production. Host, runner and credential detail is
+How a release reaches production. Host, runner and credential detail is
 private — see `.claude/context/deploy.md`.
 
 GitHub Actions CI/CD pipeline:
-1. Push to `main` → hosted runner builds the app image and pushes to GHCR
-2. Self-hosted runner pulls the new image **by digest** (not `:latest`), stops the old
-   container, starts a new one. Deploys are serialized rather than run concurrently —
-   pulling by a floating tag let two overlapping deploys race and non-deterministically
-   deploy the older of two pushes; pinning by digest plus serializing closed that gap
-   (issue #110).
+1. Push to `main` → hosted runner builds the app image and pushes
+   `ghcr.io/napandee/anidex:<sha>` (`build-app.yml`). Nothing is deployed.
+2. Someone runs the **Release** workflow (`release.yml`, `workflow_dispatch`, bump
+   patch/minor/major). It computes the next `vX.Y.Z` from tags, Trivy-gates the image,
+   pushes `:X.Y.Z`, `:X.Y`, `:X` and `:latest` with SBOM + provenance, tags the commit,
+   creates the GitHub release with generated notes, then builds the fake-data demo,
+   attaches the screenshots to the release and publishes the demo to GitHub Pages.
+3. The maintainer's cluster (Flux image automation) picks up the released image.
 
 Image tag uses `github.repository_owner` so it works in any fork without config changes.
-The deploy job reads env and paths from `vars.APPDATA_PATH` (set as a GitHub repo variable).
 
-See `.github/workflows/build-app.yml` for the full pipeline definition.
+See `.github/workflows/build-app.yml` and `.github/workflows/release.yml` for the full
+pipeline definition.
 
 Pull requests (including Dependabot's) run `.github/workflows/pr-validate.yml` — a
 build-only check (no push, no deploy) that gates merges before the real pipeline ever
-touches production. It's grown beyond a plain build since a real 2026-08-13 outage
+builds an image. It's grown beyond a plain build since a real 2026-08-13 outage
 (issue #50) — a fastapi/starlette Dependabot bump passed CI and a manual smoke test that
 only hit a template-free route, then 500'd every real page in production. It now boots
 the built image against a real throwaway Postgres service container and smoke-tests both

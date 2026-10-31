@@ -1,0 +1,44 @@
+[
+ {
+  "page": "/admin",
+  "viewport": "phone",
+  "rule": "horizontal-scroll",
+  "selector": "html"
+ },
+ {
+  "page": "/admin",
+  "viewport": "phone",
+  "rule": "overflow",
+  "selector": "header > nav > div.account-fabs"
+ },
+ {
+  "page": "/stats",
+  "viewport": "desktop",
+  "rule": "small-text",
+  "selector": "div.heatmap-body > div.heatmap-daylabels > span"
+ },
+ {
+  "page": "/stats",
+  "viewport": "phone",
+  "rule": "small-text",
+  "selector": "div.heatmap-body > div.heatmap-daylabels > span"
+ },
+ {
+  "page": "/tags",
+  "viewport": "phone",
+  "rule": "horizontal-scroll",
+  "selector": "html"
+ },
+ {
+  "page": "/tags",
+  "viewport": "phone",
+  "rule": "overflow",
+  "selector": "header > nav > div.account-fabs"
+ },
+ {
+  "page": "/tags",
+  "viewport": "phone",
+  "rule": "overflow",
+  "selector": "main > table.tags-table"
+ }
+]

@@ -19,7 +19,9 @@ starting a feature that looks adjacent.
 
 ## Deploy
 
-Merge to `main` builds and ships automatically via a self-hosted runner. Public
+Merge to `main` only builds and pushes `ghcr.io/napandee/anidex:<sha>`; a deploy happens
+only when the **Release** workflow (`.github/workflows/release.yml`) is run by hand
+(README "Releases" section). Public
 detail in `docs/dev/deploy.md`; host, runner and credential detail is private —
 `.claude/context/deploy.md`.
 
@@ -89,9 +91,9 @@ detail in `docs/dev/deploy.md`; host, runner and credential detail is private �
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline (GitHub Actions workflows, image name) — changes
   here affect the live deployment path.
-- The deploy pipeline uses `docker pull` + `docker run` (no Compose) driven by the GitHub
-  Actions workflow. Compose files in `compose/` exist solely for container managers that
-  track containers via Compose; they are not the deployment mechanism.
+- Releases are driven by the `release.yml` workflow (README "Releases"); the maintainer's
+  cluster picks the image up via Flux image automation. Compose files in `compose/` exist solely for container managers that
+  track containers via Compose; they are not the release mechanism.
 
 ## Where the detail lives
 

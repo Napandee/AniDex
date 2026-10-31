@@ -31,3 +31,11 @@ compose/postgres-data/
 
 # Pre-migration pg_dump backups written by scripts/mark_migration_applied.sh (#469)
 migration_backups/
+
+# Static demo build output (demo/build.sh): generated, never committed
+_site/
+demo/node_modules/
+demo/covers/
+demo/.build/
+audit-shots/
+shots/

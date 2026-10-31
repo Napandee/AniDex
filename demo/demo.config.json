@@ -1,0 +1,50 @@
+{
+  "base": "/AniDex/",
+  "now": "2026-10-15T12:00:00Z",
+  "user": {
+    "email": "demo@example.invalid",
+    "password": "made-up-demo-password-1"
+  },
+  "seed": "demo/seed.sql",
+  "env": {
+    "ANILIST_MOCK": "1",
+    "ANIDEX_DISABLE_SCHEDULER": "1"
+  },
+  "pages": [
+    "/",
+    "/queue",
+    "/upcoming",
+    "/recommendations",
+    "/search",
+    "/streaming",
+    "/stats",
+    "/stats/wrapped",
+    "/tags",
+    "/settings",
+    "/admin",
+    "/anime/*/notes"
+  ],
+  "ignoreQuery": [
+    "back"
+  ],
+  "missing": [
+    "/auth/",
+    "/settings/link/",
+    "/settings/unlink/",
+    "/settings/2fa/",
+    "/settings/tokens/created",
+    "/settings/plex/",
+    "/admin/export-all",
+    "/admin/backups/",
+    "/api/export",
+    "/service-worker.js",
+    "/mcp",
+    "https://anilist.co/"
+  ],
+  "vendor": {
+    "https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js": {
+      "from": "node_modules/chart.js/dist/chart.umd.min.js",
+      "to": "static/vendor/chart.umd.min.js"
+    }
+  }
+}
