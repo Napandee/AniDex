@@ -192,6 +192,9 @@ async function waitForApp(appUrl, seconds) {
 }
 
 async function main() {
+  if (!process.env.DEMO_SHIM_DIR) {
+    throw new Error("DEMO_SHIM_DIR is not set: run demo/build.sh, which mounts the shared kit's shim");
+  }
   const config = JSON.parse(fs.readFileSync(path.join(HERE, "demo.config.json"), "utf8"));
   const appUrl = (process.env.APP_URL || "http://anidex:8888").replace(/\/+$/, "");
   const dbUrl = process.env.DATABASE_URL;
@@ -362,7 +365,7 @@ async function main() {
     fs.copyFileSync(path.join(HERE, v.from), path.join(outDir, v.to));
   }
   // The shim comes from the shared demo kit (Napandee/standard-workflows demo-kit/shim).
-  const shimDir = process.env.DEMO_SHIM_DIR || path.join(HERE, "shim");
+  const shimDir = process.env.DEMO_SHIM_DIR;
   fs.copyFileSync(path.join(shimDir, "demo-shim.js"), path.join(outDir, "demo-shim.js"));
   fs.copyFileSync(path.join(shimDir, "not-in-demo.html"), path.join(outDir, "not-in-demo.html"));
   write(path.join(outDir, ".nojekyll"), "");

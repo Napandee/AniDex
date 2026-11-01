@@ -22,11 +22,18 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # The shared demo kit (Napandee/standard-workflows demo-kit): the shim the
 # recorder injects comes from it. CI's shared workflows set DEMO_KIT to their
 # checkout; a local run fetches the kit at v1 into demo/.kit (gitignored).
+# v1 is a moving tag, so an existing clone is refreshed to it on every run.
 if [ -z "${DEMO_KIT:-}" ]; then
-  [ -d "$ROOT/demo/.kit/.git" ] || git clone -q --depth 1 --branch v1 https://github.com/Napandee/standard-workflows "$ROOT/demo/.kit"
-  DEMO_KIT=$ROOT/demo/.kit/demo-kit
+  KIT_REPO=$ROOT/demo/.kit
+  if [ -d "$KIT_REPO/.git" ]; then
+    git -C "$KIT_REPO" fetch -q --depth 1 origin tag v1 && git -C "$KIT_REPO" checkout -q --detach v1
+  else
+    git clone -q --depth 1 --branch v1 https://github.com/Napandee/standard-workflows "$KIT_REPO"
+  fi
+  DEMO_KIT=$KIT_REPO/demo-kit
 fi
 [ -f "$DEMO_KIT/shim/demo-shim.js" ] || { echo "demo kit not found at $DEMO_KIT" >&2; exit 1; }
+DEMO_KIT=$(cd "$DEMO_KIT" && pwd)  # absolute: it is handed to -v below
 cd "$ROOT"
 
 PW_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble

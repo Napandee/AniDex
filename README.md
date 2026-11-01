@@ -501,8 +501,16 @@ The release, demo and security-scan workflows are shared: `release.yml`, `demo.y
 `@v1`, which also holds the demo kit (shim, site check, layout audit, screenshots).
 AniDex keeps what is its own in `demo/`: the recorder (`record.mjs`), `build.sh`, the
 made-up seed, `demo.config.json` and the audit baseline. Build the demo locally with
-`demo/build.sh` (it fetches the kit at `v1` into `demo/.kit`), then check it with the
-kit: `demo/.kit/demo-kit/run.sh check --project .` (also `audit`, `capture`).
+`demo/build.sh` (it fetches the kit at `v1` into `demo/.kit`), install the kit's
+packages once in the Playwright image:
+
+```sh
+podman run --rm -v "$PWD/demo/.kit/demo-kit:/kit:z" -w /kit \
+  mcr.microsoft.com/playwright:v1.64.1-noble npm ci --no-audit --no-fund
+```
+
+then check it with the kit: `demo/.kit/demo-kit/run.sh check --project .` (also
+`audit`, `capture`).
 
 Two more pieces round out the pipeline:
 
