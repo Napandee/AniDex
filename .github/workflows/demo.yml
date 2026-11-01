@@ -1,18 +1,8 @@
 name: Demo
 
-# Builds the static demo (demo/build.sh -> _site/) and checks it: the demo's own
-# node tests, the Pages-like site check and the layout audit (both always run;
-# hard audit findings are never baselined). Uploads the site as `demo-site` and
-# the audit's full-page screenshots as `audit-shots`.
-#
-# Runs on pull requests that touch the app or the demo, and is called by
-# release.yml, which publishes the same `demo-site` artifact to Pages. When
-# called, it builds the caller's commit (github.sha), which is the released one.
-#
-# Engine: ubuntu-latest ships both podman and docker; ENGINE=docker pins docker.
-# build.sh runs the same plain-command sealed stack with either engine.
-# Playwright browsers come from the pinned image.
-
+# Builds the fake-data demo and runs its checks on pull requests, through the
+# shared workflow (Napandee/standard-workflows). The recorder, seed and config
+# are AniDex's own; the kit, check and audit are shared.
 on:
   pull_request:
     paths:
@@ -24,67 +14,18 @@ on:
       - Dockerfile
       - requirements*.txt
       - .github/workflows/demo.yml
-  workflow_call:
 
 permissions:
   contents: read
 
+concurrency:
+  group: demo-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   demo:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    concurrency:
-      group: demo-${{ github.event.pull_request.number || github.run_id }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    env:
-      ENGINE: docker
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Build the demo
-        id: build
-        run: sh demo/build.sh
-
-      - name: Demo tests
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: sh demo/run.sh test
-
-      - name: Site check
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: sh demo/run.sh check _site
-
-      - name: Layout audit
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: sh demo/run.sh audit _site
-
-      - name: Upload demo-site
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: demo-site
-          path: _site
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload audit-shots
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: audit-shots
-          path: audit-shots
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload build logs
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: demo-build-logs
-          path: demo/.build
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 14
+    permissions:
+      contents: read
+    uses: Napandee/standard-workflows/.github/workflows/demo.yml@v1
+    with:
+      test-command: docker run --rm -v "$PWD:/w" -w /w node:22-alpine node --test 'tests/demo/*.test.mjs'

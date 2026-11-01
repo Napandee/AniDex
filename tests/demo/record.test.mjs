@@ -84,18 +84,18 @@ test("removes manifest and service-worker registration", () => {
   assert.doesNotMatch(out, /serviceWorker\.register/);
 });
 
-test("injects ANIDEX_DEMO before the shim, both before the app script", () => {
+test("injects DEMO_SITE before the shim, both before the app script", () => {
   const out = rewriteHtml(PAGE, OPTS);
-  const cfg = out.indexOf("window.ANIDEX_DEMO");
+  const cfg = out.indexOf("window.DEMO_SITE");
   const shim = out.indexOf('src="demo-shim.js"');
   const app = out.indexOf("static/script.js");
   assert.ok(cfg > 0 && shim > cfg && app > shim, { cfg, shim, app });
-  const m = out.match(/window\.ANIDEX_DEMO = (.*?);<\/script>/s);
+  const m = out.match(/window\.DEMO_SITE = (.*?);<\/script>/s);
   const parsed = JSON.parse(m[1]);
   assert.equal(parsed.base, "/AniDex/");
   assert.deepEqual(parsed.fixtures["api/sync/status"].body, { running: false });
   assert.equal(parsed.now, undefined);
-  const pinned = JSON.parse(rewriteHtml(PAGE, { ...OPTS, now: "2026-10-15T12:00:00Z" }).match(/window\.ANIDEX_DEMO = (.*?);<\/script>/s)[1]);
+  const pinned = JSON.parse(rewriteHtml(PAGE, { ...OPTS, now: "2026-10-15T12:00:00Z" }).match(/window\.DEMO_SITE = (.*?);<\/script>/s)[1]);
   assert.equal(pinned.now, "2026-10-15T12:00:00Z");
 });
 
@@ -106,13 +106,13 @@ test("forms go to the not-in-demo page", () => {
 
 test("script-driven navigation is pinned under the base", () => {
   const out = rewriteHtml(PAGE, OPTS);
-  assert.match(out, /location\.href = window\.ANIDEX_DEMO\.base \+ '\?'/);
+  assert.match(out, /location\.href = window\.DEMO_SITE\.base \+ '\?'/);
   const js = rewriteScript(
     "if ('serviceWorker' in navigator) {\n  window.addEventListener('load', () => {\n    navigator.serviceWorker.register('/service-worker.js').catch(err => {});\n  });\n}\n" +
       "location.href = `/anime/${id}/notes`;\n",
   );
   assert.doesNotMatch(js, /serviceWorker\.register/);
-  assert.match(js, /location\.href = window\.ANIDEX_DEMO\.base \+ `anime\/\$\{id\}\/notes`/);
+  assert.match(js, /location\.href = window\.DEMO_SITE\.base \+ `anime\/\$\{id\}\/notes`/);
 });
 
 test("a redirected page is skipped, never saved as the target (Review Focus 2)", () => {
@@ -159,10 +159,10 @@ test("charset meta stays inside the 1024-byte prescan window", () => {
   const out = rewriteHtml(withCharset, { ...OPTS, fixtures: big });
   const at = out.search(/<meta charset=/i);
   assert.ok(at >= 0 && Buffer.byteLength(out.slice(0, at)) < 1024, `charset at ${at}`);
-  assert.ok(out.indexOf("window.ANIDEX_DEMO") > at);
+  assert.ok(out.indexOf("window.DEMO_SITE") > at);
   assert.equal(out.match(/<meta charset=/gi).length, 1);
 
   const without = rewriteHtml("<html><head><title>x</title></head><body></body></html>", { ...OPTS, fixtures: big });
   const at2 = without.search(/<meta charset="utf-8">/);
-  assert.ok(at2 >= 0 && at2 < without.indexOf("window.ANIDEX_DEMO") && at2 < 1024);
+  assert.ok(at2 >= 0 && at2 < without.indexOf("window.DEMO_SITE") && at2 < 1024);
 });

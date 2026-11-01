@@ -56,7 +56,7 @@ export function redirectSkip(requested, finalUrl) {
 export function rewriteScript(js) {
   return js
     .replace(/navigator\.serviceWorker\.register\(/g, "Promise.resolve(")
-    .replace(/location\.href\s*=\s*(['"`])\//g, "location.href = window.ANIDEX_DEMO.base + $1");
+    .replace(/location\.href\s*=\s*(['"`])\//g, "location.href = window.DEMO_SITE.base + $1");
 }
 
 function escapeAttr(s) {
@@ -134,7 +134,7 @@ export function rewriteHtml(html, opts) {
   // Config + shim go first in <head>, before any app script runs.
   const cfg = JSON.stringify({ base: opts.base, fixtures: opts.fixtures || {}, ...(opts.now ? { now: opts.now } : {}) }).replace(/</g, "\\u003c");
   const inject =
-    `<script>window.ANIDEX_DEMO = ${cfg};</script>` +
+    `<script>window.DEMO_SITE = ${cfg};</script>` +
     `<script src="${prefix}demo-shim.js"></script>`;
   // The config is large; keep <meta charset> ahead of it, inside the browser's
   // 1024-byte charset prescan window.
@@ -192,6 +192,9 @@ async function waitForApp(appUrl, seconds) {
 }
 
 async function main() {
+  if (!process.env.DEMO_SHIM_DIR) {
+    throw new Error("DEMO_SHIM_DIR is not set: run demo/build.sh, which mounts the shared kit's shim");
+  }
   const config = JSON.parse(fs.readFileSync(path.join(HERE, "demo.config.json"), "utf8"));
   const appUrl = (process.env.APP_URL || "http://anidex:8888").replace(/\/+$/, "");
   const dbUrl = process.env.DATABASE_URL;
@@ -361,8 +364,10 @@ async function main() {
     fs.mkdirSync(path.dirname(path.join(outDir, v.to)), { recursive: true });
     fs.copyFileSync(path.join(HERE, v.from), path.join(outDir, v.to));
   }
-  fs.copyFileSync(path.join(HERE, "shim", "demo-shim.js"), path.join(outDir, "demo-shim.js"));
-  fs.copyFileSync(path.join(HERE, "shim", "not-in-demo.html"), path.join(outDir, "not-in-demo.html"));
+  // The shim comes from the shared demo kit (Napandee/standard-workflows demo-kit/shim).
+  const shimDir = process.env.DEMO_SHIM_DIR;
+  fs.copyFileSync(path.join(shimDir, "demo-shim.js"), path.join(outDir, "demo-shim.js"));
+  fs.copyFileSync(path.join(shimDir, "not-in-demo.html"), path.join(outDir, "not-in-demo.html"));
   write(path.join(outDir, ".nojekyll"), "");
   write(path.join(outDir, "fixtures.json"), JSON.stringify(baseFixtures, null, 1) + "\n");
   write(

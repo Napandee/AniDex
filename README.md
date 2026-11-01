@@ -485,15 +485,32 @@ A deploy happens only when someone runs the **Release** workflow (`release.yml`,
 by hand with a `patch`, `minor` or `major` bump). It:
 
 1. computes the next `vX.Y.Z` from the existing tags;
-2. builds the image and gates it with Trivy (fixable HIGH/CRITICAL findings fail it);
-3. pushes `:X.Y.Z`, `:X.Y`, `:X` and `:latest`, with an SBOM and provenance;
+2. builds and pushes the image once, and gates it with Trivy (fixable HIGH/CRITICAL
+   findings fail it);
+3. tags that same scanned image `:X.Y.Z`, `:X.Y`, `:X` and `:latest`, with an SBOM and
+   provenance;
 4. tags the commit and creates the GitHub release with generated notes;
 5. builds the fake-data demo, attaches `anidex-hero.jpg`, `anidex-desktop.jpg` and
    `anidex-mobile.jpg` to the release, and publishes the demo to
    [GitHub Pages](https://napandee.github.io/AniDex/).
 
-The maintainer's cluster picks up the released image through Flux image automation. The
-demo pipeline lives in `demo/` (`demo/build.sh`, `demo/run.sh test|check|audit|capture`).
+The maintainer's cluster picks up the released image through Flux image automation.
+
+The release, demo and security-scan workflows are shared: `release.yml`, `demo.yml` and
+`security.yml` here only call [Napandee/standard-workflows](https://github.com/Napandee/standard-workflows)
+`@v1`, which also holds the demo kit (shim, site check, layout audit, screenshots).
+AniDex keeps what is its own in `demo/`: the recorder (`record.mjs`), `build.sh`, the
+made-up seed, `demo.config.json` and the audit baseline. Build the demo locally with
+`demo/build.sh` (it fetches the kit at `v1` into `demo/.kit`), install the kit's
+packages once in the Playwright image:
+
+```sh
+podman run --rm -v "$PWD/demo/.kit/demo-kit:/kit:z" -w /kit \
+  mcr.microsoft.com/playwright:v1.64.1-noble npm ci --no-audit --no-fund
+```
+
+then check it with the kit: `demo/.kit/demo-kit/run.sh check --project .` (also
+`audit`, `capture`).
 
 Two more pieces round out the pipeline:
 
