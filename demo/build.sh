@@ -19,6 +19,14 @@
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# The shared demo kit (Napandee/standard-workflows demo-kit): the shim the
+# recorder injects comes from it. CI's shared workflows set DEMO_KIT to their
+# checkout; a local run fetches the kit at v1 into demo/.kit (gitignored).
+if [ -z "${DEMO_KIT:-}" ]; then
+  [ -d "$ROOT/demo/.kit/.git" ] || git clone -q --depth 1 --branch v1 https://github.com/Napandee/standard-workflows "$ROOT/demo/.kit"
+  DEMO_KIT=$ROOT/demo/.kit/demo-kit
+fi
+[ -f "$DEMO_KIT/shim/demo-shim.js" ] || { echo "demo kit not found at $DEMO_KIT" >&2; exit 1; }
 cd "$ROOT"
 
 PW_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble
@@ -101,6 +109,7 @@ $ENGINE run -d --name "$P-app" --network "$NET" --network-alias anidex $FT_ENV -
   "$APP_FT_IMAGE" sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} uvicorn app.main:app --host 0.0.0.0 --port 8888' >/dev/null
 record $ENGINE run --rm --name "$P-recorder" --network "$NET" -w /work \
   -e APP_URL=http://anidex:8888 -e DATABASE_URL="$DB_URL" -e OUT=/work/_site -e HEAVY_CORES="${HEAVY_CORES:-}" \
+  -e DEMO_SHIM_DIR=/kit-shim -v "$DEMO_KIT/shim:/kit-shim:ro,z" \
   -v "$ROOT:/work:z" "$PW_IMAGE" \
   sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} node demo/record.mjs'
 

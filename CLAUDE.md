@@ -91,7 +91,9 @@ detail in `docs/dev/deploy.md`; host, runner and credential detail is private â€
   additive migrations (new nullable column, new table) are fine to just do.
 - Ask before changing the deploy pipeline (GitHub Actions workflows, image name) â€” changes
   here affect the live deployment path.
-- Releases are driven by the `release.yml` workflow (README "Releases"); the maintainer's
+- Releases are driven by the `release.yml` workflow, a thin caller of the shared
+  `Napandee/standard-workflows` `@v1` (README "Releases"); never copy the shared workflows
+  or demo kit back into this repo. The maintainer's
   cluster picks the image up via Flux image automation. Compose files in `compose/` exist solely for container managers that
   track containers via Compose; they are not the release mechanism.
 

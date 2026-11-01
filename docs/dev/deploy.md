@@ -15,7 +15,8 @@ GitHub Actions CI/CD pipeline:
 
 Image tag uses `github.repository_owner` so it works in any fork without config changes.
 
-See `.github/workflows/build-app.yml` and `.github/workflows/release.yml` for the full
+See `.github/workflows/build-app.yml`, and `.github/workflows/release.yml` (which calls the
+shared `Napandee/standard-workflows` release workflow `@v1`), for the full
 pipeline definition.
 
 Pull requests (including Dependabot's) run `.github/workflows/pr-validate.yml` — a
