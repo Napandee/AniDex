@@ -106,11 +106,14 @@ i=0
 until $ENGINE exec "$P-db" pg_isready -q -h 127.0.0.1 -U anidex_demo -d anidex_demo 2>/dev/null; do
   i=$((i + 1)); [ "$i" -gt 60 ] && { echo "ERROR db not ready"; exit 1; }; sleep 1
 done
+# A fresh Fernet key per build: the demo seed holds no encrypted values, and a
+# fixed key in git reads as a leaked secret to scanners (GitGuardian, 2026-11-02).
+DEMO_FERNET_KEY=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_')
 # shellcheck disable=SC2086
 $ENGINE run -d --name "$P-app" --network "$NET" --network-alias anidex $FT_ENV -e FAKETIME="$DEMO_FAKETIME" \
   -e DATABASE_URL="$DB_URL" \
   -e SESSION_SECRET_KEY=demo-only-not-for-real-use \
-  -e SETTINGS_ENCRYPTION_KEY=8CgnHDlfBgM3RQ9L0M_tjLWCtET3Cv8YdauDtn0bkfc= \
+  -e SETTINGS_ENCRYPTION_KEY="$DEMO_FERNET_KEY" \
   -e TZ=UTC -e ANILIST_MOCK=1 -e ANIDEX_DISABLE_SCHEDULER=1 -e HEAVY_CORES="${HEAVY_CORES:-}" \
   -v "$ROOT/demo/covers:/app/app/static/demo-covers:ro,z" \
   "$APP_FT_IMAGE" sh -c 'exec ${HEAVY_CORES:+taskset -c "$HEAVY_CORES"} uvicorn app.main:app --host 0.0.0.0 --port 8888' >/dev/null
