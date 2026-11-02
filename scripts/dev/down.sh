@@ -17,5 +17,5 @@ else
 fi
 
 $COMPOSE_BIN -p "$PROJECT" -f compose/dev.yml down -v
-rm -f .dev-stack-project
+rm -f .dev-stack-project .dev-stack-key
 echo "Stack down (project: ${PROJECT})."

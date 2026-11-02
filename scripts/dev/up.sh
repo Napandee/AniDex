@@ -14,6 +14,10 @@ COMPOSE_BIN="${COMPOSE_BIN:-podman compose}"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 PROJECT="anidex-dev-$(echo -n "$REPO_ROOT" | md5sum | cut -c1-10)"
 echo "$PROJECT" >.dev-stack-project
+# One Fernet key per stack, kept until down.sh: a new key on a later `up` would
+# make rows encrypted by the running stack unreadable.
+[ -s .dev-stack-key ] || head -c 32 /dev/urandom | base64 | tr '+/' '-_' >.dev-stack-key
+export ANIDEX_DEV_ENCRYPTION_KEY="$(cat .dev-stack-key)"
 
 $COMPOSE_BIN -p "$PROJECT" -f compose/dev.yml up --build -d
 
