@@ -14,7 +14,7 @@ A self-hosted anime tracker, built on AniList, with your own notes, tags and rec
 [![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 ![Status: stable](https://img.shields.io/badge/status-stable-brightgreen)
 
-[Live demo](https://napandee.github.io/AniDex/) · [Quick start](#quick-start) · [Features](#features) · [Docs](docs/user-guide/index.md)
+[Live demo](https://napandee.github.io/AniDex/) · [Quick start](#quick-start) · [Features](#features) · [Docs](https://github.com/Napandee/AniDex/wiki)
 
 [![AniDex library view](https://github.com/Napandee/AniDex/releases/latest/download/anidex-hero.jpg)](https://napandee.github.io/AniDex/)
 
@@ -96,7 +96,7 @@ This is for a quick try on Linux; use a real password in `.env` and the compose 
 
 ## Documentation
 
-- **[User guide](docs/user-guide/index.md)** - using AniDex.
+- **[User guide](https://github.com/Napandee/AniDex/wiki)** - using AniDex.
 - **Running it** - [install](docs/admin/install.md), [configuration](docs/admin/configuration.md), [sync setup](docs/admin/sync-setup.md), [integrations](docs/admin/integrations.md), [social login](docs/admin/social-login.md), [upgrading](docs/admin/upgrading.md), [shared Postgres](docs/admin/shared-postgres.md).
 - **[Contributing](CONTRIBUTING.md)** - how it's built, local development and releases.
 - **[Security](SECURITY.md)** - reporting a vulnerability.

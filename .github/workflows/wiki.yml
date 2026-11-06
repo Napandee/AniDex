@@ -1,0 +1,24 @@
+name: Wiki
+
+# The guide is written in docs/ and published to the Wiki tab from here, so it's reviewed
+# with the code. Edits made on the wiki itself get overwritten. See
+# Napandee/standard-workflows README.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/user-guide/**
+      - docs/admin/**
+      - docs/mcp.md
+      - docs/data-model.md
+      - .github/workflows/wiki.yml
+  workflow_dispatch:
+
+jobs:
+  wiki:
+    permissions:
+      contents: write
+    uses: Napandee/standard-workflows/.github/workflows/wiki.yml@v1
+    with:
+      home: docs/user-guide/index.md
+      sources: docs/user-guide docs/admin docs/mcp.md docs/data-model.md
