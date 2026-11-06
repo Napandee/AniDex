@@ -5,11 +5,12 @@ your AniList library. AniList stays the system of record for catalog data and li
 status — this app adds the personal layer AniList's own UI doesn't support well, and
 pulls it into one page.
 
-For installing and running an instance, see the main [README](../../README.md).
+For installing and running an instance, see the [install guide](../admin/install.md).
 This guide covers using an already-running instance.
 
 ## Pages
 
+- [All features](features.md) — the full list
 - [Library and search](library-and-search.md) — your AniList library, filters, quick-add
 - [Personal notes](personal-notes.md) — drop reasons, tags, mood, rewatch notes
 - [Collections](collections.md) — saved filter shortcuts
@@ -28,6 +29,7 @@ This guide covers using an already-running instance.
 - [MCP server](../mcp.md) — connecting an AI client (Claude Code, etc.) to your own library
 - [Data model](../data-model.md) — how your data is organized, for the curious
 - [Troubleshooting](troubleshooting.md) — sync failures, wrong matches, common fixes
+- [Installing](../admin/install.md), [configuration](../admin/configuration.md), [sync setup](../admin/sync-setup.md), [integrations](../admin/integrations.md), [social login](../admin/social-login.md) — for whoever runs your instance
 - [Upgrading and migrations](../admin/upgrading.md) — for whoever runs your instance
 - [Shared/external Postgres deployment](../admin/shared-postgres.md) — running AniDex
   against an existing Postgres instance instead of the bundled one

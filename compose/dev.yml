@@ -1,6 +1,6 @@
 # Local dev/test stack — NOT the deploy mechanism (see anidex.yml/anidex-postgres.yml
 # for that). This builds the app image from the local Dockerfile instead of pulling
-# from GHCR. See README's "Local development & pre-merge testing" section for the full
+# from GHCR. See CONTRIBUTING.md's "Local development & pre-merge testing" section for the full
 # workflow: up → register → seed → test in browser → down -v.
 #
 # Host ports are auto-assigned (not fixed) and this file is always run with a

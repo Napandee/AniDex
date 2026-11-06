@@ -51,7 +51,7 @@ psql "postgresql://anime_tracker:a-real-password@your-shared-host:5432/anime_tra
 ```
 
 or, if you'd rather not install `psql` locally, run it through a throwaway container the
-same way the main [Quick start](../../README.md#quick-start) does:
+same way the main [install guide](install.md) does:
 
 ```bash
 docker run --rm \

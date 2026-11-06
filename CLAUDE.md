@@ -21,7 +21,7 @@ starting a feature that looks adjacent.
 
 Merge to `main` only builds and pushes `ghcr.io/napandee/anidex:<sha>`; a deploy happens
 only when the **Release** workflow (`.github/workflows/release.yml`) is run by hand
-(README "Releases" section). Public
+(CONTRIBUTING.md "Releases"). Public
 detail in `docs/dev/deploy.md`; host, runner and credential detail is private —
 `.claude/context/deploy.md`.
 
@@ -92,7 +92,7 @@ detail in `docs/dev/deploy.md`; host, runner and credential detail is private �
 - Ask before changing the deploy pipeline (GitHub Actions workflows, image name) — changes
   here affect the live deployment path.
 - Releases are driven by the `release.yml` workflow, a thin caller of the shared
-  `Napandee/standard-workflows` `@v1` (README "Releases"); never copy the shared workflows
+  `Napandee/standard-workflows` `@v1` (CONTRIBUTING.md "Releases"); never copy the shared workflows
   or demo kit back into this repo. The maintainer's
   cluster picks the image up via Flux image automation. Compose files in `compose/` exist solely for container managers that
   track containers via Compose; they are not the release mechanism.
