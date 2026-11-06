@@ -44,7 +44,7 @@ Full in-scope / out-of-scope detail. The binding summary is in `CLAUDE.md`.
   a bespoke HA add-on/HACS integration. PAT-authenticated only (`_require_pat_user` in
   `app/main.py`, reusing `app/pat.py`'s `resolve_token` — the same primitive
   `mcp_server.py` uses) — no session-cookie fallback, since the caller is a headless
-  poller. See README's "Home Assistant integration" section for the `sensor:` YAML.
+  poller. See [integrations](../admin/integrations.md#home-assistant-integration-optional) for the `sensor:` YAML.
 - Personal library health (issue #337): a "Library health" card on Settings > Sync,
   the non-admin companion to #202's admin Data Quality tab. Reuses
   `_data_quality_signals()` unchanged, just with its new optional `user_id` filter

@@ -13,8 +13,8 @@ within the check window, the deploy job automatically rolls back to the previous
 working image and fails loudly (the workflow shows red) rather than leaving a
 broken deploy silently running. The container itself also runs hardened by
 default — non-root user, read-only root filesystem, dropped capabilities — no
-admin action needed for any of this either. See the main [README](../../README.md)'s
-deploy section for the full pipeline.
+admin action needed for any of this either. See [CONTRIBUTING](../../CONTRIBUTING.md#releases)
+for the full pipeline.
 
 ## The database side is not
 
